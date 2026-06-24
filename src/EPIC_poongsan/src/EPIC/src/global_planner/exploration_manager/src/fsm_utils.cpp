@@ -120,7 +120,28 @@ void FastExplorationFSM::triggerCallback(const nav_msgs::PathConstPtr &msg) {
   fd_->trigger_ = true;
   cout << "Triggered!" << endl;
   total_time_ = ros::Time::now().toSec();
-  transitState(PLAN_TRAJ_EXP, "triggerCallback");
+
+  if (fp_->takeoff_height_ > 0.0) {
+    // Climb to the configured altitude and hover, then auto-start exploration once
+    // odom confirms we're stable near it. Hold current x,y and heading during climb.
+    takeoff_anchor_ = Eigen::Vector3d(fd_->odom_pos_.x(), fd_->odom_pos_.y(),
+                                      fp_->takeoff_height_);
+    takeoff_yaw_ = fd_->odom_yaw_;
+    hover_enter_time_ = ros::Time::now();
+    hover_stable_since_ = ros::Time(0);
+    transitState(TAKEOFF_HOVER, "triggerCallback: takeoff & hover");
+  } else {
+    // takeoff_height disabled -> original behaviour (start exploring immediately).
+    transitState(PLAN_TRAJ_EXP, "triggerCallback");
+  }
+}
+
+void FastExplorationFSM::avoidFlagCallback(const std_msgs::Int16ConstPtr &msg) {
+  // Reactive-avoidance flag from the local_avoidance node (1 = obstacle close).
+  // Just latch it + stamp; the FSMCallback acts on it synchronously with planning.
+  avoid_flag_ = msg->data;
+  last_avoid_flag_stamp_ = ros::Time::now();
+  have_avoid_flag_ = true;
 }
 
 void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPtr &msg, const nav_msgs::Odometry::ConstPtr &odom_) {

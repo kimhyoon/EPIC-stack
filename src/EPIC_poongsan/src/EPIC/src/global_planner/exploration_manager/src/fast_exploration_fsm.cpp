@@ -11,8 +11,10 @@
 #include <epic_planner/fast_exploration_fsm.h>
 #include <epic_planner/fast_exploration_manager.h>
 #include <plan_manage/planner_manager.h>
+#include <cmath>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Int16.h>
 #include <traj_utils/planning_visualization.h>
 using Eigen::Vector3d;
 using Eigen::Vector4d;
@@ -22,6 +24,29 @@ typedef visualization_msgs::MarkerArray MarkerArray;
 
 void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   pubState();
+
+  // ---- reactive-avoidance hand-off (Phase 2) ------------------------------
+  // The px4_ctrl_bridge MUX overrides EPIC's command with the reactive escape
+  // setpoint while /FSM_flag_avoidance==1, so the drone leaves EPIC's planned
+  // path. EPIC keeps planning throughout (this hook never stops it), but we
+  // force every replan to anchor to the drone's ACTUAL pose (static_state_)
+  // instead of a predicted point on the old trajectory. On release we force one
+  // fresh replan so the trajectory handed back to PX4 starts where the drone
+  // actually is -> no snap-back toward the obstacle.
+  const bool avoiding =
+      have_avoid_flag_ && (avoid_flag_ == 1) &&
+      ((ros::Time::now() - last_avoid_flag_stamp_).toSec() < avoid_flag_timeout_);
+  const bool mission_active =
+      (state_ == EXEC_TRAJ || state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH);
+  if (avoiding && mission_active)
+    fd_->static_state_ = true;
+  if (avoiding_prev_ && !avoiding && fd_->trigger_ && mission_active) {
+    fd_->static_state_ = true;
+    EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+    transitState(next_state, "avoidance released: replan from current pose", true);
+  }
+  avoiding_prev_ = avoiding;
+
   switch (state_) {
   case INIT: {
     if (!fd_->have_odom_) {
@@ -34,6 +59,58 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
   case WAIT_TRIGGER: {
     ROS_WARN_THROTTLE(1.0, "wait for trigger.");
+    break;
+  }
+
+  case TAKEOFF_HOVER: {
+    // Triggered -> climb to the configured altitude and hold, then auto-start
+    // exploration once odom confirms the drone is stable near that altitude.
+    if (!fd_->have_odom_)
+      return;
+
+    // Stream the hover setpoint (hold x,y,yaw; target altitude) at the FSM rate so
+    // px4_ctrl_bridge keeps it "fresh" and forwards it to PX4.
+    pubHoverCmd();
+
+    double z_err = std::fabs((double)fd_->odom_pos_.z() - takeoff_anchor_.z());
+    double speed = fd_->odom_vel_.norm();
+    bool reached = (z_err < fp_->takeoff_reach_tol_) && (speed < fp_->takeoff_settle_vel_);
+
+    ros::Time now = ros::Time::now();
+    if (reached) {
+      if (hover_stable_since_.toSec() < 1e-6)
+        hover_stable_since_ = now;  // start the settle timer
+      if ((now - hover_stable_since_).toSec() >= fp_->takeoff_settle_time_) {
+        fd_->static_state_ = true;  // first exploration traj anchors to current pose
+        transitState(PLAN_TRAJ_EXP,
+                     "takeoff: altitude reached & stable -> explore");
+        break;
+      }
+    } else {
+      hover_stable_since_ = ros::Time(0);  // not stable -> reset settle timer
+    }
+
+    // Safety: never wait forever -- but never start exploration from a non-airborne
+    // pose either. If we time out while roughly at altitude (allow up to 3x the reach
+    // tolerance to absorb odom/LIO z drift) and not climbing fast, proceed. Otherwise the
+    // climb genuinely failed (not armed / not OFFBOARD, thrust-limited stall, bad z odom)
+    // -> keep holding the climb setpoint and shout, rather than commanding lateral motion
+    // from the ground.
+    if ((now - hover_enter_time_).toSec() > fp_->takeoff_timeout_) {
+      const double relaxed_tol = 3.0 * fp_->takeoff_reach_tol_;
+      if (z_err < relaxed_tol && speed < 2.0 * fp_->takeoff_settle_vel_) {
+        ROS_WARN("[takeoff] timeout %.1fs, near altitude (z_err=%.2f m, v=%.2f m/s) -> explore",
+                 fp_->takeoff_timeout_, z_err, speed);
+        fd_->static_state_ = true;
+        transitState(PLAN_TRAJ_EXP, "takeoff: timeout (near altitude) -> explore");
+      } else {
+        ROS_ERROR_THROTTLE(2.0,
+            "[takeoff] timeout %.1fs and NOT at altitude (z_err=%.2f m, v=%.2f m/s) -> "
+            "holding hover, NOT exploring (check arming / OFFBOARD / thrust)",
+            fp_->takeoff_timeout_, z_err, speed);
+        // stay in TAKEOFF_HOVER; pubHoverCmd() keeps streaming the climb setpoint.
+      }
+    }
     break;
   }
 
@@ -167,6 +244,33 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     } else if (!planner_manager_->checkTrajVelocity()) {
       EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
       transitState(next_state, "velocity too fast", true);
+    } else {
+      // Emergency control-error replan: continuous replan anchors the next traj to a
+      // predicted point on the OLD trajectory (it never looks at the actual pose). If
+      // the drone has drifted too far from the traj it is tracking (wind, controller
+      // saturation, FAST-LIO pose jump), that assumption is broken -> force a replan
+      // anchored to the current pose (static_state_=true). <= 0 disables the check.
+      // Skip while reactive avoidance is active: the drone deliberately leaves the
+      // planned path then, and the avoidance hook already forces a from-current-pose
+      // replan -- firing here would only spam redundant replans against a path PX4 isn't
+      // even tracking. (`avoiding` is computed at the top of FSMCallback.)
+      LocalTrajData *info = &planner_manager_->local_data_;
+      if (!avoiding && info->traj_id_ > 1 && fp_->emergency_replan_control_error > 0.0) {
+        double t_cur = (ros::Time::now() - info->start_time_).toSec();
+        if (t_cur >= 0.0 && t_cur <= info->duration_) {
+          Eigen::Vector3d planned = info->minco_traj_.getPos(t_cur);
+          double ctrl_err = (fd_->odom_pos_.cast<double>() - planned).norm();
+          if (ctrl_err > fp_->emergency_replan_control_error) {
+            ROS_WARN("\033[31m[EMERGENCY] control error %.2f m > %.2f m -> replan from "
+                     "current pose\033[0m",
+                     ctrl_err, fp_->emergency_replan_control_error);
+            fd_->static_state_ = true;
+            EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+            transitState(next_state, "emergency: control error", true);
+            stopTraj();
+          }
+        }
+      }
     }
 
     break;
@@ -211,6 +315,26 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 }
 
+void FastExplorationFSM::pubHoverCmd() {
+  // Hold (x0, y0, target_z) with the heading captured at trigger time. px4_ctrl_bridge
+  // forwards this as a position setpoint (it ignores the velocity field), so the drone
+  // climbs to target_z and hovers. Mirrors traj_server's /position_cmd convention.
+  quadrotor_msgs::PositionCommand cmd;
+  cmd.header.stamp = ros::Time::now();
+  cmd.header.frame_id = "odom";
+  cmd.trajectory_flag = quadrotor_msgs::PositionCommand::TRAJECTORY_STATUS_READY;
+  cmd.trajectory_id = 0;
+  cmd.position.x = takeoff_anchor_.x();
+  cmd.position.y = takeoff_anchor_.y();
+  cmd.position.z = takeoff_anchor_.z();
+  cmd.velocity.x = cmd.velocity.y = cmd.velocity.z = 0.0;
+  cmd.acceleration.x = cmd.acceleration.y = cmd.acceleration.z = 0.0;
+  cmd.jerk.x = cmd.jerk.y = cmd.jerk.z = 0.0;
+  cmd.yaw = takeoff_yaw_;
+  cmd.yaw_dot = 0.0;
+  hover_cmd_pub_.publish(cmd);
+}
+
 void FastExplorationFSM::init(ros::NodeHandle &nh,
                               FastExplorationManager::Ptr &explorer) {
   fp_.reset(new FSMParam);
@@ -221,13 +345,24 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/replan_time", fp_->replan_time_, -1.0);
   nh.param("bubble_astar/resolution_astar", fp_->bubble_a_star_resolution, 0.1);
   nh.param("fsm/debug_planner", debug_planner, false);
+  // Default 1.5 matches the value previously hardcoded in algorithm.xml, so configs
+  // that don't set this key keep their old (now-active) behaviour. real.yaml overrides it.
   nh.param("fsm/emergency_replan_control_error",
-           fp_->emergency_replan_control_error, 0.3);
+           fp_->emergency_replan_control_error, 1.5);
+  // takeoff & hover-before-explore (see config yaml). Default DISABLED (<= 0): only
+  // configs that explicitly set fsm/takeoff_height (e.g. real.yaml = 1.0) opt in, so the
+  // sim configs keep the original "explore immediately on trigger" behaviour.
+  nh.param("fsm/takeoff_height", fp_->takeoff_height_, -1.0);
+  nh.param("fsm/takeoff_reach_tol", fp_->takeoff_reach_tol_, 0.15);
+  nh.param("fsm/takeoff_settle_vel", fp_->takeoff_settle_vel_, 0.15);
+  nh.param("fsm/takeoff_settle_time", fp_->takeoff_settle_time_, 1.0);
+  nh.param("fsm/takeoff_timeout", fp_->takeoff_timeout_, 20.0);
   nh.param("fsm/replan_time_after_traj_start",
            fp_->replan_time_after_traj_start_, 0.5);
   nh.param("fsm/replan_time_before_traj_end", fp_->replan_time_before_traj_end_,
            0.5);
   nh.param("fsm/goal_tolerance", goal_tolerance_, 0.2);
+  nh.param("fsm/avoid_flag_timeout", avoid_flag_timeout_, 0.5);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
   local_planning_min_period_ = 1.0 / local_planning_max_hz_;
   ROS_INFO("Local planning max Hz: %.1f (min period: %.4f s)", local_planning_max_hz_, local_planning_min_period_);
@@ -240,7 +375,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   state_ = EXPL_STATE::INIT;
   fd_->have_odom_ = false;
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
-                     "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND"};
+                     "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
+                     "TAKEOFF_HOVER"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -261,6 +397,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       ros::Duration(0.2), &FastExplorationFSM::globalPathUpdateCallback, this);
   trigger_sub_ = nh.subscribe("/waypoint_generator/waypoints", 1,
                               &FastExplorationFSM::triggerCallback, this);
+  avoid_flag_sub_ = nh.subscribe("/FSM_flag_avoidance", 10,
+                                 &FastExplorationFSM::avoidFlagCallback, this,
+                                 ros::TransportHints().tcpNoDelay());
   srv_goal_ = nh.advertiseService("/srv_rth", &FastExplorationFSM::goalServiceCallback, this);
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
@@ -276,6 +415,10 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   static_pub_ = nh.advertise<std_msgs::Bool>("/planning/static", 10);
   state_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/state", 10);
   rth_metrics_pub_ = nh.advertise<std_msgs::Float32>("/planning/rth_distance", 10);
+  // Hover setpoint stream during TAKEOFF_HOVER. Absolute topic name = traj_server's
+  // /position_cmd; the two never publish at the same time (traj_server is silent until
+  // a trajectory exists, and we only publish here before exploration starts).
+  hover_cmd_pub_ = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
 
   // Global planning timing publishers
   update_topo_skeleton_cost_pub_ = nh.advertise<std_msgs::Float32>("/planning/timing/update_topo_skeleton_cost", 10);

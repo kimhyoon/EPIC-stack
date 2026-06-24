@@ -7,7 +7,8 @@
 		<rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
 		<!-- Fsm -->
 		<param name="fsm/thresh_replan" value="0.5" type="double" />
-		<param name="fsm/emergency_replan_control_error" value="1.5" type="double" />
+		<!-- fsm/emergency_replan_control_error moved to the config yaml (e.g. real.yaml)
+		     so it can be tuned per-environment. Code default is 1.5 if left unset. -->
 		<param name="fsm/replan_time" value="0.2" type="double" />
 		<param name="fsm/debug_planner" value="false" type="bool" />
 		<!-- Exploration manager -->

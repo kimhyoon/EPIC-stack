@@ -56,8 +56,8 @@ ViewpointManager/sample_pillar_circle_sample_num: 4
 ViewpointManager/local_tsp_size: 10
 # area
 box_num: 1
-box_0/down: [-12.0, -12.0, -0.7]    # 실공간 12x12x3m (camera_init=이륙지점 원점). 시뮬 cave: [-48,-206,-7]
-box_0/up:   [182.0, 182.0, 5.0]       #  182x150 은 cave 좌표 — 실비행 금지
+box_0/down: [-15.0, -15.0, 0.5]    # 실공간 12x12x3m (camera_init=이륙지점 원점). 시뮬 cave: [-48,-206,-7]
+box_0/up:   [15, 15, 2.0]       #  182x150 은 cave 좌표 — 실비행 금지
 dead_area_num: 0
 # ====================================================================
 # trajectory param
@@ -90,3 +90,16 @@ yaw_time_fwd: 2.5
 fsm/goal_tolerance: 0.2
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz)
+
+# Emergency control-error replan: 추종 중인 궤적에서 드론이 이 거리[m] 이상 벗어나면
+# (바람·제어기 포화·FAST-LIO 포즈 점프 등) 현재 위치 기준으로 강제 replan. <= 0 이면 비활성.
+fsm/emergency_replan_control_error: 1.5
+
+# Takeoff & hover-before-explore: 트리거 인식 -> 설정 고도로 상승/호버 ->
+# odom상 고도가 목표 근처에 오면(정밀 안정화 불필요) -> 자동 탐색 시작.
+# fsm/takeoff_height <= 0 이면 비활성 (트리거 즉시 탐색 시작 = 기존 동작).
+fsm/takeoff_height: 1.25         # 목표 호버 고도 [m] (odom-frame z; 원점=이륙지점)
+fsm/takeoff_reach_tol: 0.15      # |z-target| < 이 값이면 도달 -> 수용 밴드 1.30~1.60 m
+fsm/takeoff_settle_vel: 0.4      # odom 속도 < 이 값이면 OK (정밀 정지 불요, 급상승만 차단)
+fsm/takeoff_settle_time: 0.3     # 도달 상태를 이 시간만 유지하면 탐색 시작 [s]
+fsm/takeoff_timeout: 20.0        # 타임아웃: 고도 근처면 탐색, 아니면 호버 유지(ERROR)

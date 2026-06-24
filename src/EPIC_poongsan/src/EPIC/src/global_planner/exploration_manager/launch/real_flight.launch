@@ -20,6 +20,9 @@
   <arg name="odom_topic"  default="/Odometry"/>          <!-- FAST-LIO odom -->
   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
   <arg name="rviz"        default="true"/>
+  <arg name="enable_avoidance" default="true"/>          <!-- reactive local avoidance MUX on/off -->
+  <!-- 회피 노드용 odom: PX4 EKF local 프레임이어야 함(=setpoint_raw/local 프레임). EPIC의 /Odometry 와 다름. -->
+  <arg name="avoid_odom_topic" default="/mavros/local_position/odom"/>
 
   <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real.yaml 로) -->
   <include file="$(find epic_planner)/launch/algorithm.xml">
@@ -39,7 +42,19 @@
     <param name="cmd_timeout"  value="0.5"/>
     <param name="use_accel_ff" value="false"/>
     <param name="use_yawrate"  value="true"/>
+    <!-- 반사회피 MUX: flag=1 동안 /target_avoidance 를 EPIC 명령 대신 PX4로 보냄 -->
+    <param name="enable_avoidance"  value="$(arg enable_avoidance)"/>
+    <param name="avoid_cmd_timeout" value="0.3"/>
+    <param name="flag_timeout"      value="0.5"/>
+    <param name="replan_on_release" value="true"/>
   </node>
+
+  <!-- 3.5) 반사 국소회피 노드 (LiDAR 포텐셜필드). /target_avoidance + /FSM_flag_avoidance 발행.
+       enable_avoidance:=false 면 노드 자체를 띄우지 않음(브리지 MUX도 EPIC만 통과). -->
+  <include file="$(find local_avoidance)/launch/local_avoidance.launch" if="$(arg enable_avoidance)">
+    <arg name="lidar_topic" value="/livox/lidar"/>
+    <arg name="odom_topic"  value="$(arg avoid_odom_topic)"/>
+  </include>
 
   <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal) -->
   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"

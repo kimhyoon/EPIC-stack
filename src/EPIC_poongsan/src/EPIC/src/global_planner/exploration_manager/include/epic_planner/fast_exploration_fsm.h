@@ -18,6 +18,7 @@
 #include <nav_msgs/Path.h>
 #include <pointcloud_topo/graph_visualizer.hpp>
 #include <quadrotor_msgs/TakeoffLand.h>
+#include <quadrotor_msgs/PositionCommand.h>
 #include <ros/ros.h>
 #include <sensor_msgs/BatteryState.h>
 #include <std_msgs/Bool.h>
@@ -27,6 +28,7 @@
 #include <vector>
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/Float32.h>
+#include <std_msgs/Int16.h>
 #include <epic_planner/GoalService.h>
 
 using Eigen::Vector3d;
@@ -42,7 +44,9 @@ class PlanningVisualization;
 struct FSMParam;
 struct FSMData;
 
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND };
+// NOTE: TAKEOFF_HOVER is appended at the END so existing enum indices (used as
+// indices into fd_->state_str_) stay unchanged.
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER };
 
 class FastExplorationFSM {
 private:
@@ -60,9 +64,9 @@ private:
   /* ROS utils */
   ros::NodeHandle node_;
   ros::Timer exec_timer_, global_path_update_timer_;
-  ros::Subscriber trigger_sub_, map_update_sub_, battary_sub_;
+  ros::Subscriber trigger_sub_, map_update_sub_, battary_sub_, avoid_flag_sub_;
   ros::Publisher stop_pub_, new_pub_, replan_pub_, poly_traj_pub_, heartbeat_pub_, time_cost_pub_, poly_yaw_traj_pub_, static_pub_, state_pub_,
-  land_pub_, rth_metrics_pub_;
+  land_pub_, rth_metrics_pub_, hover_cmd_pub_;
   ros::ServiceServer srv_goal_;
   
   // Global planning timing publishers
@@ -91,6 +95,21 @@ private:
   double local_planning_max_hz_;
   double local_planning_min_period_;
 
+  /* reactive-avoidance hand-off (Phase 2): re-anchor planning to the current
+     pose while the reactive layer is avoiding, so the trajectory handed back to
+     PX4 on release starts where the drone actually is (no snap-back). */
+  int    avoid_flag_ = 0;            // last /FSM_flag_avoidance value (1 = obstacle close)
+  bool   have_avoid_flag_ = false;
+  bool   avoiding_prev_ = false;     // previous-tick avoidance state (for 1->0 edge)
+  ros::Time last_avoid_flag_stamp_;
+  double avoid_flag_timeout_ = 0.5;  // [s] treat the flag as stale (silent) after this
+
+  /* takeoff & hover-before-explore (real flight) */
+  Eigen::Vector3d takeoff_anchor_ = Eigen::Vector3d::Zero();  // (x,y,target_z) held during climb
+  double takeoff_yaw_ = 0.0;                                  // heading held during climb
+  ros::Time hover_enter_time_;                                // when TAKEOFF_HOVER began
+  ros::Time hover_stable_since_;                              // when the drone became reached+stable (0 = not yet)
+
   /* helper functions */
   int callExplorationPlanner();
   int callGoalPlanner();
@@ -105,8 +124,10 @@ private:
   void updateTopoAndGlobalPath();
   void globalPathUpdateCallback(const ros::TimerEvent &e);
   void triggerCallback(const nav_msgs::PathConstPtr &msg);
+  void avoidFlagCallback(const std_msgs::Int16ConstPtr &msg);
   void odometryCallback(const nav_msgs::OdometryConstPtr &msg);
   void stopTraj();
+  void pubHoverCmd();  // stream the hover setpoint on /position_cmd during TAKEOFF_HOVER
 
   // void goal_cb(const geometry_msgs::PoseStamped::ConstPtr &msg);
   void visualize();

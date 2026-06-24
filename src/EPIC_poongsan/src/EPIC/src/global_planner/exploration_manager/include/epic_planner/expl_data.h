@@ -33,6 +33,14 @@ struct FSMParam {
   double replan_time_; // second
   double emergency_replan_control_error;
   double bubble_a_star_resolution;
+  // takeoff & hover-before-explore (real flight): on trigger, climb to
+  // takeoff_height_ and hold until odom confirms the drone is stable near it,
+  // then auto-start exploration. Set takeoff_height_ <= 0 to disable (old behaviour).
+  double takeoff_height_;       // target hover altitude [m] in odom-frame z
+  double takeoff_reach_tol_;    // |z - target| below this counts as "reached" [m]
+  double takeoff_settle_vel_;   // odom speed below this counts as "stable" [m/s]
+  double takeoff_settle_time_;  // must stay reached+stable this long before explore [s]
+  double takeoff_timeout_;      // give up waiting after this and explore anyway [s]
 };
 
 struct ExplorationData {
