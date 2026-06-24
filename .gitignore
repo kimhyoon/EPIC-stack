@@ -2,6 +2,13 @@ build/
 devel/
 logs/
 eval/
+install/
 .catkin_tools/
+.vscode/
 *.pcd
 .catkin_workspace
+*.pdf
+*.png
+*.csv
+*.swp
+__pycache__
