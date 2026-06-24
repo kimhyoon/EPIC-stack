@@ -1,0 +1,205 @@
+// px4_ctrl_bridge.cpp
+//
+// Bridges EPIC's /position_cmd (quadrotor_msgs::PositionCommand, a full-state
+// reference: pos + vel + acc + yaw + yaw_dot in the ENU "world" frame) to a PX4
+// flight controller via MAVROS OFFBOARD control.
+//
+// It republishes each command as mavros_msgs::PositionTarget on
+// /mavros/setpoint_raw/local and lets PX4's internal position/attitude/rate
+// controllers do the actual tracking. cascadePID + the MARSIM dynamics loop are
+// NOT used on the real vehicle.
+//
+// Safety flow:
+//   1. Before any /position_cmd arrives, stream a "hold" setpoint at the current
+//      odometry pose (>2 Hz) so PX4 will accept an OFFBOARD switch.
+//   2. Optionally auto-request OFFBOARD + arm (auto_arm:=true), or do it manually
+//      from a radio / QGroundControl (auto_arm:=false, the default).
+//   3. Once /position_cmd flows, forward it. If the command stream goes stale
+//      (planner died / heartbeat lost), fall back to holding the last position.
+
+#include <ros/ros.h>
+#include <Eigen/Eigen>
+
+#include <quadrotor_msgs/PositionCommand.h>
+#include <nav_msgs/Odometry.h>
+#include <mavros_msgs/PositionTarget.h>
+#include <mavros_msgs/State.h>
+#include <mavros_msgs/CommandBool.h>
+#include <mavros_msgs/SetMode.h>
+
+// ---- state -----------------------------------------------------------------
+static mavros_msgs::State          px4_state_;
+static nav_msgs::Odometry          odom_;
+static bool                        have_odom_  = false;
+static bool                        have_cmd_   = false;
+static ros::Time                   last_cmd_stamp_;
+static quadrotor_msgs::PositionCommand last_cmd_;
+
+// ---- params ----------------------------------------------------------------
+static bool   auto_arm_        = false;  // auto-request OFFBOARD + arm
+static double cmd_timeout_     = 0.5;    // [s] treat cmd stream as stale after this
+static bool   use_accel_ff_    = false;  // forward acceleration feed-forward to PX4
+static bool   use_yawrate_     = true;   // forward yaw_dot, else hold yaw only
+
+// ---- pub / clients ---------------------------------------------------------
+static ros::Publisher       sp_pub_;
+static ros::ServiceClient   arming_client_;
+static ros::ServiceClient   set_mode_client_;
+
+void stateCb(const mavros_msgs::State::ConstPtr& msg) { px4_state_ = *msg; }
+
+void odomCb(const nav_msgs::Odometry::ConstPtr& msg) {
+  odom_ = *msg;
+  have_odom_ = true;
+}
+
+void cmdCb(const quadrotor_msgs::PositionCommand::ConstPtr& msg) {
+  last_cmd_       = *msg;
+  last_cmd_stamp_ = ros::Time::now();
+  have_cmd_       = true;
+}
+
+// Build a PositionTarget. All values are in ENU; MAVROS converts to NED for PX4.
+mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector3d& p,
+                                         const Eigen::Vector3d& v,
+                                         const Eigen::Vector3d& a,
+                                         double yaw, double yaw_rate,
+                                         bool full_state) {
+  mavros_msgs::PositionTarget sp;
+  sp.header.stamp    = ros::Time::now();
+  sp.header.frame_id = "map";
+  // FRAME_LOCAL_NED is the MAVROS local-frame constant; MAVROS still expects
+  // ENU on this topic and flips it to NED internally.
+  sp.coordinate_frame = mavros_msgs::PositionTarget::FRAME_LOCAL_NED;
+
+  // type_mask: a SET bit means IGNORE that field.
+  uint16_t mask = 0;
+  using PT = mavros_msgs::PositionTarget;
+  if (full_state) {
+    /* 
+    mask |= PT::IGNORE_VX | PT::IGNORE_VY | PT::IGNORE_VZ;   
+    // ← 추가: 속도 무시 (위치만 추종) 
+     */
+    if (!use_accel_ff_) mask |= PT::IGNORE_AFX | PT::IGNORE_AFY | PT::IGNORE_AFZ;
+    if (use_yawrate_)   mask |= PT::IGNORE_YAW;       // command yaw_rate
+    else                mask |= PT::IGNORE_YAW_RATE;  // command yaw
+  } else {
+    // hold mode: position + yaw only
+    mask |= PT::IGNORE_VX | PT::IGNORE_VY | PT::IGNORE_VZ |
+            PT::IGNORE_AFX | PT::IGNORE_AFY | PT::IGNORE_AFZ |
+            PT::IGNORE_YAW_RATE;
+  }
+  sp.type_mask = mask;
+
+  sp.position.x = p.x();  sp.position.y = p.y();  sp.position.z = p.z();
+  sp.velocity.x = v.x();  sp.velocity.y = v.y();  sp.velocity.z = v.z();
+  sp.acceleration_or_force.x = a.x();
+  sp.acceleration_or_force.y = a.y();
+  sp.acceleration_or_force.z = a.z();
+  sp.yaw      = yaw;
+  sp.yaw_rate = yaw_rate;
+  return sp;
+}
+
+int main(int argc, char** argv) {
+  ros::init(argc, argv, "px4_ctrl_bridge");
+  ros::NodeHandle nh("~");
+
+  std::string odom_topic = "/mavros/local_position/odom";
+  nh.param("odom_topic",   odom_topic, odom_topic);
+  nh.param("auto_arm",     auto_arm_,    auto_arm_);
+  nh.param("cmd_timeout",  cmd_timeout_, cmd_timeout_);
+  nh.param("use_accel_ff", use_accel_ff_, use_accel_ff_);
+  nh.param("use_yawrate",  use_yawrate_,  use_yawrate_);
+
+  ros::NodeHandle gnh;  // global handle for shared topics
+  ros::Subscriber state_sub = gnh.subscribe("/mavros/state", 10, stateCb);
+  ros::Subscriber odom_sub  = gnh.subscribe(odom_topic, 50, odomCb);
+  ros::Subscriber cmd_sub   = gnh.subscribe("/position_cmd", 50, cmdCb);
+
+  sp_pub_ = gnh.advertise<mavros_msgs::PositionTarget>(
+      "/mavros/setpoint_raw/local", 50);
+  arming_client_   = gnh.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
+  set_mode_client_ = gnh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+
+  // PX4 OFFBOARD requires setpoints already streaming; run the loop at 100 Hz.
+  ros::Rate rate(100.0);
+
+  ROS_INFO("[px4_bridge] waiting for FCU connection & odometry ...");
+  while (ros::ok() && (!px4_state_.connected || !have_odom_)) {
+    ros::spinOnce();
+    rate.sleep();
+  }
+  ROS_INFO("[px4_bridge] FCU connected, odometry up. auto_arm=%d", (int)auto_arm_);
+
+  mavros_msgs::SetMode offb_req;  offb_req.request.custom_mode = "OFFBOARD";
+  mavros_msgs::CommandBool arm_req; arm_req.request.value = true;
+  ros::Time last_try = ros::Time::now();
+
+  while (ros::ok()) {
+    ros::spinOnce();
+
+    // Optional automatic mode switch + arm. In production prefer doing this from
+    // the safety pilot's transmitter so a human stays in the loop.
+    if (auto_arm_ && (ros::Time::now() - last_try).toSec() > 1.0) {
+      if (px4_state_.mode != "OFFBOARD") {
+        if (set_mode_client_.call(offb_req) && offb_req.response.mode_sent)
+          ROS_INFO("[px4_bridge] OFFBOARD requested");
+      } else if (!px4_state_.armed) {
+        if (arming_client_.call(arm_req) && arm_req.response.success)
+          ROS_INFO("[px4_bridge] vehicle armed");
+      }
+      last_try = ros::Time::now();
+    }
+
+    const bool cmd_fresh =
+        have_cmd_ && (ros::Time::now() - last_cmd_stamp_).toSec() < cmd_timeout_;
+
+    mavros_msgs::PositionTarget sp;
+    if (cmd_fresh) {
+      Eigen::Vector3d p(last_cmd_.position.x, last_cmd_.position.y, last_cmd_.position.z);
+      Eigen::Vector3d v(last_cmd_.velocity.x, last_cmd_.velocity.y, last_cmd_.velocity.z);
+      Eigen::Vector3d a(last_cmd_.acceleration.x, last_cmd_.acceleration.y, last_cmd_.acceleration.z);
+
+      /* if do you want to fixed position_z_setpoint 
+
+      p.z() = 1.0;   // 원하는 고정 고도 [m]
+      v.z() = 0.0;
+      a.z() = 0.0;
+
+      
+      */
+
+      
+      sp = makeSetpoint(p, v, a, last_cmd_.yaw, last_cmd_.yaw_dot, /*full_state=*/true);
+    } else {
+      // Hold current pose (pre-takeoff bootstrap, or planner-stale fallback).
+      Eigen::Vector3d p(odom_.pose.pose.position.x,
+                        odom_.pose.pose.position.y,
+                        odom_.pose.pose.position.z);
+      const auto& q = odom_.pose.pose.orientation;
+      double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
+                              1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+
+      
+
+
+      /* if do you want to fixed position_z_setpoint 
+
+      p.z() = 1.0;   // 원하는 고정 고도 [m]
+      v.z() = 0.0;
+      a.z() = 0.0;
+      
+      */
+
+      sp = makeSetpoint(p, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
+                        yaw, 0.0, /*full_state=*/false);
+      if (have_cmd_)
+        ROS_WARN_THROTTLE(1.0, "[px4_bridge] /position_cmd stale -> holding pose");
+    }
+
+    sp_pub_.publish(sp);
+    rate.sleep();
+  }
+  return 0;
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- MultiDOF Trajectory Controller -->
+    <node pkg="epic_planner" type="multidof_trajectory_controller" name="multidof_trajectory_controller" output="screen">
+        <!-- Control interface selection -->
+        <param name="use_mavros" value="true"/>           <!-- MAVROS interface -->
+        <param name="use_swarmtal" value="false"/>        <!-- SwarmTal interface -->
+        <param name="use_quadrotor" value="false"/>       <!-- Quadrotor interface -->
+        <param name="use_pose_setpoint" value="false"/>   <!-- Simple pose setpoint -->
+        
+        <!-- Control parameters -->
+        <param name="control_frequency" value="50.0"/>    <!-- 50 Hz control loop -->
+        
+        <!-- Topic remapping (if needed) -->
+        <remap from="/planning/trajectory_multidof" to="/planning/trajectory_multidof"/>
+        <remap from="/mavros/setpoint_raw/local" to="/mavros/setpoint_raw/local"/>
+        <remap from="/drone_pos_ctrl_cmd" to="/drone_pos_ctrl_cmd"/>
+        <remap from="/position_cmd" to="/position_cmd"/>
+        <remap from="/mavros/setpoint_position/local" to="/mavros/setpoint_position/local"/>
+    </node>
+    
+    <!-- Custom Trajectory Sampler (for generating MultiDOF messages) -->
+    <node pkg="epic_planner" type="custom_trajectory_sampler" name="custom_trajectory_sampler" output="screen">
+        <!-- Sampling parameters -->
+        <param name="sample_interval" value="0.1"/>     <!-- 0.1s = 10Hz sampling -->
+        <param name="total_duration" value="30.0"/>     <!-- 30s max duration -->
+        <param name="auto_duration" value="true"/>      <!-- Use full trajectory duration -->
+    </node>
+    
+    <!-- Optional: RVIZ for visualization -->
+    <!-- Uncomment to launch RVIZ -->
+    <!--
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find epic_planner)/config/trajectory_viz.rviz" output="screen"/>
+    -->
+    
+</launch> 

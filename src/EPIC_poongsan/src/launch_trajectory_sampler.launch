@@ -1,0 +1,47 @@
+<launch>
+  <!-- Trajectory Discrete Sampler Parameters -->
+  <arg name="sample_interval" default="0.2" doc="T seconds - Sampling interval (e.g., 0.1 = 10Hz, 0.2 = 5Hz)" />
+  <arg name="total_duration" default="8.0" doc="N seconds - Total sampling duration" />
+  <arg name="auto_duration" default="true" doc="Use trajectory's full duration instead of total_duration" />
+  
+  <!-- Trajectory Discrete Sampler Node -->
+  <node name="trajectory_discrete_sampler" pkg="epic_planner" type="custom_trajectory_sampler" output="screen">
+    <param name="sample_interval" value="$(arg sample_interval)" />
+    <param name="total_duration" value="$(arg total_duration)" />
+    <param name="auto_duration" value="$(arg auto_duration)" />
+  </node>
+  
+  <!-- RViz for visualization (optional) -->
+  <node name="rviz_trajectory_sampler" pkg="rviz" type="rviz" args="-d $(find epic_planner)/config/trajectory_sampler.rviz" if="false" />
+  
+  <!-- Parameter info -->
+  <node name="trajectory_sampler_info" pkg="rostopic" type="rostopic" 
+        args="echo /trajectory/discrete_path -n 1" 
+        output="screen" if="false" />
+
+</launch>
+
+<!-- 
+🎯 사용 예시:
+
+1. 기본값으로 실행 (0.2초 간격, 전체 궤적 시간):
+   roslaunch epic_planner launch_trajectory_sampler.launch
+
+2. 0.1초 간격 (10Hz)으로 실행:
+   roslaunch epic_planner launch_trajectory_sampler.launch sample_interval:=0.1
+
+3. 5초간만 0.05초 간격 (20Hz)으로 샘플링:
+   roslaunch epic_planner launch_trajectory_sampler.launch sample_interval:=0.05 total_duration:=5.0 auto_duration:=false
+
+4. 고주파수 샘플링 (50Hz, 3초):
+   roslaunch epic_planner launch_trajectory_sampler.launch sample_interval:=0.02 total_duration:=3.0 auto_duration:=false
+
+📤 출력 토픽들:
+   - /trajectory/discrete_path (nav_msgs/Path) - RViz path 표시용
+   - /trajectory/discrete_points (visualization_msgs/MarkerArray) - 점들 시각화
+   - /trajectory/discrete_poses (geometry_msgs/PoseStamped) - 개별 pose들
+
+⚡ 동적 파라미터 변경:
+   rosparam set /trajectory_discrete_sampler/sample_interval 0.05
+   rosparam set /trajectory_discrete_sampler/total_duration 10.0
+--> 

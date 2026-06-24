@@ -1,0 +1,13 @@
+<launch>
+  <!-- topics (remap-able) -->
+  <arg name="lidar_topic" default="/livox/lidar"/>
+  <arg name="odom_topic"  default="/mavros/local_position/odom"/>
+
+  <!-- load parameters into /local_avoidance (absolute namespace used in code) -->
+  <rosparam command="load" file="$(find local_avoidance)/config/local_avoidance.yaml"/>
+
+  <node pkg="local_avoidance" type="local_avoidance" name="local_avoidance" output="screen">
+    <remap from="/livox/lidar"                to="$(arg lidar_topic)"/>
+    <remap from="/mavros/local_position/odom" to="$(arg odom_topic)"/>
+  </node>
+</launch>

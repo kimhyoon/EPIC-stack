@@ -1,0 +1,27 @@
+# IDE and Editor
+.vscode/
+.claude/
+
+# GitHub
+.github/
+
+# ROS build artifacts
+build/
+devel/
+install/
+logs/
+.catkin_tools/
+.catkin_workspace
+*.pyc
+__pycache__/
+
+# External dependencies (built from source)
+src/vision_opencv/
+
+# Map files (large binary files)
+src/MARSIM/map_generator/resource/*.pcd
+
+# Experiment data (CSV, plots, logs)
+src/EPIC/src/global_planner/exploration_manager/experiments/*/iter_*/
+src/EPIC/src/global_planner/exploration_manager/experiments/*/*.png
+src/EPIC/src/global_planner/exploration_manager/experiments/*/params.yaml

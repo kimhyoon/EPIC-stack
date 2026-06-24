@@ -1,0 +1,84 @@
+<launch>
+  <!-- Static transforms for frame compatibility -->
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_world"
+        args="0 0 0 0 0 0 odom world 100" />
+
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_map"
+        args="0 0 0 0 0 0 odom map 100" />
+
+  <!-- Map configuration -->
+  <arg name="map_name" value="garage" />
+  <arg name="config_file" default="$(arg map_name).yaml" />
+
+  <!-- Sensor publish rate control -->
+  <arg name="odom_publish_rate" default="10.0" />
+  <arg name="sensing_rate" default="10.0" />
+
+  <!-- Odometry topic (configure based on your odometry source) -->
+  <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
+
+  <!-- Evaluation parameters -->
+  <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
+  <arg name="eval_auto_shutdown" default="false" />
+
+  <!-- Trajectory/Waypoint server -->
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)" />
+    <remap from="~goal" to="/move_base_simple/goal" />
+    <remap from="~traj_start_trigger" to="/traj_start_trigger" />
+    <param name="waypoint_type" value="point" />
+  </node>
+
+  <!-- Odometry visualization -->
+  <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)" />
+    <param name="init_x" value="0.0" />
+    <param name="init_y" value="0.0" />
+    <param name="init_z" value="1.0" />
+    <param name="color/a" value="1.0" />
+    <param name="color/r" value="0.0" />
+    <param name="color/g" value="1.0" />
+    <param name="color/b" value="1.0" />
+    <param name="covariance_scale" value="100.0" />
+    <param name="robot_scale" value="1.0" />
+    <param name="quadrotor_name" value="quad0" />
+    <param name="drone_id" value="0" />
+    <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae" />
+  </node>
+
+  <!-- EPIC exploration algorithm -->
+  <include file="$(find epic_planner)/launch/algorithm.xml">
+    <arg name="config_file" value="$(arg config_file)" />
+  </include>
+
+  <!-- Trajectory server -->
+  <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="/planning/pos_cmd" />
+  </node>
+
+  <!-- Exploration evaluation metrics -->
+  <node pkg="epic_planner" name="exploration_evaluator" type="evaluate_exploration.py" output="screen">
+    <param name="odom_topic" value="$(arg odom_topic)" />
+    <param name="position_cmd_topic" value="/planning/pos_cmd" />
+    <param name="pcd_path" value="$(find map_generator)/resource/garage.pcd" />
+    <param name="cell_size" value="0.4" />
+    <param name="map_min_x" value="-10.0" />
+    <param name="map_min_y" value="-6.0" />
+    <param name="map_min_z" value="-0.2" />
+    <param name="map_max_x" value="182.0" />
+    <param name="map_max_y" value="150.2" />
+    <param name="map_max_z" value="3.8" />
+    <param name="output_dir" value="$(arg eval_output_dir)" />
+    <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
+  </node>
+
+  <!-- Simulation environment (garage map with drone) -->
+  <include file="$(find mars_drone_sim)/launch/garage.launch">
+    <arg name="sensing_horizon" value="60.0" />
+    <arg name="odom_publish_rate" value="$(arg odom_publish_rate)" />
+    <arg name="sensing_rate" value="$(arg sensing_rate)" />
+  </include>
+
+  <!-- RViz visualization -->
+  <include file="$(find epic_planner)/launch/rviz.launch" />
+</launch>

@@ -1,0 +1,25 @@
+<launch>
+  <!-- Bridge EPIC /position_cmd -> PX4 OFFBOARD (mavros setpoint_raw/local).
+       Run this INSTEAD of cascadePID + MARSIM dynamics on the real vehicle.
+       Assumes a mavros node is already up and talking to the FCU. -->
+
+  <!-- Odometry that EPIC and the bridge consume. On a real drone this is PX4's
+       fused estimate, or your VIO/LIO feeding /mavros/odometry/out. -->
+  <arg name="odom_topic" default="/mavros/local_position/odom"/>
+
+  <!-- false = human switches OFFBOARD & arms from the TX/QGC (recommended).
+       true  = bridge auto-requests OFFBOARD + arm once setpoints stream. -->
+  <arg name="auto_arm"     default="false"/>
+  <arg name="cmd_timeout"  default="0.5"/>
+  <arg name="use_accel_ff" default="false"/>
+  <arg name="use_yawrate"  default="true"/>
+
+  <node pkg="plan_manage" type="px4_ctrl_bridge" name="px4_ctrl_bridge"
+        output="screen">
+    <param name="odom_topic"   value="$(arg odom_topic)"/>
+    <param name="auto_arm"     value="$(arg auto_arm)"/>
+    <param name="cmd_timeout"  value="$(arg cmd_timeout)"/>
+    <param name="use_accel_ff" value="$(arg use_accel_ff)"/>
+    <param name="use_yawrate"  value="$(arg use_yawrate)"/>
+  </node>
+</launch>

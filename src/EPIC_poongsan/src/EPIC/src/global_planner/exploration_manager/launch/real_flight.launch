@@ -1,0 +1,62 @@
+<launch>
+  <!-- ===================================================================
+       EPIC 실비행 launch  (MARSIM 시뮬 없음)
+
+       전제: run_stack.sh 가 먼저 떠 있어야 함
+         mavros(px4) + livox_ros_driver + FAST-LIO
+         => /Odometry, /cloud_registered, /mavros/* 가 흐르는 상태
+
+       이 launch 가 띄우는 것:
+         1) exploration_node   : EPIC 플래너 (config: real.yaml)
+         2) traj_server        : MINCO 궤적 샘플링 -> /position_cmd
+         3) px4_ctrl_bridge    : /position_cmd -> /mavros/setpoint_raw/local
+         4) waypoint_generator : rviz/goal -> FSM 트리거(/waypoint_generator/waypoints)
+         5) rviz (선택)
+
+       OFFBOARD 진입/arm 은 기본적으로 사람이 RC/QGC로 (auto_arm:=false).
+       =================================================================== -->
+
+  <arg name="config_file" default="real.yaml"/>
+  <arg name="odom_topic"  default="/Odometry"/>          <!-- FAST-LIO odom -->
+  <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
+  <arg name="rviz"        default="true"/>
+
+  <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real.yaml 로) -->
+  <include file="$(find epic_planner)/launch/algorithm.xml">
+    <arg name="config_file" value="$(arg config_file)"/>
+  </include>
+
+  <!-- 2) traj_server : 시뮬과 달리 /position_cmd remap 하지 않음
+       (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다) -->
+  <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen">
+    <param name="odometry_topic" value="$(arg odom_topic)"/>
+  </node>
+
+  <!-- 3) PX4 OFFBOARD 브리지 -->
+  <node pkg="plan_manage" name="px4_ctrl_bridge" type="px4_ctrl_bridge" output="screen">
+    <param name="odom_topic"   value="$(arg odom_topic)"/>
+    <param name="auto_arm"     value="$(arg auto_arm)"/>
+    <param name="cmd_timeout"  value="0.5"/>
+    <param name="use_accel_ff" value="false"/>
+    <param name="use_yawrate"  value="true"/>
+  </node>
+
+  <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal) -->
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
+        output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <remap from="~goal" to="/move_base_simple/goal"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
+    <param name="waypoint_type" value="point"/>
+  </node>
+
+  <!-- 5) rviz (선택) — 실기용 real.rviz (시뮬 traj.rviz 아님).
+       Fixed Frame=camera_init, 실제 토픽: /cloud_registered, /exploration_node/{occ,frt},
+       /planning/travel_traj, /viz_graph_topic. occ/frt 복셀은 camera_init->world static TF
+       (4_tf_odom_relay.sh) 가 떠 있어야 보인다. -->
+  <group if="$(arg rviz)">
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log"
+          args="-d $(find epic_planner)/config/real.rviz" />
+  </group>
+
+</launch>

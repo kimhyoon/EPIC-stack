@@ -1,0 +1,108 @@
+# EPIC Configuration for ARM Target Board
+# Heavily optimized for minimal computational load
+
+# Topic parameters - same as simulation
+odometry_topic: /quad_0/lidar_slam/odom
+cloud_topic: /quad0_pcl_render_node/cloud
+
+# TSP solver configuration
+exploration/tsp_dir: /home/root/catkin_ws/src/EPIC/src/global_planner/utils/lkh_tsp_solver/resource
+
+# Global planning weights
+global_planning/w_vdir: 1.2
+global_planning/w_yawdir: 0.0
+global_planning/w_firstnode: 0.2
+
+# Visualization - disabled for performance on ARM
+view_graph: false
+FrontierManager/view_cluster: false
+FrontierManager/view_frt: false
+
+# Graph parameters - TOPO SKELETON OPTIMIZED
+bubble_topo/min_x: 0.8                    # Increased from 0.6 (larger cells = less computation)
+bubble_topo/min_y: 0.8                    # Increased from 0.6
+bubble_topo/min_z: 0.4                    # Increased from 0.3
+bubble_topo/bubble_min_radius: 0.8        # Increased from 0.61 (larger bubbles)
+bubble_topo/init_region_size_x: 3.0       # Increased from 2.5
+bubble_topo/init_region_size_y: 3.0       # Increased from 2.5
+bubble_topo/init_region_size_z: 2.5       # Increased from 2.0
+bubble_topo/cube_discrete_size: 0.6       # OPTIMIZED: 0.4→0.6 (coarser for faster skeleton)
+bubble_topo/odom_node_distance: 6.0       # OPTIMIZED: 4.0→6.0 (fewer nodes for speed)
+bubble_astar/safe_distance: 0.8           # Increased from 0.6
+bubble_astar/allocate_num: 4000           # OPTIMIZED: 5000→4000 (less allocation)
+
+# Map parameters - TOPO SKELETON OPTIMIZED
+max_update_region_num: 35000              # OPTIMIZED: 50000→35000 (faster processing)
+frontier/candidate_dphi: 0.35             # Increased from 0.26 (less candidates)
+frontier/candidate_znum: 2                # Reduced from 3 (fewer z-levels)
+
+# LiDAR perception - IKD-TREE INSERT OPTIMIZED
+lidar_perception/fov_up: 35.0             # OPTIMIZED: 45.0→35.0 (less points for ikd-tree)
+lidar_perception/fov_down: -7.0           # OPTIMIZED: -10.0→-7.0 (less downward points)
+lidar_perception/lidar_pitch: 40.0
+lidar_perception/fov_viewpoint_up: 30.0   # OPTIMIZED: 40.0→30.0 (narrower viewpoint)
+lidar_perception/fov_viewpoint_down: -5.0 # OPTIMIZED: -8.0→-5.0 (less viewpoint points)
+lidar_perception/max_ray_length: 8        # OPTIMIZED: 12→8 (shorter rays for speed)
+
+# Parallel processing - OPTIMIZED for faster node operations
+parallel_astar/update_connection_timeout: 0.006  # OPTIMIZED: 0.008→0.006 (faster timeouts)
+parallel_astar/insert_node_timeout: 0.006       # OPTIMIZED: 0.008→0.006 (faster insert)
+
+# Frontier management - optimized for less computation
+FrontierManager/cell_size: 0.5            # Increased from 0.3 (larger cells = less computation)
+FrontierManager/noise_cell_range: 1
+FrontierManager/good_observation_direction_score: 0.7  # Reduced from 0.8 (less strict)
+FrontierManager/good_observation_force_trust_length: 3.0  # Reduced from 4.0
+FrontierManager/good_observation_trust_length: 8.0     # Reduced from 12.0
+FrontierManager/update_length: 6.0        # Significantly reduced from 10.0
+FrontierManager/cluster_max_size: 6.0     # Reduced from 7.5
+FrontierManager/cluster_min_size: 1.5     # Reduced from 2.0 (allow smaller clusters)
+FrontierManager/cluster_min_radius: 0.6   # Reduced from 1.0 (smaller search radius)
+FrontierManager/cluster_direction_radius: 0.2   # Increased from 0.15 (more lenient)
+FrontierManager/cluster_minmum_point_num: 3     # Reduced from 5 (faster clustering)
+
+# Viewpoint sampling - VP INSERT OPTIMIZED
+ViewpointManager/sample_pillar_min_height: 1.2   # Slightly increased from 1.0
+ViewpointManager/sample_pillar_max_height: 3.0   # Reduced from 3.5
+ViewpointManager/sample_pillar_height_layer_num: 1  # OPTIMIZED: 2→1 (single layer for speed)
+ViewpointManager/sample_pillar_min_radius: 2.0   # Increased from 1.5
+ViewpointManager/sample_pillar_max_radius: 3.5   # Reduced from 4.0
+ViewpointManager/sample_pillar_radius_layer_num: 1  # OPTIMIZED: 2→1 (single radius layer)
+ViewpointManager/sample_pillar_circle_sample_num: 4  # OPTIMIZED: 6→4 (fewer samples for speed)
+ViewpointManager/local_tsp_size: 5        # OPTIMIZED: 8→5 (smaller TSP for faster insert)
+
+# Exploration area
+box_num: 1
+box_0/down: [-10.0, -6.0, -0.2]
+box_0/up: [182.0, 150.2, 3.8]
+dead_area_num: 0
+
+# Trajectory parameters - optimized for ARM processing
+max_traj_len: 6.0                    # Further reduced from 8.0
+DilateRadiusSoft: 0.7                # Slightly increased from 0.6
+DilateRadiusHard: 0.6                # Slightly increased from 0.5
+MaxCorridorSize: 3.0                 # Reduced from 3.5
+MaxVelMag: 2.0                       # Further reduced from 2.5
+maxBdrMag: 6000.0                    # Reduced from 8000.0
+MaxTiltAngle: 0.4                    # Reduced from 0.5
+MinThrust: 15.0
+MaxThrust: 20.0                      # Reduced from 22.0
+VehicleMass: 1.9
+GravAcc: 9.8
+HorizDrag: 0.70
+VertDrag: 0.80
+ParasDrag: 0.01
+SpeedEps: 0.0001
+WeightT: 1500.0                      # Reduced from 2000.0
+WeightSafeT: 300.0                   # Reduced from 400.0
+
+# Weight vector [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
+ChiVec: [1.5e+5, 1.0e+4, 8.0e+3, 8.0e+4, 8.0e+4]  # Reduced all weights
+SmoothingEps: 0.02                   # Increased from 0.015 (less smoothing iterations)
+IntegralIntervs: 16                  # Halved from 32 (significant computation reduction)
+RelCostTol: 5.0e-6                   # Relaxed from 1.0e-6 (earlier convergence)
+
+# Yaw optimization - reduced complexity
+yaw_max_vel: 3.0                     # Reduced from 4.0
+yaw_rho_vis: 8000.0                  # Reduced from 10000.0
+yaw_time_fwd: 2.0                    # Reduced from 3.0 
