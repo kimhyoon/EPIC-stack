@@ -1,0 +1,7 @@
+build/
+devel/
+logs/
+eval/
+.catkin_tools/
+*.pcd
+.catkin_workspace
