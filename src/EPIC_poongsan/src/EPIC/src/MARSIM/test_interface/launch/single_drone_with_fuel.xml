@@ -60,7 +60,7 @@
                 <param name="uav_num" value="$(arg uav_num_)" />
                 <param name="is_360lidar" value="0" />
                 <param name="sensing_horizon" value="30.0" />
-                <param name="sensing_rate" value="10.0" />
+                <param name="sensing_rate" value="20.0" />
                 <param name="estimation_rate" value="10.0" />
                 <param name="polar_resolution" value="0.2" />
                 <param name="yaw_fov" value="70.4" />

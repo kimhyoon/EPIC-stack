@@ -27,6 +27,7 @@ pcl::PointCloud<pcl::PointXYZ> cloud_data;          // latest 3D point cloud (se
 bool odom_received = false;
 geometry_msgs::PoseStamped visualization_pose;
 std::string odom_frame_id = "map";                 // frame the odom (and thus the target) lives in
+std::string viz_frame_ = "world";                  // RViz fixed frame for the avoidance-direction arrow
 std_msgs::Int16 FSM_flag;
 ros::Publisher debug_pub;                           // /local_avoidance/debug_points (force-producing points)
 pcl::PointCloud<pcl::PointXYZI> debug_cloud;        // intensity: 1=xy-ring 2=z-pillar (+2 if within emergency r)
@@ -51,7 +52,6 @@ void odom_cb(const nav_msgs::OdometryConstPtr& msg){
 
 
 void local_avoidance(double min_distance){
-    ROS_INFO("AVOIDANCE_ACTIVATED");
     ros::param::get("/local_avoidance/repulsive_m", repulsive_m);
     ros::param::get("/local_avoidance/repulsive_gain", repulsive_gain);
     ros::param::get("/local_avoidance/emergency_avoidance_m", emergency_avoidance_m);
@@ -128,7 +128,11 @@ void local_avoidance(double min_distance){
 
 void visualization_avoidance(mavros_msgs::PositionTarget& msg)
 {
-    visualization_pose.header.frame_id = odom_frame_id;
+    // Anchor coords come from /mavros/local_position/odom (numerically the odom
+    // frame), but RViz's fixed frame is the EPIC world frame. Since EV feeds
+    // FAST-LIO into the PX4 EKF, odom and world share the same origin/axes, so
+    // we just label the arrow with the world frame to make it render in RViz.
+    visualization_pose.header.frame_id = viz_frame_;
     visualization_pose.header.stamp=msg.header.stamp;
     // anchor the arrow at the robot and point it along the actual escape direction
     // (target - current), so it shows the avoidance direction (away from obstacle),
@@ -209,15 +213,21 @@ void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
     }
 //    ROS_INFO("LIDAR_MIN_THRES: %f",lidar_min_threshold);
 
+    // Only log on avoidance state changes (and throttle the active distance),
+    // so the terminal isn't spammed at the 40 Hz lidar rate when nothing's near.
+    static bool was_avoiding = false;
     if(minval < avoidance_trigger_m){
         avoidance_enable = true;
-	ROS_INFO("MIN_DISTANCE: %f \n ",minval );
-	ROS_INFO("MIN_INDEX   : %d \n",minIndex);
-
+        if(!was_avoiding)
+            ROS_WARN("[local_avoidance] ACTIVATED  (min_dist=%.2f m, idx=%d)", minval, minIndex);
+        else
+            ROS_INFO_THROTTLE(1.0, "[local_avoidance] avoiding...  min_dist=%.2f m", minval);
     }else{
         avoidance_enable = false;
-        ROS_INFO("LOCAL_AVOIDACNE_DEATCTIVATED");
+        if(was_avoiding)
+            ROS_INFO("[local_avoidance] DEACTIVATED");
     }
+    was_avoiding = (avoidance_enable != 0);
 
     if (avoidance_enable){
 	    local_avoidance(minval);
@@ -259,6 +269,9 @@ int main(int argc, char** argv)
     set_default("/local_avoidance/lidar_min_threshold",  0.4);
     set_default("/local_avoidance/band_z_thr",           0.3);   // horizontal slab half-thickness
     set_default("/local_avoidance/band_r_thr",           0.3);   // vertical column radius
+
+    // RViz fixed frame for the avoidance-direction arrow (defaults to the EPIC world frame).
+    ros::param::param<std::string>("/local_avoidance/viz_frame", viz_frame_, std::string("world"));
 
 
     ros::Subscriber lidar_sub = nh.subscribe<livox_ros_driver2::CustomMsg>("/livox/lidar",1,lidarCallback);

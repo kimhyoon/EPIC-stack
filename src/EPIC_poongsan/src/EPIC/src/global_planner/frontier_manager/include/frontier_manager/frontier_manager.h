@@ -62,6 +62,11 @@ struct ViewpointParam {
       sample_pillar_min_radius_, sample_pillar_max_radius_,
       view_direction_range_;
   float fov_up_, fov_down_, lidar_pitch_;
+  // 뷰포인트가 장애물(벽)에서 최소 떨어져야 하는 거리[m].
+  // 이보다 가까운 후보 뷰포인트는 탈락 -> 폭이 2*이 값보다 좁은 복도는
+  // 유효 뷰포인트가 없어 "도달 불가"로 낙인되어 탐사 제외됨.
+  // 낮추면 좁은 복도까지 탐사(단 벽에 근접 비행), 높이면 보수적.
+  float min_obstacle_clearance_;
   int consider_range_, global_recluster_size_, local_tsp_size_;
 };
 struct ByteArrayRaw {

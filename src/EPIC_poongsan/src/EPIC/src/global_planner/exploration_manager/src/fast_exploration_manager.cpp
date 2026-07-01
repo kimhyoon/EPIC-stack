@@ -181,7 +181,20 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   frontier_manager_ptr_->generateTSPViewpoints(
       planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
 
+  // --- debug diagnostics: cluster / viewpoint counts ---
+  ed_->diag_num_clusters_ = (int)frontier_manager_ptr_->cluster_list_.size();
+  ed_->diag_num_clusters_reachable_ = 0;
+  for (auto &c : frontier_manager_ptr_->cluster_list_)
+    if (c->is_reachable_ && !c->is_dormant_)
+      ed_->diag_num_clusters_reachable_++;
+  ed_->diag_num_viewpoints_ = (int)viewpoints.size();
+  ed_->diag_num_reachable_vp_ = 0;
+
   if (viewpoints.empty()) {
+    ed_->diag_reason_ = "NO_FRONTIER: 0 viewpoints (clusters=" +
+        std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
+        std::to_string(ed_->diag_num_clusters_reachable_) + ")";
+    ROS_WARN_STREAM("\033[33m[expl-diag] " << ed_->diag_reason_ << "\033[0m");
     planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
@@ -283,13 +296,21 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     viewpoint_reachable.emplace_back(viewpoints[i]);
   }
 
+  ed_->diag_num_reachable_vp_ = (int)viewpoint_reachable.size();
+
   if (viewpoint_reachable.empty()) {
+    ed_->diag_reason_ = "NO_PATH: " + std::to_string(ed_->diag_num_viewpoints_) +
+        " viewpoints exist but NONE reachable via topo graph (clusters=" +
+        std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
+        std::to_string(ed_->diag_num_clusters_reachable_) + ")";
+    ROS_WARN_STREAM("\033[33m[expl-diag] " << ed_->diag_reason_ << "\033[0m");
     planner_manager_->topo_graph_->removeNodes(viewpoints);
     planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
   if (viewpoint_reachable.size() == 1) {
+    ed_->diag_reason_ = "OK";
     ed_->global_tour_.clear();
 
     ed_->global_tour_.emplace_back(pos.cast<float>());
@@ -375,6 +396,7 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   planner_manager_->local_data_.end_yaw_ =
       viewpoint_reachable[indices[1] - 1]->yaw_;
   updateGoalNode();
+  ed_->diag_reason_ = "OK";
   return SUCCEED;
 }
 
@@ -425,8 +447,11 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
     Eigen::Vector3f nbr_center_f = nbr->center_;
 
     // Try collision-free path verification with ParallelBubbleAstar
+    // timeout was 1e-3 (1ms) -> too short: far-return paths time out -> home
+    // declared unreachable ("Goal not reachable"). 0.2s(=path-search budget) gives
+    // the breadcrumb/topo route enough time to verify. (RTH plans once, so ok.)
     int res = planner_manager_->parallel_path_finder_->search(
-        goal_pos_f, nbr_center_f, path, 1e-3);
+        goal_pos_f, nbr_center_f, path, 0.2);
 
     double cost;
 

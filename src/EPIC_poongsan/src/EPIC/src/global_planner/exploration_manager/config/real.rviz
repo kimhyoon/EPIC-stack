@@ -1,24 +1,44 @@
 Panels:
   - Class: rviz/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /TF1
-        - /TF1/Status1
-        - /occ_voxels1
-        - /frontier1
-        - /pocc1
-        - /travel_traj1
-        - /travel_traj1/Namespaces1
-      Splitter Ratio: 0.5
-    Tree Height: 363
+        - /Axes1
+        - /robot_state1
+        - /global_planner1
+        - /global_planner1/viewpoint_info1
+        - /global_planner1/viewpoint_info1/MarkerArray1
+        - /global_planner1/viewpoint_info1/MarkerArray1/Namespaces1
+        - /global_planner1/viewpoint_info1/PointCloud21
+        - /debug_info1
+        - /debug_info1/label_map1
+        - /debug_info1/label_map1/frontier1
+        - /debug_info1/label_map1/well_observed1
+        - /explore_env1
+        - /explore_env1/buffered_cloud1
+        - /explore_env1/buffered_cloud1/Autocompute Value Bounds1
+        - /topo_graph1
+        - /topo_graph1/Namespaces1
+      Splitter Ratio: 0.4589178264141083
+    Tree Height: 619
+  - Class: rviz/Tool Properties
+    Expanded:
+      - /2D Pose Estimate1
+      - /2D Nav Goal1
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.5886790156364441
   - Class: rviz/Views
     Expanded:
       - /Current View1
     Name: Views
     Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+    SyncSource: buffered_cloud
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -26,7 +46,16 @@ Toolbars:
 Visualization Manager:
   Class: ""
   Displays:
-    - Alpha: 0.5
+    - Alpha: 1
+      Class: rviz/Axes
+      Enabled: false
+      Length: 5
+      Name: Axes
+      Radius: 1
+      Reference Frame: <Fixed Frame>
+      Show Trail: false
+      Value: false
+    - Alpha: 0.10000000149011612
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
@@ -41,223 +70,354 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 20
+      Plane Cell Count: 5000
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz/TF
-      Enabled: true
-      Filter (blacklist): ""
-      Filter (whitelist): ""
-      Frame Timeout: 15
-      Frames:
-        All Enabled: true
-        base_link:
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /quad0_odom_visualization/robot
+          Name: robot
+          Namespaces:
+            mesh: true
+          Queue Size: 100
           Value: true
-        base_link_frd:
-          Value: true
-        body:
-          Value: true
-        camera_init:
-          Value: true
-        map:
-          Value: true
-        map_ned:
-          Value: true
-        odom:
-          Value: true
-        odom_ned:
-          Value: true
-        world:
-          Value: true
-      Marker Alpha: 1
-      Marker Scale: 1
-      Name: TF
-      Show Arrows: true
-      Show Axes: true
-      Show Names: true
-      Tree:
-        map:
-          map_ned:
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /planning/position_cmd_vis
+          Name: position_cmd_all
+          Namespaces:
             {}
-        odom:
-          camera_init:
-            body:
-              base_link:
-                base_link_frd:
-                  {}
-            world:
-              {}
-          odom_ned:
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /planning/state
+          Name: state
+          Namespaces:
+            "": true
+          Queue Size: 100
+          Value: true
+      Enabled: true
+      Name: robot_state
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /planning/travel_traj
+          Name: history_traj
+          Namespaces:
             {}
-      Update Interval: 0
-      Value: true
-    - Alpha: 1
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 3.3849263191223145
-        Min Value: -2.079043388366699
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: AxisColor
-      Decay Time: 0
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /global_tour
+          Name: global_tour
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Group
+          Displays:
+            - Class: rviz/MarkerArray
+              Enabled: true
+              Marker Topic: /exploration_node/sf_cluster_marker
+              Name: MarkerArray
+              Namespaces:
+                aabb: true
+                viewpoint_number: true
+              Queue Size: 100
+              Value: true
+            - Alpha: 1
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 255; 0; 0
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: PointCloud2
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.5
+              Style: Flat Squares
+              Topic: /exploration_node/viewpoint_centers
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: false
+              Value: true
+          Enabled: true
+          Name: viewpoint_info
       Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: cloud_registered
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 2
-      Size (m): 0.009999999776482582
-      Style: Points
-      Topic: /cloud_registered
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 0.5
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 0; 170; 255
-      Color Transformer: FlatColor
-      Decay Time: 0
+      Name: global_planner
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /visualizer/trajectory
+          Name: Marker
+          Namespaces:
+            {}
+          Queue Size: 105
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /visualizer/edge
+          Name: Marker
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /visualizer/mesh
+          Name: Marker
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
       Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: occ_voxels
-      Position Transformer: XYZ
-      Queue Size: 2
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.10000000149011612
-      Style: Boxes
-      Topic: /exploration_node/occ
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 0.8999999761581421
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 85; 0
-      Color Transformer: FlatColor
-      Decay Time: 0
+      Name: local_planner
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/Group
+          Displays:
+            - Alpha: 0.699999988079071
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 11.728078842163086
+                Min Value: -0.3523539900779724
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 114; 159; 207
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: well_observed
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.10000000149011612
+              Style: Squares
+              Topic: /exploration_node/good_obs
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: true
+            - Alpha: 1
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: -9999
+                Min Value: 9999
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 0; 0; 0
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: poorly_observed
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.10000000149011612
+              Style: Boxes
+              Topic: /exploration_node/bad_obs
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: true
+          Enabled: false
+          Name: current_frame
+        - Class: rviz/Group
+          Displays:
+            - Alpha: 1
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 237; 212; 0
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: frontier
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.3499999940395355
+              Style: Boxes
+              Topic: /exploration_node/frt
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: true
+            - Alpha: 0.10000000149011612
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 138; 226; 52
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 92; 53; 102
+              Min Color: 0; 0; 0
+              Name: poorly_observed
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.3499999940395355
+              Style: Boxes
+              Topic: /exploration_node/pocc
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: true
+            - Alpha: 0.5
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 173; 127; 168
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: true
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: well_observed
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 3
+              Size (m): 0.30000001192092896
+              Style: Boxes
+              Topic: /exploration_node/occ
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: true
+              Value: true
+          Enabled: true
+          Name: label_map
       Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: frontier
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.15000000596046448
-      Style: Boxes
-      Topic: /exploration_node/frt
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Alpha: 0.5
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud2
-      Color: 255; 255; 0
-      Color Transformer: FlatColor
-      Decay Time: 0
+      Name: debug_info
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 0.10000000149011612
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 4.937349796295166
+            Min Value: -1.2020039558410645
+            Value: false
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 238; 238; 236
+          Color Transformer: AxisColor
+          Decay Time: 1
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: buffered_cloud
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 1
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic: /cloud_registered
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
       Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Min Color: 0; 0; 0
-      Name: pocc
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.10000000149011612
-      Style: Boxes
-      Topic: /exploration_node/pocc
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /planning/travel_traj
-      Name: travel_traj
-      Namespaces:
-        traj_exp: true
-        traj_real: true
-      Queue Size: 5
-      Value: true
-    - Class: rviz/Marker
-      Enabled: true
-      Marker Topic: /planning/trajectory
-      Name: trajectory
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
-    - Class: rviz/MarkerArray
-      Enabled: true
-      Marker Topic: /planning/position_cmd_vis_array
-      Name: position_cmd_vis
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
+      Name: explore_env
     - Class: rviz/MarkerArray
       Enabled: true
       Marker Topic: /viz_graph_topic
       Name: topo_graph
       Namespaces:
-        boundary: true
-        box id: true
+        {}
       Queue Size: 100
+      Value: true
+    - Class: rviz/Marker
+      Enabled: true
+      Marker Topic: /planning/expl_diag
+      Name: expl_diag_hud
+      Namespaces:
+        {}
+      Queue Size: 10
       Value: true
   Enabled: true
   Global Options:
-    Background Color: 48; 48; 48
+    Background Color: 46; 52; 54
     Default Light: true
     Fixed Frame: world
-    Frame Rate: 30
+    Frame Rate: 60
   Name: root
   Tools:
     - Class: rviz/Interact
       Hide Inactive Objects: true
-    - Class: rviz/MoveCamera
     - Class: rviz/Select
     - Class: rviz/FocusCamera
     - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+      Theta std deviation: 0.2617993950843811
+      Topic: /initialpose
+      X std deviation: 0.5
+      Y std deviation: 0.5
     - Class: rviz/SetGoal
       Topic: /move_base_simple/goal
+    - Class: rviz/PublishPoint
+      Single click: true
+      Topic: /clicked_point
   Value: true
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 18.563432693481445
+      Distance: 12.193233489990234
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -265,27 +425,65 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -2.244645118713379
-        Y: -0.14792688190937042
-        Z: 1.0010199546813965
+        X: -4.315830230712891
+        Y: 4.832963466644287
+        Z: 10.932487487792969
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.12979595363140106
+      Pitch: 0.9147961139678955
       Target Frame: <Fixed Frame>
-      Yaw: 4.82500696182251
-    Saved: ~
+      Yaw: 1.012715220451355
+    Saved:
+      - Class: rviz/ThirdPersonFollower
+        Distance: 40.93450164794922
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Field of View: 0.7853981852531433
+        Focal Point:
+          X: -4.595006942749023
+          Y: 0.3861931562423706
+          Z: -2.5082706997636706e-05
+        Focal Shape Fixed Size: true
+        Focal Shape Size: 0.05000000074505806
+        Invert Z Axis: false
+        Name: view1
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 1.1797970533370972
+        Target Frame: <Fixed Frame>
+        Yaw: 3.139589309692383
+      - Angle: -1.5749993324279785
+        Class: rviz/TopDownOrtho
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Name: TopDown
+        Near Clip Distance: 0.009999999776482582
+        Scale: 34.78550720214844
+        Target Frame: <Fixed Frame>
+        X: 4.145483016967773
+        Y: 0.36561644077301025
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 900
+  Height: 963
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001df0000032efc0200000002fb000000100044006900730070006c006100790073010000003b000001ec000000c700fffffffb0000000a00560069006500770073010000022d0000013c000000a000ffffff000003f70000032e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000001da0000036dfc0200000010fb000000100044006900730070006c006100790073010000003b000002a6000000c700fffffffb0000001200530065006c0065006300740069006f006e00000001e10000009b0000000000000000fb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000005fb0000039500000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb0000000a0049006d00610067006500000001900000007f0000000000000000fb0000000a0056006900650077007301000002e7000000c1000000a000fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000000c00430061006d00650072006100000001d1000000b50000000000000000fb0000000a006400650070007400680000000291000001500000000000000000fb0000000a0049006d0061006700650100000415000000f80000000000000000fb0000000a0049006d00610067006501000003f4000001190000000000000000fb0000000a0049006d0061006700650100000385000001c90000000000000000fb0000000a0049006d0061006700650000000476000000d80000000000000000000000010000010f00000385fc0200000002fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000006100000003bfc0100000002fb0000000800540069006d00650000000000000006100000035c00fffffffb0000000800540069006d00650100000000000004500000000000000000000005a00000036d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Time:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
   Views:
     collapsed: false
-  Width: 1500
-  X: 50
-  Y: 82
+  Width: 1920
+  X: 0
+  Y: 32

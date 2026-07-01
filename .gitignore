@@ -2,6 +2,7 @@ build/
 devel/
 logs/
 eval/
+record/
 install/
 .catkin_tools/
 .vscode/
@@ -11,4 +12,6 @@ install/
 *.png
 *.csv
 *.swp
+*.bag
+*.bag.active
 __pycache__

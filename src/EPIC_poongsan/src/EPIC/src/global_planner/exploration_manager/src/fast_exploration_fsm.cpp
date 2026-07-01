@@ -15,12 +15,29 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Int16.h>
+#include <std_msgs/String.h>
+#include <visualization_msgs/Marker.h>
+#include <sstream>
+#include <iomanip>
 #include <traj_utils/planning_visualization.h>
 using Eigen::Vector3d;
 using Eigen::Vector4d;
 bool debug_planner;
 typedef visualization_msgs::Marker Marker;
 typedef visualization_msgs::MarkerArray MarkerArray;
+
+// A NO_FRONTIER result right after the trigger usually means the map/pointcloud
+// hasn't been published yet (so no frontiers exist *yet*), not that exploration
+// is actually done. Suppress the FINISH transition until either the planner has
+// succeeded at least once (frontiers confirmed to exist) or a warmup timeout
+// elapses (so a genuinely empty/enclosed map still terminates instead of hanging).
+bool FastExplorationFSM::explorationReallyFinished() {
+  if (frontiers_ever_seen_)
+    return true;
+  if (explore_start_time_.toSec() < 1e-6)
+    explore_start_time_ = ros::Time::now();  // start the warmup clock on first attempt
+  return (ros::Time::now() - explore_start_time_).toSec() > explore_warmup_timeout_;
+}
 
 void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   pubState();
@@ -115,13 +132,51 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case FINISH: {
-    // stopTraj();
-    double collision_time = 0.0;
-    bool safe = planner_manager_->checkTrajCollision(collision_time);
-    if (!safe) {
+    // Snapshot the finish pose once, and stop extending the old trajectory so the
+    // drone locks where it IS now (traj_server would otherwise keep holding the last
+    // trajectory ENDPOINT, which may be a viewpoint ahead of the drone). This snapshot
+    // is the fixed setpoint for both the plain hold and the auto-RTH hover.
+    if (finish_hover_start_.toSec() < 1e-6) {
+      finish_hover_start_ = ros::Time::now();
+      finish_hover_pos_ = fd_->odom_pos_.cast<double>();
+      finish_hover_yaw_ = fd_->odom_yaw_;
       stopTraj();
     }
-    ROS_WARN_THROTTLE(1.0, "Finished.");
+
+    const bool do_auto =
+        auto_rth_land_ && explore_finished_ && fp_->takeoff_height_ > 0.0;
+
+    // Plain hold (auto RTH+land disabled, no recorded home, or FINISH reached by a
+    // manual /srv_rth rather than exploration ending). Stream a FIXED position
+    // setpoint from the FSM so the drone locks the finish point and stays OFFBOARD,
+    // instead of relying on the bridge's current-pose-follow hold.
+    // NOTE: traj_server already holds last_pos_, so any residual sideways creep is
+    // EKF/position-estimate drift (mag/EV), which a fixed setpoint cannot remove.
+    if (!do_auto) {
+      if (auto_rth_land_ && explore_finished_ && fp_->takeoff_height_ <= 0.0)
+        ROS_WARN_THROTTLE(5.0, "[FINISH] auto_rth_land on but takeoff disabled "
+                               "(no home recorded) -> position hold.");
+      pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
+      ROS_WARN_THROTTLE(2.0, "Finished. holding position.");
+      break;
+    }
+
+    // Auto sequence: hover at the finish point (fixed yaw -> no rotation -> no
+    // yaw-divergence risk), then return home and land.
+    ROS_INFO_THROTTLE(2.0, "\033[32m[FINISH] exploration done -> hover %.1fs, then "
+                           "return home & land\033[0m", finish_hover_duration_);
+    pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
+
+    if ((ros::Time::now() - finish_hover_start_).toSec() >= finish_hover_duration_) {
+      goal_rth_ << takeoff_anchor_.x(), takeoff_anchor_.y(), takeoff_anchor_.z(),
+          takeoff_yaw_;
+      has_goal_rth_ = true;
+      returning_home_ = true;       // routes the RTH goal-reached to LAND
+      explore_finished_ = false;    // consume the latch (don't retrigger this sequence)
+      fd_->static_state_ = true;    // first RTH traj anchors to current pose
+      global_path_update_timer_.start();
+      transitState(PLAN_TRAJ_RTH, "FINISH: hover done -> return home");
+    }
     break;
   }
 
@@ -138,6 +193,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if (expl_manager_->ed_->global_tour_.size() == 2) {
       Eigen::Vector3f goal = expl_manager_->ed_->global_tour_[1];
       if ((goal - fd_->odom_pos_).norm() < 1e-1) {
+        explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
         transitState(FINISH, "fsm");
         return;
       }
@@ -150,6 +206,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
              (ros::Time::now() - tplan).toSec() * 1000.0);
 
     if (res == SUCCEED) {
+      frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
       poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
       poly_traj_pub_.publish(fd_->newest_traj_);
       fd_->static_state_ = false;
@@ -164,8 +221,14 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
     } else if (res == NO_FRONTIER) {
       // if (planner_manager_->topo_graph_->global_view_points_.empty())
-      transitState(FINISH, "PLAN_TRAJ_EXP: no frontier");
-      fd_->static_state_ = true;
+      if (explorationReallyFinished()) {
+        explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
+        transitState(FINISH, "PLAN_TRAJ_EXP: no frontier");
+        fd_->static_state_ = true;
+      } else {
+        // Map/frontiers not ready yet (just triggered) -> keep trying, don't finish.
+        transitState(PLAN_TRAJ_EXP, "PLAN_TRAJ_EXP: no frontier yet (warming up)", true);
+      }
     } else if (res == FAIL) {
       // Still in PLAN_TRAJ_EXP state, keep replanning
       stopTraj();
@@ -185,11 +248,23 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty())
       return;
 
-    // Check if goal reached
-    double dist = (fd_->odom_pos_.cast<double>() - goal_rth_.head<3>()).norm();
-    ROS_INFO("\033[36m[RTH] Distance to goal: %.3f m (tolerance: %.3f m)\033[0m", dist, goal_tolerance_);
+    // Check if goal reached. Auto return-home uses an xy-only tolerance (we want to
+    // be above the takeoff point, then let AUTO.LAND handle the descent); a manual
+    // /srv_rth uses the original 3D tolerance.
+    Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    Eigen::Vector3d gp = goal_rth_.head<3>();
+    double dist, tol;
+    if (returning_home_) {
+      dist = (cur.head<2>() - gp.head<2>()).norm();  // xy distance to home
+      tol = rth_land_xy_tol_;
+    } else {
+      dist = (cur - gp).norm();                      // 3D distance to service goal
+      tol = goal_tolerance_;
+    }
+    ROS_INFO("\033[36m[RTH] %s distance to goal: %.3f m (tolerance: %.3f m)\033[0m",
+             returning_home_ ? "xy" : "3D", dist, tol);
 
-    if (dist < goal_tolerance_) {
+    if (dist < tol) {
       has_goal_rth_ = false;
       global_path_update_timer_.stop();  // Stop replanning timer
 
@@ -198,8 +273,13 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       dist_msg.data = dist;
       rth_metrics_pub_.publish(dist_msg);
 
-      transitState(FINISH, "PLAN_TRAJ_RTH: goal reached");
-      ROS_INFO("\033[32m[RTH] Goal reached! \033[0m");
+      if (returning_home_) {
+        transitState(LAND, "RTH: home reached -> AUTO.LAND");
+        ROS_INFO("\033[32m[RTH] Home reached (xy %.3f m) -> landing\033[0m", dist);
+      } else {
+        transitState(FINISH, "PLAN_TRAJ_RTH: goal reached");
+        ROS_INFO("\033[32m[RTH] Goal reached! \033[0m");
+      }
       return;
     }
 
@@ -301,38 +381,58 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     stopTraj();
     exec_timer_.stop();
     global_path_update_timer_.stop();
-    // 没电了！！再飞就会炸鸡，降落！！！
-    while (1) {
-      quadrotor_msgs::TakeoffLand land_msg;
-      land_msg.takeoff_land_cmd = land_msg.LAND;
-      land_pub_.publish(land_msg);
-      ros::Duration(0.2).sleep();
-      ROS_WARN_THROTTLE(1.0, "NO POWER. LAND!!");
+    // Switch PX4 to AUTO.LAND: PX4 throttles down, descends, ground-detects and
+    // auto-disarms. Non-blocking — request at ~2 Hz until /mavros/state confirms the
+    // mode (the old while(1) froze the FSM thread and published to /px4ctrl/takeoff_land
+    // which the real px4_ctrl_bridge does not subscribe to). The bridge keeps streaming
+    // OFFBOARD setpoints meanwhile; PX4 ignores them while in AUTO.LAND, so no conflict.
+    if (px4_state_.mode != "AUTO.LAND") {
+      static ros::Time last_land_req(0);
+      ros::Time now = ros::Time::now();
+      if ((now - last_land_req).toSec() > 0.5) {
+        last_land_req = now;
+        mavros_msgs::SetMode land_mode;
+        land_mode.request.custom_mode = "AUTO.LAND";
+        if (set_mode_client_.call(land_mode) && land_mode.response.mode_sent)
+          ROS_WARN_THROTTLE(1.0, "\033[33m[LAND] AUTO.LAND requested\033[0m");
+        else
+          ROS_WARN_THROTTLE(1.0, "[LAND] AUTO.LAND request failed, retrying...");
+      }
+    } else {
+      ROS_INFO_THROTTLE(2.0, "\033[32m[LAND] PX4 in AUTO.LAND -> descending & auto-disarm\033[0m");
     }
-
     break;
   }
   }
 }
 
-void FastExplorationFSM::pubHoverCmd() {
-  // Hold (x0, y0, target_z) with the heading captured at trigger time. px4_ctrl_bridge
-  // forwards this as a position setpoint (it ignores the velocity field), so the drone
-  // climbs to target_z and hovers. Mirrors traj_server's /position_cmd convention.
+void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw) {
+  // Hold (p, yaw) as a position setpoint. px4_ctrl_bridge forwards this on
+  // /position_cmd (it ignores the velocity field), so the drone holds pose. Yaw is
+  // fixed (yaw_dot=0) -> no rotation. Mirrors traj_server's /position_cmd convention.
   quadrotor_msgs::PositionCommand cmd;
   cmd.header.stamp = ros::Time::now();
   cmd.header.frame_id = "odom";
   cmd.trajectory_flag = quadrotor_msgs::PositionCommand::TRAJECTORY_STATUS_READY;
   cmd.trajectory_id = 0;
-  cmd.position.x = takeoff_anchor_.x();
-  cmd.position.y = takeoff_anchor_.y();
-  cmd.position.z = takeoff_anchor_.z();
+  cmd.position.x = p.x();
+  cmd.position.y = p.y();
+  cmd.position.z = p.z();
   cmd.velocity.x = cmd.velocity.y = cmd.velocity.z = 0.0;
   cmd.acceleration.x = cmd.acceleration.y = cmd.acceleration.z = 0.0;
   cmd.jerk.x = cmd.jerk.y = cmd.jerk.z = 0.0;
-  cmd.yaw = takeoff_yaw_;
+  cmd.yaw = yaw;
   cmd.yaw_dot = 0.0;
   hover_cmd_pub_.publish(cmd);
+}
+
+void FastExplorationFSM::pubHoverCmd() {
+  // Climb to (x0, y0, target_z) with the heading captured at trigger time.
+  pubHoldCmd(takeoff_anchor_, takeoff_yaw_);
+}
+
+void FastExplorationFSM::mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg) {
+  px4_state_ = *msg;
 }
 
 void FastExplorationFSM::init(ros::NodeHandle &nh,
@@ -363,6 +463,10 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
            0.5);
   nh.param("fsm/goal_tolerance", goal_tolerance_, 0.2);
   nh.param("fsm/avoid_flag_timeout", avoid_flag_timeout_, 0.5);
+  nh.param("fsm/explore_warmup_timeout", explore_warmup_timeout_, 5.0);
+  nh.param("fsm/auto_rth_land", auto_rth_land_, true);
+  nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
+  nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
   local_planning_min_period_ = 1.0 / local_planning_max_hz_;
   ROS_INFO("Local planning max Hz: %.1f (min period: %.4f s)", local_planning_max_hz_, local_planning_min_period_);
@@ -403,6 +507,12 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   srv_goal_ = nh.advertiseService("/srv_rth", &FastExplorationFSM::goalServiceCallback, this);
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
+  // AUTO.LAND at the end of the auto return-home sequence (and /mavros/state to
+  // confirm the mode actually engaged). Absolute names = MAVROS defaults.
+  set_mode_client_ = nh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+  mavros_state_sub_ = nh.subscribe("/mavros/state", 10,
+                                   &FastExplorationFSM::mavrosStateCallback, this);
+
   heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/planning/heartbeat", 10);
   land_pub_ =
       nh.advertise<quadrotor_msgs::TakeoffLand>("/px4ctrl/takeoff_land", 10);
@@ -415,6 +525,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   static_pub_ = nh.advertise<std_msgs::Bool>("/planning/static", 10);
   state_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/state", 10);
   rth_metrics_pub_ = nh.advertise<std_msgs::Float32>("/planning/rth_distance", 10);
+  // exploration debug HUD (rviz text marker) + machine-readable string (bag/log)
+  diag_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/expl_diag", 10);
+  diag_str_pub_ = nh.advertise<std_msgs::String>("/planning/expl_diag_str", 10);
   // Hover setpoint stream during TAKEOFF_HOVER. Absolute topic name = traj_server's
   // /position_cmd; the two never publish at the same time (traj_server is silent until
   // a trajectory exists, and we only publish here before exploration starts).
@@ -456,7 +569,11 @@ void FastExplorationFSM::battaryCallback(
 }
 
 void FastExplorationFSM::updateTopoAndGlobalPath() {
-  if (!(state_ == WAIT_TRIGGER || state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
+  // WAIT_TRIGGER 제외: 트리거(2D Nav Goal) 전에는 토포/글로벌 경로 갱신을 하지 않는다.
+  // (launch 직후 빈 토포그래프에서 odom_node 이웃이 없어 CAUTION으로 전이 -> flyToSafeRegion
+  //  MINCO 최적화가 계속 실패("optimize failed")하는 것을 막음.) 트리거 후 TAKEOFF_HOVER ->
+  //  PLAN_TRAJ_EXP 부터 planning 시작. WAIT_TRIGGER 에서는 viz만 한다.
+  if (!(state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
         state_ == EXEC_TRAJ || state_ == FINISH)) {
     global_path_update_timer_.stop();
     // expl_manager_->frontier_manager_ptr_->viz_pocc();
@@ -559,10 +676,19 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
 
   cout << "total time cost: " << time_cost_now << "ms" << endl;
   if (res == NO_FRONTIER && state_ != WAIT_TRIGGER) {
-    transitState(FINISH, "planGlobalPath: no frontier");
+    // Only finish if the map/frontiers were actually ready (warmup elapsed or
+    // frontiers seen before); otherwise this is a startup artifact -> wait.
+    if (explorationReallyFinished()) {
+      explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
+      transitState(FINISH, "planGlobalPath: no frontier");
+    }
   } else if (res == SUCCEED && state_ != WAIT_TRIGGER) {
+    frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
     transitState(PLAN_TRAJ_EXP, "planGlobalPath: succeed");
   }
+
+  last_plan_ms_ = time_cost_now;
+  publishExplDiag();  // 클러스터/뷰포인트 수 + 사유를 rviz HUD + string 으로 발행
 
   expl_manager_->frontier_manager_ptr_->viz_pocc();
   expl_manager_->frontier_manager_ptr_->visfrtcluster();
@@ -574,6 +700,81 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   global_path_update_timer_.start();
   cout << "viz&&print cost:" << (ros::Time::now() - t5).toSec() * 1000 << "ms"
        << endl;
+}
+
+void FastExplorationFSM::publishExplDiag() {
+  auto ed = expl_manager_->ed_;
+
+  // --- 파생 지표 계산 ---
+  const double speed = fd_->odom_vel_.norm();
+  const double yaw_deg = fd_->odom_yaw_ * 180.0 / M_PI;
+
+  // 토포 그래프 연결성: odom 노드 이웃 수 (0 이면 계획 자체가 막힘)
+  int odom_nbr = -1;
+  if (planner_manager_->topo_graph_ && planner_manager_->topo_graph_->odom_node_)
+    odom_nbr = (int)planner_manager_->topo_graph_->odom_node_->neighbors_.size();
+
+  // global tour: 노드 수 + 전체 길이 + 다음 홉 거리
+  const int tour_nodes = (int)ed->global_tour_.size();
+  double tour_len = 0.0;
+  for (size_t i = 1; i < ed->global_tour_.size(); ++i)
+    tour_len += (ed->global_tour_[i] - ed->global_tour_[i - 1]).norm();
+
+  // 현재 목표 노드(planner 가 세팅) 와 거기까지 직선거리
+  Eigen::Vector3f goalp = ed->next_goal_node_ ? ed->next_goal_node_->center_
+                                              : Eigen::Vector3f::Zero();
+  const double goal_dist = (fd_->odom_pos_ - goalp).norm();
+
+  const bool avoiding = (avoid_flag_ != 0);
+
+  std::ostringstream ss;
+  ss << std::fixed << std::setprecision(2);
+  ss << "EPIC  state=" << fd_->state_str_[state_]
+     << "   plan " << std::setprecision(1) << last_plan_ms_ << "ms\n"
+     << std::setprecision(2)
+     << "pos [" << fd_->odom_pos_.x() << ", " << fd_->odom_pos_.y() << ", "
+     << fd_->odom_pos_.z() << "]  yaw " << std::setprecision(0) << yaw_deg
+     << std::setprecision(2) << "  v " << speed << " m/s\n"
+     << "clusters " << ed->diag_num_clusters_ << " (reach "
+     << ed->diag_num_clusters_reachable_ << ")   vp " << ed->diag_num_viewpoints_
+     << " (reach " << ed->diag_num_reachable_vp_ << ")\n"
+     << "topo odom_nbr " << odom_nbr << "   tour " << tour_nodes << " nodes / "
+     << std::setprecision(1) << tour_len << " m\n" << std::setprecision(2)
+     << "goal [" << goalp.x() << ", " << goalp.y() << ", " << goalp.z()
+     << "]  d " << goal_dist << " m\n"
+     << "trig " << (fd_->trigger_ ? 1 : 0) << "  static "
+     << (fd_->static_state_ ? 1 : 0) << "  avoid " << (avoiding ? 1 : 0)
+     << "  rth " << (has_goal_rth_ ? 1 : 0) << "   fail bb "
+     << fd_->bb_astar_fail_cnt_ << " fs " << fd_->fast_search_fial_cnt_ << "\n"
+     << "plan: " << ed->diag_reason_;
+  const std::string txt = ss.str();
+
+  // 1) 기록용 문자열 (rosbag + /rosout 로 남도록 String + throttled log)
+  std_msgs::String smsg;
+  smsg.data = txt;
+  diag_str_pub_.publish(smsg);
+  ROS_INFO_STREAM_THROTTLE(1.0, "[expl-diag] " << txt);
+
+  // 2) rviz HUD: 드론 위에 떠다니는 텍스트 마커 (frontier 마커와 같은 "odom" 프레임)
+  visualization_msgs::Marker m;
+  m.header.frame_id = "odom";
+  m.header.stamp = ros::Time::now();
+  m.ns = "expl_diag";
+  m.id = 0;
+  m.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+  m.action = visualization_msgs::Marker::ADD;
+  m.pose.position.x = fd_->odom_pos_.x();
+  m.pose.position.y = fd_->odom_pos_.y();
+  m.pose.position.z = fd_->odom_pos_.z() + 1.8;
+  m.pose.orientation.w = 1.0;
+  m.scale.z = 0.35;  // 글자 높이 [m] (줄이 많아 조금 작게)
+  m.color.a = 1.0;
+  const bool bad = (ed->diag_reason_.rfind("NO_", 0) == 0);  // 실패면 빨강, 정상이면 초록
+  m.color.r = bad ? 1.0f : 0.2f;
+  m.color.g = bad ? 0.2f : 1.0f;
+  m.color.b = 0.2f;
+  m.text = txt;
+  diag_pub_.publish(m);
 }
 
 void FastExplorationFSM::globalPathUpdateCallback(const ros::TimerEvent &e) {

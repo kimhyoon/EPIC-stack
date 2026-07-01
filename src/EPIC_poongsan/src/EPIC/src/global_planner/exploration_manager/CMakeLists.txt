@@ -15,6 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   quadrotor_msgs
+  mavros_msgs
   pointcloud_topo
   path_searching
   cv_bridge
@@ -41,7 +42,7 @@ generate_messages(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES epic_planner
-  CATKIN_DEPENDS pointcloud_topo active_perception path_searching traj_utils lkh_tsp_solver plan_manage frontier_manager lidar_map message_runtime
+  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lkh_tsp_solver plan_manage frontier_manager lidar_map message_runtime
 )
 
 include_directories(

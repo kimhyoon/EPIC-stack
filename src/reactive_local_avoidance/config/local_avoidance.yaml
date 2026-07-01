@@ -5,10 +5,10 @@ local_avoidance:
   repulsive_gain:       0.15   # 척력 게인 (세기 배율)
 
   # --- distance thresholds ---
-  lidar_min_threshold:  0.5    # 노이즈컷 (이하 점은 무시 / 자기몸체)
-  avoidance_trigger_m:  0.8 #1.45   # 회피 발동 거리 (최근접 점이 이보다 가까우면 ON)
-  emergency_avoidance_m: 0.8 # 0.95   # 긴급(강회피) 거리 (이 안이면 5배 척력)
-  avoidance_moving_m:   1.45   # 한 번에 움직이는 회피 벡터 최대 길이 (3D)
+  lidar_min_threshold:  0.35   # 노이즈컷 (이하 점은 무시 / 자기몸체)
+  avoidance_trigger_m:  0.6    #1.45   # 회피 발동 거리 (최근접 점이 이보다 가까우면 ON)
+  emergency_avoidance_m: 0.6  # 0.95   # 긴급(강회피) 거리 (이 안이면 5배 척력)
+  avoidance_moving_m:   1.0    # 한 번에 움직이는 회피 벡터 최대 길이 (3D)
 
   # --- two-band gating (raw sensor frame, small-tilt assumption) ---
   band_z_thr:           0.3    # 수평 슬랩 반두께  |z| < band_z_thr  -> x,y 회피

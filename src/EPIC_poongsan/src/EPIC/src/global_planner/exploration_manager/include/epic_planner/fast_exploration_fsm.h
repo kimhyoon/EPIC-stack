@@ -19,6 +19,8 @@
 #include <pointcloud_topo/graph_visualizer.hpp>
 #include <quadrotor_msgs/TakeoffLand.h>
 #include <quadrotor_msgs/PositionCommand.h>
+#include <mavros_msgs/SetMode.h>
+#include <mavros_msgs/State.h>
 #include <ros/ros.h>
 #include <sensor_msgs/BatteryState.h>
 #include <std_msgs/Bool.h>
@@ -67,6 +69,10 @@ private:
   ros::Subscriber trigger_sub_, map_update_sub_, battary_sub_, avoid_flag_sub_;
   ros::Publisher stop_pub_, new_pub_, replan_pub_, poly_traj_pub_, heartbeat_pub_, time_cost_pub_, poly_yaw_traj_pub_, static_pub_, state_pub_,
   land_pub_, rth_metrics_pub_, hover_cmd_pub_;
+  // exploration debug HUD: text marker (rviz) + string (logging/bag)
+  ros::Publisher diag_pub_, diag_str_pub_;
+  double last_plan_ms_ = 0.0;  // 마지막 global plan 총 소요시간 [ms] (HUD 표시용)
+  void publishExplDiag();  // 클러스터/뷰포인트 수 + 실패 사유를 rviz/로그로 발행
   ros::ServiceServer srv_goal_;
   
   // Global planning timing publishers
@@ -110,7 +116,31 @@ private:
   ros::Time hover_enter_time_;                                // when TAKEOFF_HOVER began
   ros::Time hover_stable_since_;                              // when the drone became reached+stable (0 = not yet)
 
+  /* startup warmup: don't treat NO_FRONTIER as "exploration finished" before the
+     map/frontiers are actually ready (e.g. cloud not published yet at trigger). */
+  bool   frontiers_ever_seen_ = false;       // latched once the planner first succeeds
+  ros::Time explore_start_time_;             // first plan attempt (0 = unset)
+  double explore_warmup_timeout_ = 5.0;      // [s] after this, an empty map may still finish
+
+  /* auto return-to-home + land after exploration finishes (real flight).
+     FINISH -> hover briefly at the last cmd pose (stays OFFBOARD) -> RTH to the
+     takeoff point -> when within xy tol of home, switch PX4 to AUTO.LAND. */
+  bool   auto_rth_land_ = true;              // master enable
+  double finish_hover_duration_ = 3.0;       // [s] hover at last cmd pose before returning
+  double rth_land_xy_tol_ = 0.3;             // [m] xy proximity to home that triggers landing
+  bool   explore_finished_ = false;          // latched only when EXPLORATION ends (not service-RTH)
+  bool   returning_home_ = false;            // auto RTH-then-land in progress (routes RTH->LAND)
+  ros::Time finish_hover_start_;             // when the FINISH hover began (0 = not yet)
+  Eigen::Vector3d finish_hover_pos_ = Eigen::Vector3d::Zero();  // snapshot of last cmd pose
+  double finish_hover_yaw_ = 0.0;
+  ros::ServiceClient set_mode_client_;       // /mavros/set_mode (for AUTO.LAND)
+  ros::Subscriber    mavros_state_sub_;      // /mavros/state (to confirm AUTO.LAND engaged)
+  mavros_msgs::State px4_state_;
+
   /* helper functions */
+  bool explorationReallyFinished();          // false during startup warmup, true once frontiers seen / timeout
+  void mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg);
+  void pubHoldCmd(const Eigen::Vector3d &p, double yaw);  // stream a fixed-pose hover setpoint on /position_cmd
   int callExplorationPlanner();
   int callGoalPlanner();
   void transitState(EXPL_STATE new_state, string pos_call, bool red = false);

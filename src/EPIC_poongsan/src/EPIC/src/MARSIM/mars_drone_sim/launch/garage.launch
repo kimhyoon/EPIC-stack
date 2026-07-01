@@ -75,7 +75,10 @@
                 <!-- sysu forest -->
                 <arg name="init_x_" value="5.0" />
                 <arg name="init_y_" value="0.0" />
-                <arg name="init_z_" value="2.0" />
+                <!-- 지면(z=0)에서 스폰 -> 트리거 시 takeoff 호버 명령으로 1.25m까지 실제 상승.
+                     호버 명령(/position_cmd)은 epic_planner/garage.launch 의 relay 가
+                     cascadePID(/planning/pos_cmd)로 전달함. -->
+                <arg name="init_z_" value="0.0" />
                 <arg name="init_yaw" value="0.0" />
                 <arg name="lidar_pitch_" value="$(arg lidar_pitch)" />
                 <arg name="map_name_" value="$(arg map_name)" />

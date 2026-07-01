@@ -64,6 +64,13 @@ struct ExplorationData {
   vector<Vector3d> views_vis1_, views_vis2_;
   vector<Vector3d> centers_, scales_;
   Eigen::Vector3f tsp_end_node_;
+
+  // --- debug diagnostics (rviz HUD + logging), populated by planGlobalPath() ---
+  int diag_num_clusters_ = 0;            // frontier 클러스터 총 개수 (모든 박스)
+  int diag_num_clusters_reachable_ = 0;  // 도달 가능+활성 클러스터 (초록 박스)
+  int diag_num_viewpoints_ = 0;          // 이번 계획에서 생성된 뷰포인트 수
+  int diag_num_reachable_vp_ = 0;        // 토포 그래프로 도달 가능한 뷰포인트 수
+  std::string diag_reason_ = "init";     // 마지막 계획 결과 / 실패 사유
 };
 
 struct ExplorationParam {

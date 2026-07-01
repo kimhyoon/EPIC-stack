@@ -1,22 +1,24 @@
 #topic param:
-odometry_topic: /quad_0/lidar_slam/odom_throttled
+# [SIM 전용] real.yaml의 /Odometry, /cloud_registered 로 바꾸지 말 것 (MARSIM은 아래 토픽으로 발행)
+odometry_topic: /quad_0/lidar_slam/odom
 cloud_topic: /quad0_pcl_render_node/cloud
-global_planning/w_vdir: 1.2
+global_planning/w_vdir: 0.0          # [synced: real]  (속도방향 가중치 — 직선성에 영향 가능, 아래 주석 참고)
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 #viz
-view_graph: false
-FrontierManager/view_cluster: false
+# [SIM 유지] real=true 는 무거운 viz (RViz 부하 원인) → false 유지
+view_graph: true
+FrontierManager/view_cluster: true
 FrontierManager/view_frt: true
 # graph
-bubble_topo/min_x: 0.6
-bubble_topo/min_y: 0.6
-bubble_topo/min_z: 0.3
+bubble_topo/min_x: 1.11               # [synced: real]
+bubble_topo/min_y: 1.11               # [synced: real]
+bubble_topo/min_z: 0.51               # [synced: real]
 bubble_topo/bubble_min_radius: 0.61
-bubble_topo/init_region_size_x: 2.5
-bubble_topo/init_region_size_y: 2.5
+bubble_topo/init_region_size_x: 3.3   # [synced: real]
+bubble_topo/init_region_size_y: 3.3   # [synced: real]
 bubble_topo/init_region_size_z: 2.0
-bubble_topo/cube_discrete_size: 0.25
+bubble_topo/cube_discrete_size: 0.4   # [synced: real]
 bubble_topo/odom_node_distance: 3.0
 bubble_astar/safe_distance: 0.6
 # map param
@@ -25,33 +27,34 @@ frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 lidar_perception/fov_up: 52.0
 lidar_perception/fov_down: -7.0
-lidar_perception/lidar_pitch: 40.0
+lidar_perception/lidar_pitch: 40.0    # [SIM 유지] MARSIM 센서 장착각 40° — real=0.0 로 바꾸면 인지 기하 깨짐
 lidar_perception/fov_viewpoint_up: 48.0
 lidar_perception/fov_viewpoint_down: -5.0
-lidar_perception/max_ray_length: 18
+lidar_perception/max_ray_length: 18   # [SIM 유지] real=1.5 로 바꾸면 1.5m 밖을 못 봄
 parallel_astar/update_connection_timeout: 0.002
 parallel_astar/insert_node_timeout: 0.002
 FrontierManager/cell_size: 0.4
 FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.8
-FrontierManager/good_observation_force_trust_length: 4.0
+FrontierManager/good_observation_direction_score: 0.6   # [synced: real]
+FrontierManager/good_observation_force_trust_length: 4.5 # [synced: real]
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # 比trust_length长一点就行，多了没用
-FrontierManager/cluster_max_size: 7.5
+FrontierManager/cluster_max_size: 8.0                    # [synced: real]
 FrontierManager/cluster_min_size: 2.0
-FrontierManager/cluster_min_radius: 1.0 # DBSCAN 判断邻居的阈值
-FrontierManager/cluster_direction_radius: 0.15 # cos(theta) > cluster_direction_radius
-FrontierManager/cluster_minmum_point_num: 5
+FrontierManager/cluster_min_radius: 1.8 # [synced: real] DBSCAN 判断邻居的阈值
+FrontierManager/cluster_direction_radius: 0.0 # [synced: real] cos(theta) > cluster_direction_radius
+FrontierManager/cluster_minmum_point_num: 10            # [synced: real]
 # 柱形采样
-ViewpointManager/sample_pillar_min_height: 1.0
-ViewpointManager/sample_pillar_max_height: 3.5
-ViewpointManager/sample_pillar_height_layer_num: 3
-ViewpointManager/sample_pillar_min_radius: 1.5
+ViewpointManager/sample_pillar_min_height: 1.0   # [SIM 유지] 환경 수직범위 결합 — real=-2 미적용
+ViewpointManager/sample_pillar_max_height: 3.5   # [SIM 유지] 환경 수직범위 결합 — real=2.5 미적용
+ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
+ViewpointManager/sample_pillar_min_radius: 1.0          # [synced: real]
 ViewpointManager/sample_pillar_max_radius: 4.0
-ViewpointManager/sample_pillar_radius_layer_num: 3
-ViewpointManager/sample_pillar_circle_sample_num: 8
-ViewpointManager/local_tsp_size: 20
+ViewpointManager/sample_pillar_radius_layer_num: 8      # [synced: real]
+ViewpointManager/sample_pillar_circle_sample_num: 4     # [synced: real]
+ViewpointManager/local_tsp_size: 10                     # [synced: real]
 # area
+# [SIM 유지] garage 맵 영역(182x150) — real의 30m 박스로 바꾸면 맵 대부분 탐사 못 함
 box_num: 1
 box_0/down: [-10.0, -6.0, -0.2]
 box_0/up: [182.0, 150.2, 3.8]
@@ -59,31 +62,44 @@ dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
 DilateRadiusSoft: 0.6 # minco threshold
-DilateRadiusHard: 0.5 # collision check threshold
-MaxCorridorSize: 3.5
-MaxVelMag: 4.0
+DilateRadiusHard: 0.45 # [synced: real] collision check threshold
+MaxCorridorSize: 4.0   # [synced: real]
+MaxVelMag: 2.5         # [synced: real]  (4.0→2.5: sim 비행속도가 느려짐 — 의도 맞는지 확인)
 maxBdrMag: 10000.0
-MaxTiltAngle: 0.5 # 最大飞行姿态角度 60°:1.0472 45°:0.7854 30°:0.5236 10°:0.1745
+MaxTiltAngle: 0.8 # [synced: real] 最大飞行姿态角度 60°:1.0472 45°:0.7854 30°:0.5236 10°:0.1745
 MinThrust: 15.0
 MaxThrust: 22.0
 VehicleMass: 1.9
 GravAcc: 9.8
-HorizDrag: 0.70
-VertDrag: 0.80
-ParasDrag: 0.01
+HorizDrag: 0.70   # [SIM 유지] MINCO flatness 동역학 결합 — real=0.0 미적용 (sim 동역학에 맞춤)
+VertDrag: 0.80    # [SIM 유지] real=0.0 미적용
+ParasDrag: 0.01   # [SIM 유지] real=0.0 미적용
 SpeedEps: 0.0001
-WeightT: 2000.0
-WeightSafeT: 400.0
+WeightT: 700.0    # [synced: real]
+WeightSafeT: 200.0 # [synced: real]
 # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
-ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]
+ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6]  # [synced: real]
 SmoothingEps: 0.015
 IntegralIntervs: 32
-RelCostTol: 1.0e-6
+RelCostTol: 1.1e-6  # [synced: real]
 #param for yaw opt
-yaw_max_vel: 4.0
+yaw_max_vel: 1.0    # [synced: real]  (4.0→1.0: yaw 회전이 느려짐 — 의도 맞는지 확인)
 yaw_rho_vis: 10000.0
-yaw_time_fwd: 3.0
+yaw_time_fwd: 2.5   # [synced: real]
 # FSM param
 fsm/goal_tolerance: 0.2
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz). Lower to simulate slow planning.
+
+# Emergency control-error replan: 추종 궤적에서 이 거리[m] 이상 벗어나면 현재 위치 기준 강제 replan
+# (static replan = 속도0 재출발 -> 가다 서다 유발). <= 0 이면 비활성. (코드 기본값 1.5)
+fsm/emergency_replan_control_error: 3.0
+
+# Takeoff & hover-before-explore: 트리거(2D Nav Goal) -> 제자리에서 이 고도로 상승/호버 ->
+# odom상 고도 도달+안정되면 -> 그때부터 탐색 시작. <= 0 이면 비활성(트리거 즉시 z=0에서 계획 = LBFGS 실패).
+# z=0 스폰에서 바닥(점유공간) 위로 먼저 올라가 자유공간에서 첫 궤적을 계획하게 함.
+fsm/takeoff_height: 1.25          # 목표 호버 고도 [m] (odom z; 원점=이륙지점). box_0/up z(3.8) 안이어야 함
+fsm/takeoff_reach_tol: 0.15       # |z - target| < 이 값이면 고도 도달
+fsm/takeoff_settle_vel: 0.4       # odom 속도 < 이 값이면 안정(정밀 정지 불요)
+fsm/takeoff_settle_time: 0.3      # 도달+안정 상태를 이 시간[s] 유지하면 탐색 시작
+fsm/takeoff_timeout: 20.0         # 타임아웃[s]: 고도 근처면 탐색 진행, 아니면 호버 유지(경고)

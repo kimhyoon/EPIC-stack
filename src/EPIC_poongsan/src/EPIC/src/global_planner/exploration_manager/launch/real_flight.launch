@@ -21,6 +21,9 @@
   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
   <arg name="rviz"        default="true"/>
   <arg name="enable_avoidance" default="true"/>          <!-- reactive local avoidance MUX on/off -->
+  <arg name="record"      default="true"/>               <!-- 2D Nav Goal 트리거 시 rosbag record -a -->
+  <arg name="record_dir"  default="/home/hmcl/records"/> <!-- bag + params.yaml 저장 폴더 -->
+  <arg name="record_args" default="-a"/>                 <!-- rosbag record 인자 (예: 토픽만 추리려면 변경) -->
   <!-- 회피 노드용 odom: PX4 EKF local 프레임이어야 함(=setpoint_raw/local 프레임). EPIC의 /Odometry 와 다름. -->
   <arg name="avoid_odom_topic" default="/mavros/local_position/odom"/>
 
@@ -65,10 +68,39 @@
     <param name="waypoint_type" value="point"/>
   </node>
 
-  <!-- 5) rviz (선택) — 실기용 real.rviz (시뮬 traj.rviz 아님).
-       Fixed Frame=camera_init, 실제 토픽: /cloud_registered, /exploration_node/{occ,frt},
-       /planning/travel_traj, /viz_graph_topic. occ/frt 복셀은 camera_init->world static TF
-       (4_tf_odom_relay.sh) 가 떠 있어야 보인다. -->
+  <!-- 4.2) 녹화: RViz '2D Nav Goal'(/move_base_simple/goal) 이 들어오면 rosbag record 시작.
+       bag 과 함께 rosparam 전체를 <같은이름>.params.yaml 로 덤프해 메타데이터로 저장.
+       record:=false 로 끌 수 있음. -->
+  <node pkg="epic_planner" name="record_on_goal" type="record_on_goal.py"
+        output="screen" if="$(arg record)">
+    <param name="record_dir"  value="$(arg record_dir)"/>
+    <param name="goal_topic"  value="/move_base_simple/goal"/>
+    <param name="record_args" value="$(arg record_args)"/>
+    <param name="name_prefix" value="epic"/>
+    <param name="once"        value="true"/>
+  </node>
+
+  <!-- 4.5) 드론 mesh 시각화 (시뮬의 quad0_odom_visualization 과 동일).
+       /quad0_odom_visualization/robot 으로 yunque.dae 메시를 publish -> rviz 가 그대로 구독.
+       순수 시각화 노드라 비행 제어에는 영향 없음. -->
+  <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization"
+        output="screen">
+    <remap from="~odom" to="$(arg odom_topic)"/>
+    <param name="color/a" value="1.0"/>
+    <param name="color/r" value="0.0"/>
+    <param name="color/g" value="1.0"/>
+    <param name="color/b" value="1.0"/>
+    <param name="covariance_scale" value="100.0"/>
+    <param name="robot_scale" value="1.0"/>
+    <param name="quadrotor_name" value="quad0"/>
+    <param name="drone_id" value="0"/>
+    <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae"/>
+  </node>
+
+  <!-- 5) rviz (선택) — real.rviz 는 이제 시뮬 traj.rviz 복사본(색/크기/형태 동일).
+       Fixed Frame=world. 실기 적응: buffered_cloud 토픽 /cloud_registered, 드론 mesh 는
+       위 quad0_odom_visualization 노드가 publish. occ/frt 복셀이 world 프레임에서 보이려면
+       camera_init->world static TF (4_tf_odom_relay.sh) 가 떠 있어야 한다. -->
   <group if="$(arg rviz)">
     <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log"
           args="-d $(find epic_planner)/config/real.rviz" />

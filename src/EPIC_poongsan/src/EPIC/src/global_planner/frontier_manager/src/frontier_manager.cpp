@@ -54,6 +54,9 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
               vpp_.sample_pillar_min_radius_);
   nh.getParam("ViewpointManager/sample_pillar_max_radius",
               vpp_.sample_pillar_max_radius_);
+  // 뷰포인트-장애물 최소 클리어런스. 없으면 기존 하드코딩값 0.9 유지(동작 불변).
+  nh.param("ViewpointManager/min_obstacle_clearance",
+           vpp_.min_obstacle_clearance_, 0.9f);
 
   nh.getParam("ViewpointManager/consider_range", vpp_.consider_range_);
   nh.getParam("ViewpointManager/global_recluster_size",
@@ -1188,7 +1191,7 @@ void FrontierManager::initClusterViewpoints(ClusterInfo::Ptr &cluster) {
   vps_init.reserve(origin_viewpoints_.size());
   for (auto &ovp : origin_viewpoints_) {
     Eigen::Vector3f vp = ovp + cluster->center_;
-    if (lidar_map_interface_->getDisToOcc(vp) < 0.9)
+    if (lidar_map_interface_->getDisToOcc(vp) < vpp_.min_obstacle_clearance_)
       continue;
     if (!isInBox(vp))
       continue;
