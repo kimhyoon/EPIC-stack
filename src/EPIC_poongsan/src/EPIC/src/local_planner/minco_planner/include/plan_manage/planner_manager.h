@@ -122,6 +122,11 @@ public:
 
   minco::MINCO_S3NU yaw_traj_opt_;
   LocalTrajData local_data_;
+  // 마지막 로컬 궤적 계획 실패 사유 (성공 시 clear). FSM 이벤트 로거가 읽어
+  // "경로가 왜 안 나왔는지"를 이벤트/HUD에 표기하는 데 쓴다.
+  std::string last_plan_fail_reason_;
+  // 직전 "성공"이 요청 경로가 아니라 flyToSafeRegion 탈출 궤적이었는지
+  bool last_plan_was_escape_ = false;
   double max_traj_len_;
   LIOInterface::Ptr lidar_map_interface_;
   unique_ptr<Visualizer> gcopter_viz_;

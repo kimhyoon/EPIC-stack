@@ -305,7 +305,12 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     }
   }
   if (start_idx == -1) {
-    ROS_ERROR("current position not in corridor");
+    // 시작상태(예측점)가 corridor 밖: RTH 정체 사건의 주범. 이벤트 로거가 사유를
+    // 읽어가므로 콘솔은 스로틀만 남긴다 (예전엔 이 ROS_ERROR가 초당 수십 번 스팸).
+    last_plan_fail_reason_ =
+        std::string("start not in corridor (") + (is_static ? "static" : "predicted") +
+        " start; corridor pieces=" + std::to_string(hPolys.size()) + ")";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     double time;
     bool safe =
         local_data_.traj_id_ >= 1 && checkTrajCollision(time) && time > 2.0;
@@ -313,7 +318,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       return flyToSafeRegion(is_static);
     // return false;
   }
-  if (start_idx != 0) {
+  if (start_idx > 0) { // -1(위에서 계속 진행하는 경우) erase 방지
     hPolys.erase(hPolys.begin(), hPolys.begin() + start_idx);
   }
   sfc_gen::shortCut(hPolys);
@@ -323,7 +328,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   ros::Time hpoly_gen_end = ros::Time::now();
 
   if (hPolys.size() < 2) {
-    cout << "hPolys size < 2" << endl;
+    last_plan_fail_reason_ = "corridor pieces < 2 (free-space too tight around path)";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   int front = 0;
@@ -379,8 +385,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
           gcopter_config_->weightT, gcopter_config_->dilateRadiusSoft, iniState,
           finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
           quadratureRes, magnitudeBounds, penaltyWeights, physicalParams)) {
-    std::cout << "\n\n\n\n\n\n\n\nsetup failed!" << std::endl;
-
+    last_plan_fail_reason_ = "gcopter setup failed (corridor/start-state infeasible)";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   auto local_data_backup = local_data_;
@@ -388,13 +394,13 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   double time_lb;
   calculateTimelb(path_shorten, local_data_.curr_yaw_, local_data_.end_yaw_,
                   time_lb);
-  cout << "lower_bd = " << time_lb << endl;
-  
+
   // Measure trajectory generation time
   ros::Time traj_gen_start = ros::Time::now();
   if (std::isinf(gcopter.optimize(local_data_.minco_traj_,
                                   gcopter_config_->relCostTol, time_lb))) {
-    std::cout << "optimize failed!" << std::endl;
+    last_plan_fail_reason_ = "minco optimize failed";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   } else {
@@ -413,19 +419,22 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   
   double time = 10.0;
   if (!checkTrajCollision(time) && time < 1.0) {
-    std::cout << "check traj collision failed" << std::endl;
+    last_plan_fail_reason_ = "post-check: new traj collides within 1s";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
   if (!checkTrajVelocity()) {
-    std::cout << "check traj velocity failed" << std::endl;
+    last_plan_fail_reason_ = "post-check: velocity limit exceeded";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
   if (local_data_.minco_traj_.getPieceNum() > 0) {
     if (!YawTrajOpt(local_data_.curr_yaw_, local_data_.end_yaw_, is_static,
                     use_shorten_path)) {
-      cout << "yaw_traj_opt failed!" << endl;
+      last_plan_fail_reason_ = "yaw traj opt failed";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
       local_data_ = local_data_backup;
       return false;
     }
@@ -433,7 +442,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                             gcopter_config_->maxVelMag);
   } else {
     local_data_ = local_data_backup;
-    std::cout << "traj empty!" << std::endl;
+    last_plan_fail_reason_ = "optimized traj empty";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   ros::Time optimize_end_stamp = ros::Time::now();
@@ -449,6 +459,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   local_data_.start_time_ = hpoly_gen_end;
   local_data_.start_pos_ = path_shorten.front();
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+  last_plan_fail_reason_.clear();
+  last_plan_was_escape_ = false;
   return true;
 }
 
@@ -720,10 +732,11 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     }
   }
   if (start_idx == -1) {
-    ROS_ERROR("current position not in corridor");
+    last_plan_fail_reason_ = "escape: start not in local free bubble";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
-  if (start_idx != 0) {
+  if (start_idx > 0) {
     hPolys.erase(hPolys.begin(), hPolys.begin() + start_idx);
   }
   sfc_gen::shortCut(hPolys);
@@ -731,7 +744,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   // ros::Duration(1.0).sleep();
 
   if (hPolys.size() < 2) {
-    cout << "hPolys size < 2" << endl;
+    last_plan_fail_reason_ = "escape: corridor pieces < 2";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   // gcopter_viz_->visualizePolytope(hPolys);  // 비주얼라이제이션 비활성화
@@ -761,15 +775,16 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
           gcopter_config_->WeightSafeT, gcopter_config_->dilateRadiusSoft,
           iniState, finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
           quadratureRes, magnitudeBounds, penaltyWeights, physicalParams)) {
-    std::cout << "\n\n\n\n\n\n\n\nsetup failed!" << std::endl;
-
+    last_plan_fail_reason_ = "escape: gcopter setup failed";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   auto local_data_backup = local_data_;
   local_data_.minco_traj_.clear();
   if (std::isinf(gcopter.optimize(local_data_.minco_traj_,
                                   gcopter_config_->relCostTol, 0.0))) {
-    std::cout << "optimize failed!" << std::endl;
+    last_plan_fail_reason_ = "escape: minco optimize failed";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
@@ -781,7 +796,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
                             gcopter_config_->maxVelMag);
   } else {
     local_data_ = local_data_backup;
-    std::cout << "traj empty!" << std::endl;
+    last_plan_fail_reason_ = "escape: optimized traj empty";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   ros::Time optimize_end_stamp = ros::Time::now();
@@ -789,6 +805,9 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   local_data_.start_time_ = hpoly_gen_end;
   local_data_.start_pos_ = topo_graph_->odom_node_->center_.cast<double>();
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+  // 성공: 단 이것은 요청 경로가 아니라 "안전지대 탈출" 궤적임을 표시
+  last_plan_fail_reason_.clear();
+  last_plan_was_escape_ = true;
   return true;
 }
 

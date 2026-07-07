@@ -13,6 +13,7 @@ find_package(OpenCV REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
+  std_srvs
   geometry_msgs
   quadrotor_msgs
   mavros_msgs

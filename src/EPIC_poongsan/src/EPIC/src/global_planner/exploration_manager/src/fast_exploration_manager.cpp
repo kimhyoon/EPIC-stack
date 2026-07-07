@@ -191,10 +191,11 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   ed_->diag_num_reachable_vp_ = 0;
 
   if (viewpoints.empty()) {
+    ed_->diag_result_ = "NO_VIEWPOINTS";
     ed_->diag_reason_ = "NO_FRONTIER: 0 viewpoints (clusters=" +
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
-        std::to_string(ed_->diag_num_clusters_reachable_) + ")";
-    ROS_WARN_STREAM("\033[33m[expl-diag] " << ed_->diag_reason_ << "\033[0m");
+        std::to_string(ed_->diag_num_clusters_reachable_) + ") " +
+        frontier_manager_ptr_->vp_stats_.str();
     planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
@@ -299,17 +300,18 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   ed_->diag_num_reachable_vp_ = (int)viewpoint_reachable.size();
 
   if (viewpoint_reachable.empty()) {
+    ed_->diag_result_ = "NO_REACHABLE_VP";
     ed_->diag_reason_ = "NO_PATH: " + std::to_string(ed_->diag_num_viewpoints_) +
         " viewpoints exist but NONE reachable via topo graph (clusters=" +
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ")";
-    ROS_WARN_STREAM("\033[33m[expl-diag] " << ed_->diag_reason_ << "\033[0m");
     planner_manager_->topo_graph_->removeNodes(viewpoints);
     planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
   if (viewpoint_reachable.size() == 1) {
+    ed_->diag_result_ = "OK";
     ed_->diag_reason_ = "OK";
     ed_->global_tour_.clear();
 
@@ -396,6 +398,7 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   planner_manager_->local_data_.end_yaw_ =
       viewpoint_reachable[indices[1] - 1]->yaw_;
   updateGoalNode();
+  ed_->diag_result_ = "OK";
   ed_->diag_reason_ = "OK";
   return SUCCEED;
 }
@@ -403,8 +406,10 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
 int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double goal_yaw) {
   ros::Time start = ros::Time::now();
 
-  ROS_INFO("\033[34m[Goal Planning] Start planning to goal: (%.2f, %.2f, %.2f), yaw: %.2f\033[0m",
-           goal_pos.x(), goal_pos.y(), goal_pos.z(), goal_yaw);
+  // RTH는 0.2s 주기로 재계획된다 -> 사이클당 INFO는 스팸. 결과는 diag_result_/
+  // diag_reason_에 담아 FSM 이벤트 로거(변화 시에만 발행)가 내보낸다.
+  ROS_DEBUG("[Goal Planning] Start planning to goal: (%.2f, %.2f, %.2f), yaw: %.2f",
+            goal_pos.x(), goal_pos.y(), goal_pos.z(), goal_yaw);
 
   // Step 1: Create temporary goal node
   TopoNode::Ptr goal_node = std::make_shared<TopoNode>();
@@ -420,8 +425,8 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
 
   if (!viewpoints.empty()) {
     planner_manager_->topo_graph_->insertNodes(viewpoints, false);
-    ROS_INFO("\033[36m[Goal Planning] Inserted %lu frontier viewpoints as stepping stones\033[0m",
-             viewpoints.size());
+    ROS_DEBUG("[Goal Planning] Inserted %lu frontier viewpoints as stepping stones",
+              viewpoints.size());
   }
 
   // Step 3: Get current state
@@ -437,8 +442,8 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   vector<TopoNode::Ptr> connection_candidates = pre_nbrs;
   connection_candidates.insert(connection_candidates.end(), viewpoints.begin(), viewpoints.end());
 
-  ROS_INFO("[Goal Planning] Trying to connect goal to %d nodes (%d neighbors + %d frontiers)",
-           (int)connection_candidates.size(), (int)pre_nbrs.size(), (int)viewpoints.size());
+  ROS_DEBUG("[Goal Planning] Trying to connect goal to %d nodes (%d neighbors + %d frontiers)",
+            (int)connection_candidates.size(), (int)pre_nbrs.size(), (int)viewpoints.size());
 
   int num_connected = 0;
   for (auto& nbr : connection_candidates) {
@@ -462,8 +467,8 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
         cost += (path[i] - path[i + 1]).norm();
       }
       cost /= (ep_->v_max_ / 2.0);  // Time cost
-      ROS_INFO("\033[32m[Goal Planning] Verified connection to node at (%.2f, %.2f, %.2f), cost: %.2f\033[0m",
-               nbr->center_.x(), nbr->center_.y(), nbr->center_.z(), cost);
+      ROS_DEBUG("[Goal Planning] Verified connection to node at (%.2f, %.2f, %.2f), cost: %.2f",
+                nbr->center_.x(), nbr->center_.y(), nbr->center_.z(), cost);
 
       // Add bidirectional edge
       goal_node->neighbors_.insert(nbr);
@@ -492,17 +497,21 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
     }
   }
 
-  ROS_INFO("[Goal Planning] Connected goal to %d topology nodes (verified only)", num_connected);
+  ROS_DEBUG("[Goal Planning] Connected goal to %d topology nodes (verified only)", num_connected);
 
   // FALLBACK: If goal is not reachable, navigate to closest frontier instead
   if (num_connected == 0) {
-    ROS_WARN("\033[33m[Goal Planning] Goal not reachable! Fallback: Navigate to closest frontier\033[0m");
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] Goal not reachable! Fallback: navigate to closest frontier");
 
     // Find closest frontier to goal (before removing viewpoints!)
     if (viewpoints.empty()) {
-      ROS_ERROR("[Goal Planning] No frontiers available for fallback!");
+      ed_->diag_result_ = "RTH_NO_FRONTIER";
+      ed_->diag_reason_ = "goal unreachable (0 verified connections) and no frontier "
+                          "viewpoints for fallback " + frontier_manager_ptr_->vp_stats_.str();
+      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] No frontiers available for fallback!");
       return NO_FRONTIER;
     }
+    ed_->diag_result_ = "RTH_FALLBACK_FRONTIER";
 
     Eigen::Vector3f goal_pos_f = goal_pos.cast<float>();
     double min_dist = std::numeric_limits<double>::max();
@@ -515,8 +524,12 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
       }
     }
 
-    ROS_INFO("\033[33m[Goal Planning] Redirecting to closest frontier at (%.2f, %.2f, %.2f), dist: %.2fm from goal\033[0m",
-             closest_frontier->center_.x(), closest_frontier->center_.y(), closest_frontier->center_.z(), min_dist);
+    char fb[160];
+    snprintf(fb, sizeof(fb), "goal unreachable -> redirect to closest frontier (%.2f, %.2f, %.2f), %.1fm from goal",
+             closest_frontier->center_.x(), closest_frontier->center_.y(),
+             closest_frontier->center_.z(), min_dist);
+    ed_->diag_reason_ = fb;
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] %s", fb);
 
     // Now plan a path to the closest frontier instead of the goal
     // Use the closest frontier as the new goal
@@ -549,13 +562,15 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
         nbr->paths_[goal_node] = path;
 
         num_connected++;
-        ROS_INFO("\033[32m[Goal Planning] Connected frontier fallback to node at (%.2f, %.2f, %.2f)\033[0m",
-                 nbr->center_.x(), nbr->center_.y(), nbr->center_.z());
+        ROS_DEBUG("[Goal Planning] Connected frontier fallback to node at (%.2f, %.2f, %.2f)",
+                  nbr->center_.x(), nbr->center_.y(), nbr->center_.z());
       }
     }
 
     if (num_connected == 0) {
-      ROS_ERROR("[Goal Planning] Even closest frontier is unreachable!");
+      ed_->diag_result_ = "RTH_FAIL";
+      ed_->diag_reason_ = "goal unreachable and even closest frontier unreachable";
+      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] Even closest frontier is unreachable!");
       // Cleanup
       if (!viewpoints.empty()) {
         planner_manager_->topo_graph_->removeNodes(viewpoints);
@@ -563,7 +578,7 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
       return FAIL;
     }
 
-    ROS_INFO("[Goal Planning] Frontier fallback connected to %d nodes", num_connected);
+    ROS_DEBUG("[Goal Planning] Frontier fallback connected to %d nodes", num_connected);
   }
 
   // Step 4: A* search on topology graph
@@ -578,7 +593,10 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   topo_graph_search_cost_pub_.publish(timing_msg);
 
   if (!search_success || topo_path.empty()) {
-    ROS_WARN("[Goal Planning] A* search failed on topology graph!");
+    ed_->diag_result_ = "RTH_ASTAR_FAIL";
+    ed_->diag_reason_ = "A* on topo graph failed (goal connected to " +
+                        std::to_string(num_connected) + " nodes)";
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] A* search failed on topology graph!");
 
     // Cleanup: remove goal node connections
     for (auto& nbr : connection_candidates) {
@@ -595,7 +613,7 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
     return FAIL;
   }
 
-  ROS_INFO("\033[32m[Goal Planning] A* found path with %lu nodes\033[0m", topo_path.size());
+  ROS_DEBUG("[Goal Planning] A* found path with %lu nodes", topo_path.size());
 
   // Step 5: Build global_tour_ from topology path
   ed_->global_tour_.clear();
@@ -625,16 +643,27 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   // Remove frontier viewpoints (stepping stones no longer needed)
   if (!viewpoints.empty()) {
     planner_manager_->topo_graph_->removeNodes(viewpoints);
-    ROS_INFO("[Goal Planning] Removed %lu frontier stepping stones", viewpoints.size());
+    ROS_DEBUG("[Goal Planning] Removed %lu frontier stepping stones", viewpoints.size());
   }
 
   // Visualize the tour
   planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::BLUE, "goal");
 
   ros::Time end = ros::Time::now();
-  ROS_INFO("\033[32m[Goal Planning] Total planning time: %.2f ms\033[0m",
-           (end - start).toSec() * 1000);
+  ROS_DEBUG("[Goal Planning] Total planning time: %.2f ms",
+            (end - start).toSec() * 1000);
 
+  {
+    double tour_len = 0.0;
+    for (size_t i = 1; i < ed_->global_tour_.size(); ++i)
+      tour_len += (ed_->global_tour_[i] - ed_->global_tour_[i - 1]).norm();
+    char ok[128];
+    snprintf(ok, sizeof(ok), "path to goal: %zu nodes / %.1fm (connected via %d)",
+             ed_->global_tour_.size(), tour_len, num_connected);
+    if (ed_->diag_result_ != "RTH_FALLBACK_FRONTIER")
+      ed_->diag_result_ = "RTH_PATH_OK";
+    ed_->diag_reason_ = ok;
+  }
   return SUCCEED;
 }
 

@@ -1,6 +1,12 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
+// ── 라이다 입력 타입 (CMakeLists 의 USE_LIVOX_LIDAR 옵션으로 선택) ──────────
+//  정의됨   : livox_ros_driver2/CustomMsg 구독 (Mid360 등 livox 드라이버 직결)
+//  정의 안됨: sensor_msgs/PointCloud2 구독 (일반 라이다; livox 의존성 없이 빌드)
+//  ※ 어느 쪽이든 포인트는 "센서/바디 프레임" 이어야 한다 (밴드 게이팅이 바디 z/r 기준).
+#ifdef USE_LIVOX_LIDAR
 #include <livox_ros_driver2/CustomMsg.h>
+#endif
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/Quaternion.h>
 #include <nav_msgs/Odometry.h>
@@ -150,7 +156,9 @@ void visualization_avoidance(mavros_msgs::PositionTarget& msg)
     visualization_pose.pose.orientation.w = quat[3];
 }
 
-void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
+// 메시지 타입 무관 공통 처리: cloud_data(센서 프레임) 채워진 뒤 호출된다.
+// sensor_header 는 디버그 클라우드 발행용 (frame_id/stamp).
+void processLidarCloud(const std_msgs::Header &sensor_header){
     ros::param::get("/local_avoidance/avoidance_trigger_m", avoidance_trigger_m);
     ros::param::get("/local_avoidance/lidar_min_threshold", lidar_min_threshold);
     ros::param::get("/local_avoidance/band_z_thr", band_z_thr);
@@ -159,18 +167,6 @@ void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
     ros::param::get("/local_avoidance/emergency_avoidance_m", emergency_avoidance_m);
     debug_cloud.clear();
 
-    // /livox/lidar is published as livox_ros_driver2::CustomMsg (xfer_format=1, same
-    // stream FAST-LIO uses), so build the PCL cloud from the CustomPoint list directly
-    // instead of pcl::fromROSMsg (which only works on sensor_msgs::PointCloud2).
-    cloud_data.clear();
-    cloud_data.points.reserve(msg->point_num);
-    for(uint32_t i = 0; i < msg->point_num; i++){
-        pcl::PointXYZ p;
-        p.x = msg->points[i].x;
-        p.y = msg->points[i].y;
-        p.z = msg->points[i].z;
-        cloud_data.points.push_back(p);
-    }
     if (cloud_data.points.size() < 1){
         return;
     }
@@ -240,10 +236,35 @@ void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
     debug_cloud.height = 1;
     debug_cloud.is_dense = false;
     pcl::toROSMsg(debug_cloud, debug_msg);
-    debug_msg.header.frame_id = msg->header.frame_id;   // Livox sensor frame
-    debug_msg.header.stamp    = msg->header.stamp;
+    debug_msg.header.frame_id = sensor_header.frame_id;  // 센서 프레임
+    debug_msg.header.stamp    = sensor_header.stamp;
     debug_pub.publish(debug_msg);
 }
+
+#ifdef USE_LIVOX_LIDAR
+// livox 드라이버 직결: CustomMsg(xfer_format=1, FAST-LIO 와 같은 스트림)에서
+// CustomPoint 리스트를 직접 PCL 클라우드로 옮긴다.
+void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
+    cloud_data.clear();
+    cloud_data.points.reserve(msg->point_num);
+    for(uint32_t i = 0; i < msg->point_num; i++){
+        pcl::PointXYZ p;
+        p.x = msg->points[i].x;
+        p.y = msg->points[i].y;
+        p.z = msg->points[i].z;
+        cloud_data.points.push_back(p);
+    }
+    processLidarCloud(msg->header);
+}
+#else
+// 일반 라이다: sensor_msgs/PointCloud2 (센서/바디 프레임이어야 함!
+// world 프레임 클라우드(/cloud_registered 등)를 물리면 밴드 게이팅이 틀어진다).
+void lidarCallback(const sensor_msgs::PointCloud2::ConstPtr &msg){
+    cloud_data.clear();
+    pcl::fromROSMsg(*msg, cloud_data);
+    processLidarCloud(msg->header);
+}
+#endif
 
 
 
@@ -274,7 +295,14 @@ int main(int argc, char** argv)
     ros::param::param<std::string>("/local_avoidance/viz_frame", viz_frame_, std::string("world"));
 
 
+#ifdef USE_LIVOX_LIDAR
     ros::Subscriber lidar_sub = nh.subscribe<livox_ros_driver2::CustomMsg>("/livox/lidar",1,lidarCallback);
+    ROS_INFO("[local_avoidance] lidar input: livox_ros_driver2/CustomMsg on /livox/lidar (remap-able)");
+#else
+    ros::Subscriber lidar_sub = nh.subscribe<sensor_msgs::PointCloud2>("/livox/lidar",1,lidarCallback);
+    ROS_INFO("[local_avoidance] lidar input: sensor_msgs/PointCloud2 on /livox/lidar (remap-able; "
+             "cloud must be in SENSOR/BODY frame)");
+#endif
     ros::Subscriber odom_sub = nh.subscribe<nav_msgs::Odometry>("/mavros/local_position/odom",30, odom_cb);
     ros::Publisher position_target_pub= nh.advertise<mavros_msgs::PositionTarget>("/target_avoidance", 30);
     ros::Publisher FMS_flg_pub= nh.advertise<std_msgs::Int16>("/FSM_flag_avoidance", 30);
@@ -283,9 +311,31 @@ int main(int argc, char** argv)
 
     int param_update_inteval = 50;
 
-    while (ros::ok()){
+    // 마스터 스위치: real.yaml 의 local_avoidance/enable (exploration_node ns 에 로드됨).
+    // false 면 회피 목표/시각화를 내보내지 않고 flag=0 만 발행 (완전 비활성).
+    // 단독 실행(EPIC 없이) 시엔 /local_avoidance/enable (자체 yaml) -> 기본 true.
+    auto read_master_enable = []() {
+        bool en = true;
+        if (!ros::param::get("/exploration_node/local_avoidance/enable", en))
+            ros::param::param("/local_avoidance/enable", en, true);
+        return en;
+    };
+    bool master_enable = read_master_enable();
+    ROS_INFO("[local_avoidance] master enable = %s (from real.yaml local_avoidance/enable)",
+             master_enable ? "true" : "false");
+    int loop_cnt = 0;
 
-        if (avoidance_enable){
+    while (ros::ok()){
+        // 파라미터는 비행 중에도 바꿀 수 있게 ~2s 마다 재확인
+        if (++loop_cnt % 80 == 0) {
+            bool prev = master_enable;
+            master_enable = read_master_enable();
+            if (prev != master_enable)
+                ROS_WARN("[local_avoidance] master enable changed -> %s",
+                         master_enable ? "true" : "false");
+        }
+
+        if (master_enable && avoidance_enable){
             position_target_pub.publish(pose_target_);
             FSM_flag.data=1;
             visualization_pub.publish(visualization_pose);

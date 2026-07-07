@@ -38,7 +38,8 @@ int FastExplorationFSM::callExplorationPlanner() {
   // debug
   if (planner_manager_->lidar_map_interface_->getDisToOcc(expl_manager_->ed_->next_goal_node_->center_) <
       planner_manager_->topo_graph_->bubble_min_radius_) { // TODO:
-    cout << "410:  next goal in occ, update it" << endl;
+    local_reason_ = "next goal too close to occupancy -> re-run global";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     updateTopoAndGlobalPath();
     return FAIL;
   }
@@ -47,17 +48,21 @@ int FastExplorationFSM::callExplorationPlanner() {
   int res = planner_manager_->fast_searcher_->search(planner_manager_->topo_graph_->odom_node_, fd_->odom_vel_, expl_manager_->ed_->next_goal_node_,
                                                      0.2, path_next_goal);
   if (res == ParallelBubbleAstar::NO_PATH) {
-    ROS_ERROR("ExplorationPlanner: No path to goal");
+    local_reason_ = "fast-searcher: no path odom->goal";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
 
   } else if (res == ParallelBubbleAstar::START_FAIL) {
-    ROS_ERROR("ExplorationPlanner: Start point in occ");
+    local_reason_ = "fast-searcher: start(odom) in occupancy";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return START_FAIL;
   } else if (res == ParallelBubbleAstar::END_FAIL) {
-    ROS_ERROR("ExplorationPlanner: End point in occ");
+    local_reason_ = "fast-searcher: goal in occupancy";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::TIME_OUT) {
-    ROS_ERROR("ExplorationPlanner: Time out");
+    local_reason_ = "fast-searcher: timeout";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
   }
 
@@ -95,8 +100,12 @@ int FastExplorationFSM::callExplorationPlanner() {
     traj_utils::PolyTraj poly_yaw_traj_msg;
     planner_manager_->polyYawTraj2ROSMsg(poly_yaw_traj_msg, info->start_time_);
     fd_->newest_yaw_traj_ = poly_yaw_traj_msg;
+    local_reason_ = planner_manager_->last_plan_was_escape_ ? "escape traj (flyToSafeRegion)" : "";
     result = SUCCEED;
   } else {
+    local_reason_ = planner_manager_->last_plan_fail_reason_.empty()
+                        ? "traj optimization failed"
+                        : planner_manager_->last_plan_fail_reason_;
     result = FAIL;
   }
 
@@ -104,22 +113,31 @@ int FastExplorationFSM::callExplorationPlanner() {
   double elapsed = (ros::Time::now() - planning_start_time).toSec();
   if (elapsed < local_planning_min_period_) {
     double hold_time = local_planning_min_period_ - elapsed;
-    ROS_INFO("\033[33m[Planning Hz Limit] Holding for %.3f ms (planning took %.3f ms, min period %.3f ms)\033[0m",
-             hold_time * 1000.0, elapsed * 1000.0, local_planning_min_period_ * 1000.0);
+    ROS_DEBUG("[Planning Hz Limit] Holding for %.3f ms (planning took %.3f ms, min period %.3f ms)",
+              hold_time * 1000.0, elapsed * 1000.0, local_planning_min_period_ * 1000.0);
     ros::Duration(hold_time).sleep();
   }
   return result;
 }
 
-void FastExplorationFSM::triggerCallback(const nav_msgs::PathConstPtr &msg) {
-  if (msg->poses[0].pose.position.z < -0.1)
-    return;
-
+// 미션 시작 공용 진입점. 트리거 소스와 무관하게 동일 동작:
+//  - rviz 2D Nav Goal (-> waypoint_generator -> /waypoint_generator/waypoints)
+//  - rostopic pub /waypoint_generator/waypoints ... (직접 발행)
+//  - rosservice call /srv_start (rviz 없는 환경용)
+bool FastExplorationFSM::startMission(const std::string &source) {
   if (state_ != WAIT_TRIGGER)
-    return;
+    return false;
   fd_->trigger_ = true;
-  cout << "Triggered!" << endl;
   total_time_ = ros::Time::now().toSec();
+  // 미션 t0 재설정(+상대시간이 트리거 기준이 됨) + 파라미터 스냅샷 재발행
+  // (레코더가 이벤트 스트림을 받는 시점 이후에 남도록)
+  elog_.markMissionStart();
+  char tp[96];
+  snprintf(tp, sizeof(tp), "trigger received | pos=(%.2f, %.2f, %.2f)",
+           fd_->odom_pos_.x(), fd_->odom_pos_.y(), fd_->odom_pos_.z());
+  elog_.log("EVENT", "mission start (" + source + ")", tp, 0.0,
+            EventLogger::L_INFO, true);
+  logParamsEvents(true);
 
   if (fp_->takeoff_height_ > 0.0) {
     // Climb to the configured altitude and hover, then auto-start exploration once
@@ -129,11 +147,18 @@ void FastExplorationFSM::triggerCallback(const nav_msgs::PathConstPtr &msg) {
     takeoff_yaw_ = fd_->odom_yaw_;
     hover_enter_time_ = ros::Time::now();
     hover_stable_since_ = ros::Time(0);
-    transitState(TAKEOFF_HOVER, "triggerCallback: takeoff & hover");
+    transitState(TAKEOFF_HOVER, source + ": takeoff & hover");
   } else {
     // takeoff_height disabled -> original behaviour (start exploring immediately).
-    transitState(PLAN_TRAJ_EXP, "triggerCallback");
+    transitState(PLAN_TRAJ_EXP, source);
   }
+  return true;
+}
+
+void FastExplorationFSM::triggerCallback(const nav_msgs::PathConstPtr &msg) {
+  if (msg->poses.empty() || msg->poses[0].pose.position.z < -0.1)
+    return;
+  startMission("waypoints trigger");
 }
 
 void FastExplorationFSM::avoidFlagCallback(const std_msgs::Int16ConstPtr &msg) {
@@ -177,19 +202,22 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   }
   ros::Time t4 = ros::Time::now();
 
-  ROS_INFO_STREAM_THROTTLE(1.0, "cloud odom callback cost: " << "ikd-tree insert:" << (t2 - t1).toSec() * 1000 << "ms  "
-                                                             << "update frontier clusters: " << (t4 - t3).toSec() * 1000 << "ms  "
-                                                             << "total: " << (t4 - t1).toSec() * 1000 << "ms" << endl);
+  if (verbose_console_)
+    ROS_INFO_STREAM_THROTTLE(1.0, "cloud odom callback cost: " << "ikd-tree insert:" << (t2 - t1).toSec() * 1000 << "ms  "
+                                                               << "update frontier clusters: " << (t4 - t3).toSec() * 1000 << "ms  "
+                                                               << "total: " << (t4 - t1).toSec() * 1000 << "ms" << endl);
 }
 
 void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, bool red) {
   int pre_s = int(state_);
   state_ = new_state;
-  if (!red) {
-    cout << "\033[32m[" + pos_call + "]\033[0m: from " + fd_->state_str_[pre_s] + " to " + fd_->state_str_[int(new_state)] << endl;
-  } else {
-    cout << "\033[31m[" + pos_call + "]\033[0m: from " + fd_->state_str_[pre_s] + " to " + fd_->state_str_[int(new_state)] << endl;
-  }
+  // 이벤트 로거가 상태전이를 기록한다. PLAN<->EXEC 리플랜 플래핑 같은 A<->B 교대
+  // 패턴은 로거의 사이클 억제가 걸러 "cycling xN" heartbeat 만 남긴다.
+  elog_.setState(fd_->state_str_[int(new_state)]);
+  elog_.log("STATE",
+            fd_->state_str_[pre_s] + " -> " + fd_->state_str_[int(new_state)] +
+                " [" + pos_call + "]",
+            "", 0.0, red ? EventLogger::L_WARN : EventLogger::L_INFO);
 }
 
 void FastExplorationFSM::stopTraj() {

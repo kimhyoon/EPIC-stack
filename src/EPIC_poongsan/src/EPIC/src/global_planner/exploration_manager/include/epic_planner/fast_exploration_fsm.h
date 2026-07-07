@@ -32,6 +32,8 @@
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int16.h>
 #include <epic_planner/GoalService.h>
+#include <epic_planner/event_logger.h>
+#include <std_srvs/Trigger.h>
 
 using Eigen::Vector3d;
 using std::shared_ptr;
@@ -46,9 +48,11 @@ class PlanningVisualization;
 struct FSMParam;
 struct FSMData;
 
-// NOTE: TAKEOFF_HOVER is appended at the END so existing enum indices (used as
-// indices into fd_->state_str_) stay unchanged.
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER };
+// NOTE: TAKEOFF_HOVER/LANDED are appended at the END so existing enum indices
+// (used as indices into fd_->state_str_) stay unchanged.
+// LANDED: LAND(AUTO.LAND) 후 착지+disarm 이 확인된 최종 상태.
+//         record_on_goal 이 이 상태를 보고 녹화를 마감한다.
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED };
 
 class FastExplorationFSM {
 private:
@@ -73,6 +77,37 @@ private:
   ros::Publisher diag_pub_, diag_str_pub_;
   double last_plan_ms_ = 0.0;  // 마지막 global plan 총 소요시간 [ms] (HUD 표시용)
   void publishExplDiag();  // 클러스터/뷰포인트 수 + 실패 사유를 rviz/로그로 발행
+
+  /* structured flight-event logging (see event_logger.h) */
+  EventLogger elog_;
+  std::string local_reason_;          // 마지막 로컬 계획 실패 사유 (성공 시 clear)
+  std::vector<std::string> param_lines_; // PARAM 이벤트 라인 캐시 (트리거 시 재발행)
+  void logParamsEvents(bool force);   // 주요 파라미터를 이벤트+latched 토픽으로 덤프
+  // 미션 시작 공용 진입점 (rviz goal/waypoints 토픽/서비스가 모두 여길 탐).
+  // WAIT_TRIGGER 가 아니면 false.
+  bool startMission(const std::string &source);
+  // rviz 없이 터미널 한 줄로 시작: rosservice call /srv_start
+  ros::ServiceServer srv_start_;
+  bool startServiceCallback(std_srvs::Trigger::Request &req,
+                            std_srvs::Trigger::Response &res);
+  // 비행 중 즉시 원점(이륙지점) 복귀+착륙: rosservice call /srv_rth
+  // (좌표 지정 이동은 /srv_goto 로 분리 — GoalService 타입 유지)
+  ros::ServiceServer srv_rth_home_;
+  bool rthServiceCallback(std_srvs::Trigger::Request &req,
+                          std_srvs::Trigger::Response &res);
+  void logGlobalPlanEvent(int res, double t_ms); // GLOBAL 이벤트 공통 발행
+  bool verbose_console_ = false;      // true 면 기존 타이밍 cout/INFO 유지
+  /* stuck watchdog: 미션 상태에서 장시간 무이동 감지 (이벤트만, 자동회복 아님) */
+  Eigen::Vector3d stuck_ref_pos_ = Eigen::Vector3d::Zero();
+  ros::Time stuck_ref_t_;
+  /* AVOID 이벤트 에지용 */
+  ros::Time avoid_on_t_;
+  /* PX4 mode/armed 변화 감지용 */
+  bool px4_seen_ = false;
+  /* battery 이벤트 */
+  double battery_warn_voltage_ = 21.0;
+  /* reactive local avoidance 마스터 스위치 (real.yaml local_avoidance/enable) */
+  bool avoidance_enabled_ = true;
   ros::ServiceServer srv_goal_;
   
   // Global planning timing publishers

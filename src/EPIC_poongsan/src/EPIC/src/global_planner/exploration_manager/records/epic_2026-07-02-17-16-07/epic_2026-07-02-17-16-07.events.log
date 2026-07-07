@@ -1,0 +1,385 @@
+# EPIC structured flight events for epic_2026-07-02-17-16-07.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1782980166.964
+# box | down=[-150, -150, 0.5] up=[150, 150, 2.5]
+# corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.60 bubble_min_r=0.61
+# frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+# viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+# fsm | takeoff_h=1.25 goal_tol=0.10 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1782980170.003][     +3.1s][WAIT_TRIGGER] BATT 24.0V | v=24.49V pct=77%
+[1782980177.998][    +11.1s][WAIT_TRIGGER] BATT 24.0V | v=24.50V pct=77% (x3)
+[1782980181.955][    +15.0s][WAIT_TRIGGER] PX4 mode=POSCTL armed=1 | prev=POSCTL
+[1782980181.995][    +15.0s][WAIT_TRIGGER] BATT 24.5V | v=24.50V pct=77% (prev x1/2.0s)
+[1782980182.756][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(0.02, 0.01, 0.00)
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.5] up=[150, 150, 2.5]
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.60 bubble_min_r=0.61
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.25 goal_tol=0.10 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[1782980182.756][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[1782980182.756][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[1782980184.952][     +2.2s][TAKEOFF_HOVER] PX4 mode=OFFBOARD armed=1 | prev=POSCTL
+[1782980187.992][     +5.2s][TAKEOFF_HOVER] BATT 23.5V | v=23.86V pct=74% (prev cycle x1/6.0s)
+[1782980189.991][     +7.2s][TAKEOFF_HOVER] BATT 23.5V | v=23.65V pct=71%
+[1782980190.664][     +7.9s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: altitude reached & stable -> explore]
+[1782980190.829][     +8.1s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/7.5m goal=(0.0, -0.3, 1.7) t=18ms
+[1782980190.829][     +8.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980190.864][     +8.1s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=0.6m
+[1782980190.864][     +8.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980191.054][     +8.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980191.990][     +9.2s][EXEC_TRAJ] BATT 23.0V | v=23.50V pct=66%
+[1782980192.348][     +9.6s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/7.2m goal=(0.0, -0.4, 1.7) t=25ms (x2)
+[1782980193.025][    +10.3s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: minco optimize failed | t=33.4ms goal_d=0.3m (prev x3/1.9s)
+[1782980193.025][    +10.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed] |  (prev cycle x6/2.0s)
+[1782980193.211][    +10.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev x4/0.1s)
+[1782980193.246][    +10.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980193.838][    +11.1s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/7.0m goal=(0.0, -0.6, 1.7) t=10ms (x2)
+[1782980193.838][    +11.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980193.985][    +11.2s][EXEC_TRAJ] BATT 23.0V | v=23.40V pct=64%
+[1782980195.116][    +12.4s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/6.9m goal=(0.6, 0.4, 1.3) t=31ms (x1)
+[1782980195.988][    +13.2s][EXEC_TRAJ] BATT 23.0V | v=23.19V pct=61%
+[1782980196.397][    +13.6s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 1) vp=1(reach 1) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.0m goal=(1.1, -0.6, 1.3) t=50ms (x1)
+[1782980196.823][    +14.1s][EXEC_TRAJ] AVOID ON (obstacle close, reactive layer overrides cmd) | pos=(-0.12, -0.42, 1.77)
+[1782980196.993][    +14.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [avoidance released: replan from current pose] |  (prev cycle x9/3.2s)
+[1782980196.993][    +14.2s][PLAN_TRAJ_EXP] AVOID OFF (released, replan from current pose) | dur=0.2s
+[1782980197.646][    +14.9s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.6m goal=(5.6, 3.3, 0.9) t=5ms
+[1782980197.646][    +14.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.7s)
+[1782980197.682][    +14.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.831063] |  (prev cycle x1/0.0s)
+[1782980197.691][    +14.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[1782980197.724][    +15.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980197.725][    +15.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.882025]
+[1782980197.769][    +15.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.781598] |  (prev cycle x1/0.0s)
+[1782980197.812][    +15.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.731295] |  (prev cycle x1/0.0s)
+[1782980197.856][    +15.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.731845] |  (prev cycle x1/0.0s)
+[1782980197.862][    +15.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980197.898][    +15.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980197.899][    +15.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.681602]
+[1782980197.945][    +15.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.883346] |  (prev cycle x1/0.0s)
+[1782980197.985][    +15.2s][EXEC_TRAJ] BATT 22.5V | v=22.98V pct=60%
+[1782980197.996][    +15.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.840585] |  (prev cycle x1/0.1s)
+[1782980197.997][    +15.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.842204]
+[1782980198.039][    +15.3s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=6.6m (x18)
+[1782980198.039][    +15.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980198.572][    +15.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[1782980198.606][    +15.8s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=6.6m (prev cycle x1/5.6s)
+[1782980198.606][    +15.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980198.705][    +15.9s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.7m goal=(5.6, 3.3, 0.9) t=9ms (x1)
+[1782980198.705][    +15.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev x2/0.1s)
+[1782980199.048][    +16.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x3/0.3s)
+[1782980199.049][    +16.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032032]
+[1782980199.091][    +16.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980199.094][    +16.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.076998]
+[1782980199.138][    +16.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[1782980199.146][    +16.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.128714]
+[1782980199.180][    +16.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980199.225][    +16.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.208464] |  (prev x1/0.0s)
+[1782980199.279][    +16.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose] |  (prev cycle x1/0.1s)
+[1782980199.363][    +16.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980199.400][    +16.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.400][    +16.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.530036]
+[1782980199.410][    +16.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[1782980199.445][    +16.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.447][    +16.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.733659]
+[1782980199.495][    +16.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.737091] |  (prev cycle x1/0.0s)
+[1782980199.499][    +16.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[1782980199.532][    +16.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.542][    +16.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.789962]
+[1782980199.550][    +16.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.797022]
+[1782980199.586][    +16.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.591][    +16.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980199.595][    +16.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.738998]
+[1782980199.629][    +16.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.639][    +16.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.690234]
+[1782980199.650][    +16.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.700867]
+[1782980199.684][    +16.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.694][    +16.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.740071]
+[1782980199.694][    +16.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[1782980199.728][    +17.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.738][    +17.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.840586]
+[1782980199.745][    +17.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.847125]
+[1782980199.782][    +17.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.792][    +17.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.090065]
+[1782980199.793][    +17.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.091757]
+[1782980199.797][    +17.0s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.3m goal=(5.3, 3.5, 1.4) t=2ms (x4)
+[1782980199.797][    +17.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980199.835][    +17.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.845][    +17.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.640531]
+[1782980199.890][    +17.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.581361] |  (prev cycle x1/0.0s)
+[1782980199.894][    +17.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.584894]
+[1782980199.932][    +17.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.942][    +17.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.740279]
+[1782980199.945][    +17.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.742688]
+[1782980199.986][    +17.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980199.986][    +17.2s][EXEC_TRAJ] BATT 22.5V | v=22.94V pct=54%
+[1782980199.994][    +17.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.687855]
+[1782980200.640][    +17.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.6s)
+[1782980200.674][    +17.9s][PLAN_TRAJ_EXP] LOCAL EXP OK | why: escape traj (flyToSafeRegion) | t=33.4ms goal_d=6.3m (prev cycle x3/2.1s)
+[1782980200.675][    +17.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.180735] |  (prev cycle x1/0.0s)
+[1782980200.718][    +18.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.080370] |  (prev cycle x1/0.0s)
+[1782980200.763][    +18.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.032625] |  (prev cycle x1/0.0s)
+[1782980200.806][    +18.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.030841] |  (prev cycle x1/0.0s)
+[1782980200.856][    +18.1s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.4m goal=(5.4, 3.7, 1.4) t=6ms (x1)
+[1782980200.856][    +18.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[1782980200.858][    +18.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.038911]
+[1782980200.892][    +18.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980200.894][    +18.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.032001]
+[1782980200.937][    +18.2s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=6.3m (prev x5/0.2s)
+[1782980200.937][    +18.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980200.943][    +18.2s][PLAN_TRAJ_EXP] PX4 mode=POSCTL armed=1 (LEFT OFFBOARD: pilot takeover or failsafe) | prev=OFFBOARD
+[1782980201.082][    +18.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev x3/0.1s)
+[1782980201.480][    +18.7s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=6.2m (prev x11/0.5s)
+[1782980201.480][    +18.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x3/0.4s)
+[1782980201.490][    +18.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040446]
+[1782980201.494][    +18.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043951]
+[1782980201.534][    +18.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980201.541][    +18.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980201.583][    +18.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.133050] |  (prev cycle x1/0.0s)
+[1782980201.626][    +18.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.176192] |  (prev cycle x1/0.0s)
+[1782980201.670][    +18.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.220149] |  (prev cycle x1/0.0s)
+[1782980201.763][    +19.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980201.930][    +19.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x1/0.2s)
+[1782980201.940][    +19.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.691075]
+[1782980201.945][    +19.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.695617]
+[1782980201.984][    +19.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980201.989][    +19.2s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.2m goal=(5.4, 3.7, 1.4) t=5ms (x4)
+[1782980201.990][    +19.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980202.028][    +19.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.031427] |  (prev cycle x1/0.0s)
+[1782980202.072][    +19.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.981642] |  (prev cycle x1/0.0s)
+[1782980202.116][    +19.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.881666] |  (prev cycle x1/0.0s)
+[1782980202.159][    +19.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.781295] |  (prev cycle x1/0.0s)
+[1782980202.213][    +19.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980202.215][    +19.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.743340]
+[1782980202.249][    +19.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[1782980202.250][    +19.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.681653]
+[1782980202.297][    +19.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:2.034991] |  (prev cycle x1/0.0s)
+[1782980202.344][    +19.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.989123] |  (prev cycle x1/0.0s)
+[1782980202.389][    +19.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.990101] |  (prev cycle x1/0.0s)
+[1782980202.394][    +19.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.994871]
+[1782980202.415][    +19.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980202.416][    +19.7s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: next goal too close to occupancy -> re-run global | t=16.1ms goal_d=6.1m (prev cycle x2/0.9s)
+[1782980202.416][    +19.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980202.475][    +19.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x2/0.1s)
+[1782980203.074][    +20.3s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/10.2m goal=(4.4, 3.7, 1.0) t=13ms (x3)
+[1782980203.074][    +20.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980203.108][    +20.4s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.5ms goal_d=5.7m (prev cycle x1/0.7s)
+[1782980203.108][    +20.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980203.291][    +20.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev x4/0.1s)
+[1782980203.504][    +20.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x1/0.2s)
+[1782980203.512][    +20.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980203.514][    +20.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040881]
+[1782980203.548][    +20.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980203.550][    +20.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.077026]
+[1782980203.597][    +20.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.124435] |  (prev cycle x1/0.0s)
+[1782980203.644][    +20.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.171646] |  (prev cycle x1/0.0s)
+[1782980203.735][    +21.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980203.988][    +21.2s][PLAN_TRAJ_EXP] BATT 23.0V | v=23.17V pct=53%
+[1782980204.032][    +21.3s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=5.7m (prev cycle x2/0.9s)
+[1782980204.179][    +21.4s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 1) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=2n/9.3m goal=(4.3, 3.6, 1.0) t=14ms (x4)
+[1782980204.802][    +22.0s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.5ms goal_d=9.4m (prev cycle x4/0.8s)
+[1782980204.802][    +22.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x9/1.1s)
+[1782980204.804][    +22.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032482]
+[1782980204.847][    +22.1s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=9.4m
+[1782980204.847][    +22.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980204.876][    +22.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980204.878][    +22.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.106735]
+[1782980204.913][    +22.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980204.915][    +22.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.143201]
+[1782980204.958][    +22.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.186921] |  (prev cycle x1/0.0s)
+[1782980205.004][    +22.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.232493] |  (prev cycle x1/0.0s)
+[1782980205.089][    +22.3s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=9.4m (prev x4/0.2s)
+[1782980205.100][    +22.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980205.330][    +22.6s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.5m goal=(6.8, 4.7, 0.6) t=13ms (x4)
+[1782980205.811][    +23.1s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=6.9m (prev cycle x1/0.7s)
+[1782980205.812][    +23.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x6/0.7s)
+[1782980205.814][    +23.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032122]
+[1782980205.855][    +23.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980205.857][    +23.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.074658]
+[1782980205.900][    +23.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.118282] |  (prev cycle x1/0.0s)
+[1782980205.943][    +23.2s][PLAN_TRAJ_EXP] PX4 mode=POSCTL armed=0 | prev=POSCTL
+[1782980205.949][    +23.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.167390] |  (prev cycle x1/0.0s)
+[1782980206.009][    +23.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980206.009][    +23.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.80V pct=55% (prev cycle x1/8.0s)
+[1782980206.452][    +23.7s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.0m goal=(4.6, 4.6, 1.5) t=5ms (x4)
+[1782980206.851][    +24.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.8s)
+[1782980206.852][    +24.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032178]
+[1782980206.894][    +24.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980206.901][    +24.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980206.903][    +24.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.083132]
+[1782980206.938][    +24.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980206.948][    +24.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.128157]
+[1782980206.994][    +24.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.174306] |  (prev cycle x1/0.0s)
+[1782980207.123][    +24.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980207.581][    +24.8s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(4.6, 4.6, 1.5) t=6ms (x4)
+[1782980207.835][    +25.1s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=6.9m (x41)
+[1782980207.883][    +25.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.8s)
+[1782980207.894][    +25.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040213]
+[1782980207.929][    +25.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980207.975][    +25.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.120624] |  (prev x1/0.0s)
+[1782980207.981][    +25.2s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.99V pct=60%
+[1782980208.018][    +25.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.163935] |  (prev cycle x1/0.0s)
+[1782980208.033][    +25.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980208.067][    +25.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980208.069][    +25.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.214885]
+[1782980208.257][    +25.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.2s)
+[1782980208.722][    +26.0s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(4.6, 4.6, 1.5) t=28ms (x4)
+[1782980208.889][    +26.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x5/0.6s)
+[1782980208.894][    +26.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035816]
+[1782980208.933][    +26.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980208.941][    +26.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980208.979][    +26.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.121255] |  (prev cycle x1/0.0s)
+[1782980209.022][    +26.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.164313] |  (prev cycle x1/0.0s)
+[1782980209.066][    +26.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.208100] |  (prev cycle x1/0.0s)
+[1782980209.157][    +26.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980209.558][    +26.8s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=6.9m (prev cycle x7/3.7s)
+[1782980209.855][    +27.1s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(4.6, 4.6, 1.5) t=15ms (x4)
+[1782980209.891][    +27.1s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.5ms goal_d=6.9m (prev cycle x1/0.3s)
+[1782980209.891][    +27.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x6/0.7s)
+[1782980209.894][    +27.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032546]
+[1782980209.934][    +27.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980209.944][    +27.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.082329]
+[1782980209.978][    +27.2s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.5ms goal_d=6.9m (prev cycle x1/0.1s)
+[1782980209.980][    +27.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.06V pct=63%
+[1782980210.023][    +27.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.161448] |  (prev cycle x1/0.1s)
+[1782980210.066][    +27.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.205100] |  (prev cycle x1/0.0s)
+[1782980210.076][    +27.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980210.110][    +27.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980210.918][    +28.2s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=6.9m (prev cycle x1/0.9s)
+[1782980210.918][    +28.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x6/0.8s)
+[1782980210.920][    +28.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030565]
+[1782980210.962][    +28.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980210.964][    +28.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.074248]
+[1782980210.971][    +28.2s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(4.6, 4.6, 1.5) t=5ms (x4)
+[1782980210.971][    +28.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980211.006][    +28.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980211.008][    +28.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.118163]
+[1782980211.052][    +28.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.162251] |  (prev cycle x1/0.0s)
+[1782980211.098][    +28.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.208655] |  (prev cycle x1/0.0s)
+[1782980211.208][    +28.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980211.465][    +28.7s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=6.9m (prev cycle x1/0.5s)
+[1782980211.994][    +29.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.11V pct=64%
+[1782980212.004][    +29.2s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.11) still=8s
+[1782980212.103][    +29.3s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(4.6, 4.6, 1.5) t=18ms (x4)
+[1782980212.886][    +30.1s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.0m (prev x30/1.4s)
+[1782980212.886][    +30.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x15/1.7s)
+[1782980212.898][    +30.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041788]
+[1782980212.899][    +30.1s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.97, -0.11) still=9s (prev x18/0.8s)
+[1782980212.932][    +30.2s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=7.0m
+[1782980212.932][    +30.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980212.944][    +30.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.087959]
+[1782980212.945][    +30.2s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: post-check: new traj collides within 1s | pos=(0.89, -0.97, -0.11) still=9s
+[1782980213.024][    +30.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.168542] |  (prev cycle x1/0.1s)
+[1782980213.033][    +30.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980213.067][    +30.3s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.5ms goal_d=7.3m (prev x2/0.1s)
+[1782980213.067][    +30.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980213.069][    +30.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.213281]
+[1782980213.077][    +30.3s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.97, -0.11) still=9s (prev x2/0.1s)
+[1782980213.251][    +30.5s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.9m goal=(5.3, 4.3, 0.5) t=9ms (x4)
+[1782980213.251][    +30.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.2s)
+[1782980213.977][    +31.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.14V pct=65%
+[1782980214.062][    +31.3s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.0m (prev x21/1.0s)
+[1782980214.062][    +31.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.8s)
+[1782980214.064][    +31.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030320]
+[1782980214.073][    +31.3s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.11) still=10s (prev x21/1.0s)
+[1782980214.107][    +31.4s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=7.0m
+[1782980214.107][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980214.109][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.074872]
+[1782980214.117][    +31.4s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: post-check: new traj collides within 1s | pos=(0.89, -0.98, -0.11) still=10s
+[1782980214.157][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[1782980214.158][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.124628]
+[1782980214.194][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980214.198][    +31.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.163828]
+[1782980214.245][    +31.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.211677] |  (prev cycle x1/0.0s)
+[1782980214.378][    +31.6s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.8m goal=(5.4, 5.4, 0.6) t=5ms (x4)
+[1782980214.378][    +31.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980214.548][    +31.8s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=7.8m (prev x9/0.4s)
+[1782980214.558][    +31.8s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.11) still=11s (prev x9/0.4s)
+[1782980215.105][    +32.3s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.8m (prev cycle x1/0.6s)
+[1782980215.105][    +32.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x6/0.7s)
+[1782980215.107][    +32.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031720]
+[1782980215.115][    +32.4s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.11) still=11s (prev cycle x1/0.6s)
+[1782980215.149][    +32.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980215.150][    +32.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.074380]
+[1782980215.198][    +32.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.122029] |  (prev cycle x1/0.0s)
+[1782980215.249][    +32.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.173799] |  (prev cycle x1/0.1s)
+[1782980215.289][    +32.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[1782980215.380][    +32.6s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=7.8m (prev cycle x1/0.3s)
+[1782980215.390][    +32.6s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.11) still=11s (prev cycle x1/0.3s)
+[1782980215.532][    +32.8s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.8m goal=(5.4, 5.4, 0.6) t=21ms (x4)
+[1782980216.011][    +33.3s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.16V pct=66%
+[1782980216.147][    +33.4s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.8m (prev cycle x1/0.8s)
+[1782980216.147][    +33.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.9s)
+[1782980216.148][    +33.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031930]
+[1782980216.157][    +33.4s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.88, -0.98, -0.11) still=12s (prev cycle x1/0.8s)
+[1782980216.190][    +33.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980216.203][    +33.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980216.205][    +33.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.088680]
+[1782980216.240][    +33.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980216.247][    +33.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.130346]
+[1782980216.328][    +33.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.211788] |  (prev cycle x1/0.1s)
+[1782980216.423][    +33.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980216.640][    +33.9s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.8m goal=(5.4, 5.4, 0.6) t=4ms (x4)
+[1782980216.763][    +34.0s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=7.8m (prev cycle x1/0.6s)
+[1782980216.773][    +34.0s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.11) still=13s (prev cycle x1/0.6s)
+[1782980217.790][    +35.0s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.8m goal=(5.4, 5.4, 0.6) t=7ms (x4)
+[1782980218.005][    +35.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.19V pct=67%
+[1782980218.413][    +35.7s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.8m (prev x35/1.6s)
+[1782980218.413][    +35.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x17/2.0s)
+[1782980218.414][    +35.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031026]
+[1782980218.423][    +35.7s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.11) still=14s (prev x35/1.6s)
+[1782980218.456][    +35.7s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=7.8m
+[1782980218.456][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980218.465][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980218.467][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.083380]
+[1782980218.468][    +35.7s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: post-check: new traj collides within 1s | pos=(0.89, -0.98, -0.11) still=14s
+[1782980218.502][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980218.504][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.120751]
+[1782980218.545][    +35.8s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=33.4ms goal_d=7.8m (prev x1/0.0s)
+[1782980218.547][    +35.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.163829] |  (prev cycle x1/0.0s)
+[1782980218.556][    +35.8s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.11) still=15s (prev x1/0.0s)
+[1782980218.703][    +35.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.2s)
+[1782980218.921][    +36.2s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.2m goal=(5.5, 4.5, 0.6) t=5ms (x4)
+[1782980219.437][    +36.7s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.2m (prev cycle x3/0.9s)
+[1782980219.437][    +36.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.7s)
+[1782980219.445][    +36.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037087]
+[1782980219.447][    +36.7s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.12) still=15s (prev cycle x3/0.9s)
+[1782980219.483][    +36.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980219.528][    +36.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.120647] |  (prev x1/0.0s)
+[1782980219.573][    +36.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.165522] |  (prev cycle x1/0.0s)
+[1782980219.590][    +36.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980219.630][    +36.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980219.631][    +36.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.223385]
+[1782980219.806][    +37.1s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: escape: gcopter setup failed | t=34.3ms goal_d=7.2m (prev cycle x1/0.4s)
+[1782980219.813][    +37.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.2s)
+[1782980219.817][    +37.1s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: escape: gcopter setup failed | pos=(0.89, -0.98, -0.12) still=16s (prev cycle x1/0.4s)
+[1782980219.982][    +37.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.21V pct=68%
+[1782980220.042][    +37.3s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/8.1m goal=(5.5, 4.6, 0.6) t=13ms (x4)
+[1782980220.471][    +37.7s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=8.1m (prev cycle x1/0.7s)
+[1782980220.471][    +37.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x5/0.7s)
+[1782980220.472][    +37.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030701]
+[1782980220.491][    +37.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980220.492][    +37.7s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.11) still=16s (prev cycle x1/0.7s)
+[1782980220.525][    +37.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980220.527][    +37.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.085139]
+[1782980220.570][    +37.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.128679] |  (prev cycle x1/0.0s)
+[1782980220.614][    +37.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.172109] |  (prev cycle x1/0.0s)
+[1782980220.657][    +37.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.215751] |  (prev cycle x1/0.0s)
+[1782980220.704][    +37.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[1782980221.147][    +38.4s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/8.1m goal=(5.6, 5.6, 0.6) t=10ms (x4)
+[1782980221.485][    +38.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x7/0.8s)
+[1782980221.496][    +38.7s][EXEC_TRAJ] STUCK no motion >8s in EXEC_TRAJ | last-local: OK | pos=(0.89, -0.98, -0.12) still=17s (prev cycle x1/1.0s)
+[1782980221.496][    +38.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039033]
+[1782980221.501][    +38.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044201]
+[1782980221.506][    +38.7s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(0.89, -0.98, -0.11) still=18s
+[1782980221.539][    +38.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[1782980221.548][    +38.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.091185]
+[1782980221.549][    +38.8s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: post-check: new traj collides within 1s | pos=(0.89, -0.98, -0.12) still=18s
+[1782980221.598][    +38.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980221.633][    +38.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.176793] |  (prev cycle x1/0.0s)
+[1782980221.677][    +38.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.220027] |  (prev cycle x1/0.0s)
+[1782980221.815][    +39.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[1782980221.985][    +39.2s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.22V pct=68%
+[1782980222.283][    +39.5s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/8.3m goal=(5.7, 5.7, 0.6) t=12ms (x4)
+[1782980222.491][    +39.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub] |  (prev cycle x5/0.7s)
+[1782980222.521][    +39.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[1782980222.524][    +39.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.062757]

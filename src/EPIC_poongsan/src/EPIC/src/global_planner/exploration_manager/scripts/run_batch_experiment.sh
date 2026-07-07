@@ -212,7 +212,7 @@ poses:
 
     # 5. Call RTH
     echo "[iter $ITER_NUM] Calling RTH to origin ($ORIGIN_X, $ORIGIN_Y, $ORIGIN_Z)..."
-    timeout 10 rosservice call /srv_rth \
+    timeout 10 rosservice call /srv_goto \
         "x: $ORIGIN_X
 y: $ORIGIN_Y
 z: $ORIGIN_Z

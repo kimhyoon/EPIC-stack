@@ -1,0 +1,94 @@
+# EPIC structured flight events for epic_2026-07-03-11-21-46.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1783045305.987
+# box | down=[-150, -150, 0.4] up=[150, 150, 2]
+# corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=0.9 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.50
+# frontier | cell=0.40 cluster_sz=[0.5, 5.0] minpts=4 dphi=0.26 znum=3 good_dir_score=0.60
+# viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=8 local_tsp=16
+# fsm | takeoff_h=1.20 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1783045319.435][    +13.5s][WAIT_TRIGGER] PX4 mode=POSCTL armed=1 | prev=POSCTL
+[1783045320.138][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(-0.02, -0.00, -0.09)
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.4] up=[150, 150, 2]
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=0.9 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.50
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[0.5, 5.0] minpts=4 dphi=0.26 znum=3 good_dir_score=0.60
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=8 local_tsp=16
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.20 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[1783045320.139][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[1783045320.439][     +0.3s][TAKEOFF_HOVER] BATT 24.5V | v=24.81V pct=88% (x6)
+[1783045322.434][     +2.3s][TAKEOFF_HOVER] PX4 mode=OFFBOARD armed=1 | prev=POSCTL
+[1783045322.436][     +2.3s][TAKEOFF_HOVER] BATT 24.5V | v=24.80V pct=88%
+[1783045324.437][     +4.3s][TAKEOFF_HOVER] BATT 24.0V | v=24.29V pct=90%
+[1783045326.435][     +6.3s][TAKEOFF_HOVER] BATT 23.5V | v=23.96V pct=79%
+[1783045327.937][     +7.8s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: altitude reached & stable -> explore]
+[1783045328.036][     +7.9s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=18ms
+[1783045328.040][     +7.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.1m
+[1783045328.040][     +7.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: no frontier yet (warming up)]
+[1783045328.435][     +8.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.86V pct=76%
+[1783045329.142][     +9.0s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=24ms (x4)
+[1783045330.046][     +9.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.0m (x181)
+[1783045330.245][    +10.1s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=19ms (x4)
+[1783045330.435][    +10.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.70V pct=77%
+[1783045331.354][    +11.2s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=14ms (x4)
+[1783045332.047][    +11.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.2m (x183)
+[1783045332.414][    +12.3s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=17ms (x4)
+[1783045332.434][    +12.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.55V pct=71%
+[1783045333.037][    +12.9s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [PLAN_TRAJ_EXP: no frontier] |  (prev x457/5.0s)
+[1783045333.052][    +12.9s][FINISH] STATE FINISH -> FINISH [planGlobalPath: no frontier]
+[1783045333.054][    +12.9s][FINISH] MISSION FINISH (map fully explored) | pos=(0.81, -0.31, 1.00) elapsed=13s clusters_left=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0]
+[1783045333.477][    +13.3s][FINISH] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=10ms (x4)
+[1783045334.057][    +13.9s][PLAN_TRAJ_RTH] STATE FINISH -> PLAN_TRAJ_RTH [FINISH: hover done -> return home] |  (prev x4/0.8s)
+[1783045334.066][    +13.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.89m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045334.066][    +13.9s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: no global tour yet (RTH global plan pending) | t=0.0ms (prev x92/2.0s)
+[1783045334.066][    +13.9s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed]
+[1783045334.076][    +13.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.88m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045334.130][    +14.0s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.86m tol=0.20m goal=(-0.02, -0.00, 1.20) (x4)
+[1783045334.149][    +14.0s][PLAN_TRAJ_RTH] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.9m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.9m goal=(0.0, 0.0, 0.0) t=7ms (prev x2/0.4s)
+[1783045334.150][    +14.0s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev x6/0.1s)
+[1783045334.183][    +14.0s][PLAN_TRAJ_RTH] LOCAL RTH OK | t=33.4ms (prev x6/0.1s)
+[1783045334.184][    +14.0s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[1783045334.372][    +14.2s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.8m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.8m goal=(-0.0, -0.0, 1.2) t=7ms
+[1783045334.373][    +14.2s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[1783045334.373][    +14.2s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.79m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[1783045334.435][    +14.3s][EXEC_TRAJ] BATT 23.0V | v=23.35V pct=66%
+[1783045335.023][    +14.9s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.6m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.6m goal=(-0.0, -0.0, 1.2) t=7ms
+[1783045335.023][    +14.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.55m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045335.704][    +15.6s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.5m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.5m goal=(-0.0, -0.0, 1.2) t=10ms
+[1783045335.705][    +15.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.46m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045336.349][    +16.2s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.4m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.4m goal=(-0.0, -0.0, 1.2) t=8ms
+[1783045336.349][    +16.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.34m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045336.433][    +16.3s][EXEC_TRAJ] BATT 23.0V | v=23.40V pct=65%
+[1783045336.984][    +16.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.33m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045337.620][    +17.5s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.3m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.3m goal=(-0.0, -0.0, 1.2) t=8ms (prev x1/0.6s)
+[1783045337.620][    +17.5s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.27m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045338.285][    +18.1s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.2m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.2m goal=(-0.0, -0.0, 1.2) t=8ms
+[1783045338.286][    +18.1s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.22m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045338.319][    +18.2s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: minco optimize failed | t=33.4ms (prev x6/3.9s)
+[1783045338.319][    +18.2s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed] |  (prev cycle x12/3.9s)
+[1783045338.375][    +18.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.23m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[1783045338.454][    +18.3s][PLAN_TRAJ_RTH] BATT 23.0V | v=23.35V pct=64%
+[1783045338.462][    +18.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.24m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[1783045338.520][    +18.4s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev x4/0.2s)
+[1783045338.520][    +18.4s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.25m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045338.597][    +18.5s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success] |  (prev cycle x1/0.1s)
+[1783045339.184][    +19.0s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[1783045339.185][    +19.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.34m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[1783045339.823][    +19.7s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.4m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.4m goal=(-0.0, -0.0, 1.2) t=8ms (prev cycle x1/1.5s)
+[1783045339.823][    +19.7s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.37m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045340.433][    +20.3s][EXEC_TRAJ] BATT 23.0V | v=23.36V pct=62%
+[1783045340.455][    +20.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.39m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045341.102][    +21.0s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.5m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.5m goal=(-0.0, -0.0, 1.2) t=7ms (prev x1/0.6s)
+[1783045341.103][    +21.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.48m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045341.743][    +21.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.43m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045342.407][    +22.3s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.3m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.3m goal=(-0.0, -0.0, 1.2) t=7ms (prev cycle x1/1.3s)
+[1783045342.407][    +22.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.27m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045342.442][    +22.3s][EXEC_TRAJ] BATT 23.0V | v=23.41V pct=63%
+[1783045343.076][    +22.9s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.1m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.1m goal=(-0.0, -0.0, 1.2) t=7ms
+[1783045343.076][    +22.9s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.14m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[1783045343.076][    +22.9s][LAND] STATE PLAN_TRAJ_RTH -> LAND [RTH: home reached -> AUTO.LAND] |  (prev cycle x12/3.9s)
+[1783045343.430][    +23.3s][LAND] PX4 mode=AUTO.LAND armed=1 (LEFT OFFBOARD: pilot takeover or failsafe) | prev=OFFBOARD
+[1783045344.432][    +24.3s][LAND] BATT 23.0V | v=23.43V pct=62%
+[1783045347.426][    +27.3s][LAND] PX4 mode=OFFBOARD armed=0 | prev=AUTO.LAND
+[1783045347.427][    +27.3s][LANDED] STATE LAND -> LANDED [LAND: touchdown & disarmed]
+[1783045347.437][    +27.3s][LANDED] MISSION LANDED (mission complete, disarmed)

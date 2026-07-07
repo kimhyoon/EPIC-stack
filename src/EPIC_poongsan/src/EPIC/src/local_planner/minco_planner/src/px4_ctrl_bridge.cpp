@@ -145,6 +145,17 @@ int main(int argc, char** argv) {
   nh.param("avoid_cmd_timeout", avoid_cmd_timeout_, avoid_cmd_timeout_);
   nh.param("flag_timeout",      flag_timeout_,      flag_timeout_);
   nh.param("replan_on_release", replan_on_release_, replan_on_release_);
+  // real.yaml 마스터 스위치(local_avoidance/enable, exploration_node ns 로드)와 AND.
+  // false 면 회피 MUX 를 하드 차단 -> /target_avoidance 가 와도 EPIC 명령만 통과.
+  {
+    bool yaml_avoid = true;
+    if (ros::param::get("/exploration_node/local_avoidance/enable", yaml_avoid) &&
+        !yaml_avoid) {
+      enable_avoidance_ = false;
+      ROS_WARN("[px4_ctrl_bridge] avoidance MUX disabled by real.yaml "
+               "(local_avoidance/enable=false)");
+    }
+  }
 
   ros::NodeHandle gnh;  // global handle for shared topics
   ros::Subscriber state_sub = gnh.subscribe("/mavros/state", 10, stateCb);

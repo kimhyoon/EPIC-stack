@@ -95,11 +95,12 @@ void stateCallback(const visualization_msgs::Marker::ConstPtr& msg) {
                rth_start_index_, current_state_.c_str());
     }
 
-    // Debug: print current state
+    // Debug: print current state. FSM의 이벤트 로거(STATE 채널)가 전이를 이미
+    // 기록하므로 여기는 DEBUG 로 강등 (예전엔 리플랜 플래핑마다 INFO 스팸).
     static std::string last_state;
     if (current_state_ != last_state) {
-      ROS_INFO("\033[35m[Debug] State changed: %s (is_rth: %d, traj_size: %zu)\033[0m",
-               current_state_.c_str(), is_rth_mode_, traj_cmd_.size());
+      ROS_DEBUG("[traj_server] State changed: %s (is_rth: %d, traj_size: %zu)",
+                current_state_.c_str(), is_rth_mode_, traj_cmd_.size());
       last_state = current_state_;
     }
   }

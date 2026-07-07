@@ -1,0 +1,23 @@
+# EPIC structured flight events for epic_2026-07-02-19-19-01.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1782987540.868
+# box | down=[-150, -150, 0.5] up=[150, 150, 2]
+# corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.61
+# frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+# viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+# fsm | takeoff_h=1.10 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1782987546.248][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(0.02, -0.01, 0.01)
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.5] up=[150, 150, 2]
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.61
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.10 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[1782987546.248][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[1782987546.248][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[1782987549.288][     +3.0s][TAKEOFF_HOVER] AVOID ON (obstacle close, reactive layer overrides cmd) | pos=(0.02, -0.01, 0.01)
+[1782987553.488][     +7.2s][TAKEOFF_HOVER] AVOID OFF (released, replan from current pose) | dur=4.2s
+[1782987573.235][    +27.0s][TAKEOFF_HOVER] BATT 24.0V | v=24.32V pct=71% (still, x16/30.0s)
+[1782987573.559][    +27.3s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: timeout (near altitude) -> explore]
+[1782987573.714][    +27.5s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987574.347][    +28.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.002634]

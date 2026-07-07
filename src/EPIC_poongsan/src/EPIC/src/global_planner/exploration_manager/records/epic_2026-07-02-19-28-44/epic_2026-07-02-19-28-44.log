@@ -1,0 +1,18 @@
+# console (/rosout_agg) log for epic_2026-07-02-19-28-44.bag
+# started at 2026-07-02-19-28-44
+[INFO] [1782988125.052] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-02-19-28-44/epic_2026-07-02-19-28-44.events.log
+[INFO] [1782988127.211] [/mavros]: HP: requesting home position
+[WARN] [1782988129.992] [/exploration_node]: wait for trigger.
+[WARN] [1782988135.000] [/exploration_node]: wait for trigger.
+[INFO] [1782988137.211] [/mavros]: HP: requesting home position
+[WARN] [1782988140.000] [/exploration_node]: wait for trigger.
+[WARN] [1782988145.002] [/exploration_node]: wait for trigger.
+[INFO] [1782988147.211] [/mavros]: HP: requesting home position
+[WARN] [1782988150.012] [/exploration_node]: wait for trigger.
+[WARN] [1782988155.012] [/exploration_node]: wait for trigger.
+[INFO] [1782988157.008] [/exploration_node]: [EV] [1782988157.008][    +33.0s][WAIT_TRIGGER] BATT 24.0V | v=24.32V pct=71% (still, x16/30.0s)
+[INFO] [1782988157.211] [/mavros]: HP: requesting home position
+[WARN] [1782988160.020] [/exploration_node]: wait for trigger.
+[WARN] [1782988165.020] [/exploration_node]: wait for trigger.
+[INFO] [1782988167.211] [/mavros]: HP: requesting home position
+[WARN] [1782988170.021] [/exploration_node]: wait for trigger.

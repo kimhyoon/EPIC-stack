@@ -108,7 +108,7 @@ Visualization Manager:
           Marker Topic: /planning/travel_traj
           Name: history_traj
           Namespaces:
-            {}
+            traj_real: true
           Queue Size: 100
           Value: true
         - Class: rviz/MarkerArray
@@ -433,9 +433,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9147961139678955
+      Pitch: 0.9947962164878845
       Target Frame: <Fixed Frame>
-      Yaw: 1.012715220451355
+      Yaw: 2.022714853286743
     Saved:
       - Class: rviz/ThirdPersonFollower
         Distance: 40.93450164794922

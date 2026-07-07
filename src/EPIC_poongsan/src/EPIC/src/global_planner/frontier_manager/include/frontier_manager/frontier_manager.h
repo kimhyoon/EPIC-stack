@@ -202,6 +202,29 @@ struct SuperClusterInfo {
   Eigen::Vector3f waypoint;
 };
 
+// generateTSPViewpoints() 파이프라인 단계별 탈락 카운트.
+// "뷰포인트가 왜 0개인가"를 이벤트 로그/HUD에 그대로 표기하기 위한 계측.
+struct VpPipelineStats {
+  int total = 0;            // cluster_list_ 전체
+  int dormant = 0;          // 휴면(is_dormant_) 스킵
+  int unreachable_pre = 0;  // 이전 라운드에서 unreachable 판정 스킵
+  int considered = 0;       // 이번 라운드 뷰포인트 생성 대상(top-K + 신규)
+  int no_candidates = 0;    // initClusterViewpoints: 후보 0 (clearance/box/topo-region)
+  int topo_unreachable = 0; // removeUnreachableViewpoints: 토포그래프 도달 불가
+  int no_visibility = 0;    // selectBestViewpoint: 가시 프론티어 셀 부족(score 0)
+  int ok = 0;               // 최종 살아남은 클러스터(=뷰포인트 수)
+
+  std::string str() const {
+    char b[256];
+    snprintf(b, sizeof(b),
+             "pipeline[total=%d dormant=%d prev_unreachable=%d evaluated=%d "
+             "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d]",
+             total, dormant, unreachable_pre, considered, no_candidates,
+             topo_unreachable, no_visibility, ok);
+    return b;
+  }
+};
+
 class FrontierManager {
 private:
   FrontierParam frtp_;
@@ -274,6 +297,7 @@ public:
             TopoGraph::Ptr graph);
   // unordered_map<int, ClusterInfo::Ptr> new_clusters_;
   std::list<ClusterInfo::Ptr> cluster_list_;
+  VpPipelineStats vp_stats_; // 마지막 generateTSPViewpoints 단계별 통계
   void printMemoryCost();
 
   void viz_pocc();

@@ -17,5 +17,10 @@
   <depend>tf</depend>
   <depend>pcl_ros</depend>
   <depend>pcl_conversions</depend>
+  <!-- livox 입력 모드(USE_LIVOX_LIDAR=ON, 기본)에서만 실제로 필요.
+       워크스페이스에 livox_ros_driver2 가 있으면 빌드 순서 보장용으로 유효하고,
+       없는 PC 에서는 catkin 이 시스템 의존성으로 간주해 무시하므로
+       -DUSE_LIVOX_LIDAR=OFF 와 함께라면 이 줄이 있어도 빌드가 깨지지 않는다.
+       (rosdep install 을 쓸 때만 - -skip-keys livox_ros_driver2 필요) -->
   <depend>livox_ros_driver2</depend>
 </package>

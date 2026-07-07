@@ -92,6 +92,14 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   // 附近的+新生成的
   vector<ClusterInfo::Ptr> revp_clusters_vec; // revp: regenerate viewpoint
   revp_clusters_vec.insert(revp_clusters_vec.end(), revp_clusters_set.begin(), revp_clusters_set.end());
+
+  // --- 단계별 탈락 계측 (vp_stats_): "뷰포인트 0개"의 원인 추적용 ---
+  vp_stats_ = VpPipelineStats();
+  vp_stats_.total = (int)cluster_list_.size();
+  vp_stats_.dormant = dormant_count;
+  vp_stats_.unreachable_pre = unreachable_count;
+  vp_stats_.considered = (int)revp_clusters_vec.size();
+
   ros::Time t1 = ros::Time::now();
   omp_set_num_threads(4);
   // clang-format off
@@ -102,6 +110,11 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   }
   ros::Time t2 = ros::Time::now();
   // cout << "init cluster viewpoint cost: " << (t2 - t1).toSec() * 1000 << "ms" << endl;
+  int cand_ok = 0;
+  for (auto &cluster : revp_clusters_vec)
+    if (!cluster->vp_clusters_.empty())
+      cand_ok++;
+  vp_stats_.no_candidates = vp_stats_.considered - cand_ok;
 
   PointVector vp_centers;
   for (auto &cls : revp_clusters_vec) {
@@ -117,6 +130,8 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
     if (cluster->is_reachable_)
       clusters_can_be_searched_.push_back(cluster);
   }
+  vp_stats_.topo_unreachable =
+      std::max(0, cand_ok - (int)clusters_can_be_searched_.size());
 
   // ROS_INFO("[DEBUG generateTSPViewpoints] After removeUnreachableViewpoints: %lu -> %lu reachable",
   //          revp_clusters_vec.size(), clusters_can_be_searched_.size());
@@ -161,6 +176,9 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   });
   ros::Time t4 = ros::Time::now();
   // cout << "select best viewpoint cost: " << (t4 - t3).toSec() * 1000 << "ms" << endl;
+  vp_stats_.ok = (int)tsp_clusters.size();
+  vp_stats_.no_visibility =
+      std::max(0, (int)clusters_can_be_searched_.size() - vp_stats_.ok);
   // 重新topK
   vector<float> distance2odom2;
   vector<int> idx2;

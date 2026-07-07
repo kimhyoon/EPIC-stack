@@ -1,0 +1,123 @@
+# EPIC structured flight events for epic_2026-07-02-19-16-46.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1782987405.215
+# box | down=[-150, -150, 0.5] up=[150, 150, 2]
+# corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.61
+# frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+# viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+# fsm | takeoff_h=1.10 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1782987407.308][     +2.1s][WAIT_TRIGGER] BATT 24.0V | v=24.33V pct=72%
+[1782987409.636][     +4.4s][WAIT_TRIGGER] AVOID ON (obstacle close, reactive layer overrides cmd) | pos=(-0.08, 0.01, 0.10)
+[1782987410.036][     +4.8s][WAIT_TRIGGER] AVOID OFF (released, replan from current pose) | dur=0.4s
+[1782987419.302][    +14.1s][WAIT_TRIGGER] BATT 24.0V | v=24.33V pct=71% (x5)
+[1782987421.301][    +16.1s][WAIT_TRIGGER] BATT 24.0V | v=24.33V pct=72%
+[1782987425.317][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(-0.09, 0.01, 0.10)
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.5] up=[150, 150, 2]
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.61
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.10 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[1782987425.317][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[1782987425.317][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[1782987431.416][     +6.1s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: altitude reached & stable -> explore]
+[1782987431.463][     +6.1s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987432.096][     +6.8s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.203223]
+[1782987432.521][     +7.2s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.203566] |  (prev cycle x1/0.4s)
+[1782987432.742][     +7.4s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.103268] |  (prev cycle x1/0.2s)
+[1782987432.955][     +7.6s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.153868] |  (prev cycle x1/0.2s)
+[1782987432.963][     +7.6s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.111795] |  (prev cycle x1/0.0s)
+[1782987433.008][     +7.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.156595]
+[1782987433.058][     +7.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.156354]
+[1782987433.108][     +7.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.156272]
+[1782987433.158][     +7.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.156466]
+[1782987433.164][     +7.8s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987434.431][     +9.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.502637]
+[1782987434.655][     +9.3s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.502650] |  (prev cycle x1/0.2s)
+[1782987434.662][     +9.3s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.509315] |  (prev cycle x1/0.0s)
+[1782987434.707][     +9.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.503921]
+[1782987434.757][     +9.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.504479]
+[1782987434.807][     +9.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.503988]
+[1782987434.856][     +9.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.503688]
+[1782987434.861][     +9.5s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987435.068][     +9.8s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.502601]
+[1782987436.342][    +11.0s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.502901] |  (prev cycle x1/1.3s)
+[1782987436.555][    +11.2s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.502818] |  (prev cycle x1/0.2s)
+[1782987436.562][    +11.2s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.510629] |  (prev cycle x1/0.0s)
+[1782987436.609][    +11.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.507761]
+[1782987436.657][    +11.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.504926]
+[1782987436.707][    +11.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.505030]
+[1782987436.757][    +11.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.504800]
+[1782987436.762][    +11.4s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987436.971][    +11.7s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.452770]
+[1782987437.185][    +11.9s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.453796] |  (prev cycle x1/0.2s)
+[1782987437.398][    +12.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.453386] |  (prev cycle x1/0.2s)
+[1782987437.407][    +12.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.412383] |  (prev cycle x1/0.0s)
+[1782987437.457][    +12.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.412257]
+[1782987437.506][    +12.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.412091]
+[1782987437.557][    +12.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.412255]
+[1782987437.626][    +12.3s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987438.045][    +12.7s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.105426]
+[1782987438.256][    +12.9s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.102390] |  (prev cycle x1/0.2s)
+[1782987438.307][    +13.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.102846]
+[1782987438.358][    +13.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.103653]
+[1782987438.406][    +13.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.102125]
+[1782987438.466][    +13.1s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987438.468][    +13.2s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.113999]
+[1782987438.505][    +13.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.101472]
+[1782987438.557][    +13.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.102870]
+[1782987438.608][    +13.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.104238]
+[1782987438.658][    +13.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.104256]
+[1782987438.667][    +13.4s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[1782987439.306][    +14.0s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safe now]
+[1782987439.308][    +14.0s][PLAN_TRAJ_EXP] BATT 24.0V | v=24.33V pct=71% (x8)
+[1782987441.359][    +16.0s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=5ms
+[1782987441.360][    +16.0s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.7m
+[1782987441.360][    +16.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: no frontier yet (warming up)]
+[1782987441.563][    +16.2s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=2ms
+[1782987443.368][    +18.1s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.8m (x191)
+[1782987444.219][    +18.9s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=17ms (x12)
+[1782987445.242][    +19.9s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=6ms (x4)
+[1782987446.267][    +21.0s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=4ms (x4)
+[1782987446.360][    +21.0s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [PLAN_TRAJ_EXP: no frontier] |  (prev x476/5.0s)
+[1782987446.370][    +21.1s][FINISH] MISSION FINISH (premature? unreached clusters remain) | pos=(-0.51, 0.01, 1.71) elapsed=21s clusters_left=2(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0]
+[1782987446.470][    +21.2s][FINISH] STATE FINISH -> FINISH [planGlobalPath: no frontier]
+[1782987447.285][    +22.0s][FINISH] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=2ms (x4)
+[1782987447.289][    +22.0s][FINISH] BATT 24.0V | v=24.33V pct=72% (x3)
+[1782987447.380][    +22.1s][PLAN_TRAJ_RTH] STATE FINISH -> PLAN_TRAJ_RTH [FINISH: hover done -> return home] |  (prev x4/0.7s)
+[1782987447.390][    +22.1s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.42m tol=0.20m goal=(-0.09, 0.01, 1.10)
+[1782987447.390][    +22.1s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: no global tour yet (RTH global plan pending) | t=0.0ms (prev x285/4.0s)
+[1782987447.390][    +22.1s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed]
+[1782987447.486][    +22.2s][PLAN_TRAJ_RTH] GLOBAL result=RTH_NO_FRONTIER | why: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=0ms
+[1782987448.567][    +23.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.43m tol=0.20m goal=(-0.09, 0.01, 1.10) (x111)
+[1782987448.659][    +23.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.42m tol=0.20m goal=(-0.09, 0.01, 1.10) (x8)
+[1782987448.760][    +23.4s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.43m tol=0.20m goal=(-0.09, 0.01, 1.10) (x9)
+[1782987448.811][    +23.5s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.42m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987449.164][    +23.8s][PLAN_TRAJ_RTH] STUCK no motion >8s in PLAN_TRAJ_RTH | last-local: no global tour yet (RTH global plan pending) | pos=(-0.50, 0.03, 1.71) still=8s
+[1782987450.110][    +24.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.41m tol=0.20m goal=(-0.09, 0.01, 1.10) (x123)
+[1782987450.459][    +25.1s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.40m tol=0.20m goal=(-0.09, 0.01, 1.10) (x32)
+[1782987450.607][    +25.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.41m tol=0.20m goal=(-0.09, 0.01, 1.10) (x13)
+[1782987450.660][    +25.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.40m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987450.749][    +25.4s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: no global tour yet (RTH global plan pending) | t=0.1ms (x319)
+[1782987450.963][    +25.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.39m tol=0.20m goal=(-0.09, 0.01, 1.10) (x27)
+[1782987451.118][    +25.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.38m tol=0.20m goal=(-0.09, 0.01, 1.10) (x14)
+[1782987451.516][    +26.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.39m tol=0.20m goal=(-0.09, 0.01, 1.10) (x36)
+[1782987451.911][    +26.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.38m tol=0.20m goal=(-0.09, 0.01, 1.10) (x37)
+[1782987451.962][    +26.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.37m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.013][    +26.7s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.36m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.065][    +26.7s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.35m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.109][    +26.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.33m tol=0.20m goal=(-0.09, 0.01, 1.10) (x3)
+[1782987452.161][    +26.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.32m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.212][    +26.9s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.30m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.265][    +26.9s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.29m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.307][    +27.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.28m tol=0.20m goal=(-0.09, 0.01, 1.10) (x3)
+[1782987452.358][    +27.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.27m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.409][    +27.1s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.26m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.561][    +27.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.25m tol=0.20m goal=(-0.09, 0.01, 1.10) (x13)
+[1782987452.612][    +27.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.24m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.663][    +27.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.22m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.713][    +27.4s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.21m tol=0.20m goal=(-0.09, 0.01, 1.10) (x4)
+[1782987452.756][    +27.4s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.19m tol=0.20m goal=(-0.09, 0.01, 1.10) (x3)
+[1782987452.757][    +27.4s][LAND] STATE PLAN_TRAJ_RTH -> LAND [RTH: home reached -> AUTO.LAND] |  (prev x510/5.4s)
+[1782987452.764][    +27.4s][LANDED] STATE LAND -> LANDED [LAND: touchdown & disarmed]
+[1782987452.774][    +27.5s][LANDED] MISSION LANDED (mission complete, disarmed)

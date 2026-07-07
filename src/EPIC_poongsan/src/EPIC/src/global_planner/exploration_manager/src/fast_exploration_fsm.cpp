@@ -51,7 +51,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   // fresh replan so the trajectory handed back to PX4 starts where the drone
   // actually is -> no snap-back toward the obstacle.
   const bool avoiding =
-      have_avoid_flag_ && (avoid_flag_ == 1) &&
+      avoidance_enabled_ && have_avoid_flag_ && (avoid_flag_ == 1) &&
       ((ros::Time::now() - last_avoid_flag_stamp_).toSec() < avoid_flag_timeout_);
   const bool mission_active =
       (state_ == EXEC_TRAJ || state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH);
@@ -62,7 +62,43 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
     transitState(next_state, "avoidance released: replan from current pose", true);
   }
+  // Avoidance 이벤트: 발동/해제 에지에서 기록 (상태 지속 중 반복은 dedup이 억제).
+  // 빠른 Activated<->Deactivated 플래핑은 로거의 사이클 억제가 걸러준다.
+  if (avoiding && !avoiding_prev_) {
+    avoid_on_t_ = ros::Time::now();
+    char d[128];
+    snprintf(d, sizeof(d),
+             "obstacle close, reactive layer overrides cmd | pos=(%.2f, %.2f, %.2f)",
+             fd_->odom_pos_.x(), fd_->odom_pos_.y(), fd_->odom_pos_.z());
+    elog_.log("Avoidance:", "Activated", d, 0.0, EventLogger::L_WARN);
+  } else if (!avoiding && avoiding_prev_) {
+    char d[96];
+    snprintf(d, sizeof(d), "released, replan from current pose | duration=%.1fs",
+             (ros::Time::now() - avoid_on_t_).toSec());
+    elog_.log("Avoidance:", "Deactivated", d);
+  }
   avoiding_prev_ = avoiding;
+
+  // STUCK 감시: 미션 상태인데 장시간(>8s) 제자리면 사유와 함께 이벤트.
+  // (자동 회복은 하지 않음 — 진단 전용. INC1/2에서 조종자 개입 전 10~19s 무이동.)
+  if (fd_->have_odom_ && fd_->trigger_) {
+    const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    if (stuck_ref_t_.toSec() < 1e-6 || (cur - stuck_ref_pos_).norm() > 0.3) {
+      stuck_ref_pos_ = cur;
+      stuck_ref_t_ = ros::Time::now();
+    } else if (mission_active || state_ == CAUTION) {
+      const double still_s = (ros::Time::now() - stuck_ref_t_).toSec();
+      if (still_s > 8.0) {
+        char d[160];
+        snprintf(d, sizeof(d), "pos=(%.2f, %.2f, %.2f) stationary_for=%.0fs", cur.x(),
+                 cur.y(), cur.z(), still_s);
+        elog_.log("STUCK",
+                  "no motion >8s in " + fd_->state_str_[int(state_)] +
+                      " | last-local: " + (local_reason_.empty() ? "OK" : local_reason_),
+                  d, 5.0, EventLogger::L_ERROR);
+      }
+    }
+  }
 
   switch (state_) {
   case INIT: {
@@ -75,7 +111,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case WAIT_TRIGGER: {
-    ROS_WARN_THROTTLE(1.0, "wait for trigger.");
+    ROS_WARN_THROTTLE(5.0, "wait for trigger.");
     break;
   }
 
@@ -141,6 +177,21 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       finish_hover_pos_ = fd_->odom_pos_.cast<double>();
       finish_hover_yaw_ = fd_->odom_yaw_;
       stopTraj();
+      // 탐사 종료 요약. 클러스터가 남아있는데 끝났다면 "조기 종료 의심"을 명시
+      // (INC1: clusters 17 / reach 0 로 FINISH -> 이게 이번 사고의 1번 원인이었음).
+      auto ed = expl_manager_->ed_;
+      char d[320];
+      snprintf(d, sizeof(d),
+               "pos=(%.2f, %.2f, %.2f) elapsed=%.0fs clusters_left=%d(reachable %d) %s",
+               finish_hover_pos_.x(), finish_hover_pos_.y(), finish_hover_pos_.z(),
+               ros::Time::now().toSec() - total_time_, ed->diag_num_clusters_,
+               ed->diag_num_clusters_reachable_,
+               expl_manager_->frontier_manager_ptr_->vp_stats_.str().c_str());
+      const bool premature = ed->diag_num_clusters_ > 0;
+      elog_.log("MISSION",
+                premature ? "FINISH (premature? unreached clusters remain)"
+                          : "FINISH (map fully explored)",
+                d, 0.0, premature ? EventLogger::L_WARN : EventLogger::L_INFO, true);
     }
 
     const bool do_auto =
@@ -202,8 +253,20 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     exec_timer_.stop();
     int res = callExplorationPlanner();
     exec_timer_.start();
-    ROS_INFO("\033[31m call planner \033[0m: %.3f",
-             (ros::Time::now() - tplan).toSec() * 1000.0);
+    {
+      const double t_ms = (ros::Time::now() - tplan).toSec() * 1000.0;
+      const char *rs = res == SUCCEED ? "OK"
+                       : res == FAIL  ? "FAIL"
+                       : res == START_FAIL ? "START_FAIL" : "NO_FRONTIER";
+      char d[96];
+      snprintf(d, sizeof(d), "plan_time=%.1fms goal_dist=%.1fm", t_ms,
+               (expl_manager_->ed_->next_goal_node_->center_ - fd_->odom_pos_).norm());
+      std::string sig = std::string("explore ") + rs;
+      if (!local_reason_.empty())
+        sig += " | why: " + local_reason_;
+      elog_.log("LOCAL", sig, d, res == SUCCEED ? 5.0 : 2.0,
+                res == SUCCEED ? EventLogger::L_INFO : EventLogger::L_WARN);
+    }
 
     if (res == SUCCEED) {
       frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
@@ -261,8 +324,15 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       dist = (cur - gp).norm();                      // 3D distance to service goal
       tol = goal_tolerance_;
     }
-    ROS_INFO("\033[36m[RTH] %s distance to goal: %.3f m (tolerance: %.3f m)\033[0m",
-             returning_home_ ? "xy" : "3D", dist, tol);
+    // 진행상황: 0.5m 버킷이 바뀔 때만 이벤트 발행 (예전엔 사이클마다 INFO 스팸)
+    {
+      char sig[64], d[144];
+      snprintf(sig, sizeof(sig), "dist_to_goal=%.1fm", std::floor(dist * 2.0) / 2.0);
+      snprintf(d, sizeof(d), "%s dist=%.2fm tolerance=%.2fm goal=(%.2f, %.2f, %.2f)",
+               returning_home_ ? "auto-home(xy)" : "srv-goal(3D)", dist, tol,
+               gp.x(), gp.y(), gp.z());
+      elog_.log("RTH", sig, d, 0.0);
+    }
 
     if (dist < tol) {
       has_goal_rth_ = false;
@@ -287,8 +357,19 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     exec_timer_.stop();
     int res = callGoalPlanner();
     exec_timer_.start();
-    ROS_INFO("\033[31m call goal planner \033[0m: %.3f",
-             (ros::Time::now() - tplan).toSec() * 1000.0);
+    {
+      const double t_ms = (ros::Time::now() - tplan).toSec() * 1000.0;
+      const char *rs = res == SUCCEED ? "OK"
+                       : res == FAIL  ? "FAIL"
+                       : res == START_FAIL ? "START_FAIL" : "NO_FRONTIER";
+      char d[64];
+      snprintf(d, sizeof(d), "plan_time=%.1fms", t_ms);
+      std::string sig = std::string("RTH ") + rs;
+      if (!local_reason_.empty())
+        sig += " | why: " + local_reason_;
+      elog_.log("LOCAL", sig, d, res == SUCCEED ? 5.0 : 2.0,
+                res == SUCCEED ? EventLogger::L_INFO : EventLogger::L_WARN);
+    }
 
     if (res == SUCCEED) {
       poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
@@ -379,8 +460,16 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
   case LAND: {
     stopTraj();
-    exec_timer_.stop();
     global_path_update_timer_.stop();
+    // NOTE: exec_timer_ 는 멈추지 않는다 — 이 콜백이 계속 돌아야 AUTO.LAND 재요청과
+    // 착지(disarm) 감지가 동작한다. (예전 exec_timer_.stop() 은 첫 틱에서 FSM 을
+    // 정지시켜 "2Hz 재요청" 주석과 모순되는 잠재 버그였음.)
+    //
+    // 착지 완료: PX4 가 지면 감지 후 자동 disarm (조종자 수동 disarm 포함) -> LANDED.
+    if (px4_seen_ && !px4_state_.armed) {
+      transitState(LANDED, "LAND: touchdown & disarmed");
+      break;
+    }
     // Switch PX4 to AUTO.LAND: PX4 throttles down, descends, ground-detects and
     // auto-disarms. Non-blocking — request at ~2 Hz until /mavros/state confirms the
     // mode (the old while(1) froze the FSM thread and published to /px4ctrl/takeoff_land
@@ -401,6 +490,14 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     } else {
       ROS_INFO_THROTTLE(2.0, "\033[32m[LAND] PX4 in AUTO.LAND -> descending & auto-disarm\033[0m");
     }
+    break;
+  }
+
+  case LANDED: {
+    // 미션 완전 종료 (착지 + disarm). record_on_goal 이 /planning/state 의 이 상태를
+    // 보고 녹화를 마감한다. 여기서는 상태 발행(pubState)만 유지하며 대기.
+    elog_.log("MISSION", "LANDED (mission complete, disarmed)", "", 0.0,
+              EventLogger::L_INFO);
     break;
   }
   }
@@ -432,7 +529,30 @@ void FastExplorationFSM::pubHoverCmd() {
 }
 
 void FastExplorationFSM::mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg) {
+  // PX4 mode/armed 변화는 사고 분석의 1급 정보 (예: 미션 중 OFFBOARD->POSCTL
+  // = 조종자 개입). 변화 시에만 이벤트.
+  const bool mode_changed = px4_seen_ && (msg->mode != px4_state_.mode);
+  const bool armed_changed = px4_seen_ && (msg->armed != px4_state_.armed);
+  const std::string prev_mode = px4_state_.mode;
   px4_state_ = *msg;
+  if (!px4_seen_) {
+    px4_seen_ = true;
+    elog_.log("PX4", "mode=" + msg->mode + " armed=" + (msg->armed ? "1" : "0"));
+    return;
+  }
+  if (mode_changed || armed_changed) {
+    // 미션 중 OFFBOARD 이탈/시동해제는 WARN 으로 격상
+    const bool left_offboard =
+        mode_changed && prev_mode == "OFFBOARD" && msg->mode != "OFFBOARD";
+    const bool disarmed = armed_changed && !msg->armed;
+    int lvl = (fd_ && fd_->trigger_ && (left_offboard || disarmed))
+                  ? EventLogger::L_WARN
+                  : EventLogger::L_INFO;
+    std::string sig = "mode=" + msg->mode + " armed=" + (msg->armed ? "1" : "0");
+    if (left_offboard)
+      sig += " (LEFT OFFBOARD: pilot takeover or failsafe)";
+    elog_.log("PX4", sig, "prev=" + prev_mode, 0.0, lvl);
+  }
 }
 
 void FastExplorationFSM::init(ros::NodeHandle &nh,
@@ -469,6 +589,14 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
   local_planning_min_period_ = 1.0 / local_planning_max_hz_;
+  // 이벤트 로깅 관련: verbose_console=true 면 기존 타이밍 cout 유지(개발용),
+  // battery_warn_voltage 미만이면 BATT 이벤트가 WARN 으로 격상.
+  nh.param("fsm/verbose_console", verbose_console_, false);
+  nh.param("fsm/battery_warn_voltage", battery_warn_voltage_, 21.0);
+  // reactive local avoidance 마스터 스위치 (real.yaml). false 면 avoid 플래그 무시.
+  nh.param("local_avoidance/enable", avoidance_enabled_, true);
+  elog_.init(nh);
+  elog_.setState("INIT");
   ROS_INFO("Local planning max Hz: %.1f (min period: %.4f s)", local_planning_max_hz_, local_planning_min_period_);
   /* Initialize main modules */
   // expl_manager_.reset(new FastExplorationManager);
@@ -480,7 +608,7 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   fd_->have_odom_ = false;
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
                      "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
-                     "TAKEOFF_HOVER"};
+                     "TAKEOFF_HOVER", "LANDED"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -504,7 +632,12 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   avoid_flag_sub_ = nh.subscribe("/FSM_flag_avoidance", 10,
                                  &FastExplorationFSM::avoidFlagCallback, this,
                                  ros::TransportHints().tcpNoDelay());
-  srv_goal_ = nh.advertiseService("/srv_rth", &FastExplorationFSM::goalServiceCallback, this);
+  // 좌표 지정 이동 (구 /srv_rth — 이름 변경. run_batch_experiment.sh 도 갱신됨)
+  srv_goal_ = nh.advertiseService("/srv_goto", &FastExplorationFSM::goalServiceCallback, this);
+  // rviz 없는 환경용 시작 트리거: rosservice call /srv_start
+  srv_start_ = nh.advertiseService("/srv_start", &FastExplorationFSM::startServiceCallback, this);
+  // 원터치 홈복귀+착륙: rosservice call /srv_rth (인자 없음)
+  srv_rth_home_ = nh.advertiseService("/srv_rth", &FastExplorationFSM::rthServiceCallback, this);
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
   // AUTO.LAND at the end of the auto return-home sequence (and /mavros/state to
@@ -559,10 +692,123 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       SyncPolicyCloudOdom(10), *cloud_sub_, *odom_sub_));
   sync_cloud_odom_->registerCallback(
       boost::bind(&FastExplorationFSM::CloudOdomCallback, this, _1, _2));
+
+  // ---- PARAM 이벤트 라인 캐시 구성 ----
+  // 계획 성공/실패를 좌우하는 핵심 파라미터를 이벤트 스트림에 남긴다.
+  // 기동 시 1회 + 트리거 시 재발행(레코딩이 goal 시점부터라 bag/log에 남도록).
+  {
+    auto getd = [&](const char *k, double def) {
+      double v;
+      nh.param(k, v, def);
+      return v;
+    };
+    auto geti = [&](const char *k, int def) {
+      int v;
+      nh.param(k, v, def);
+      return v;
+    };
+    std::vector<double> bx_dn, bx_up;
+    nh.param("box_0/down", bx_dn, std::vector<double>());
+    nh.param("box_0/up", bx_up, std::vector<double>());
+    std::string odom_t, cloud_t;
+    nh.param("odometry_topic", odom_t, std::string("?"));
+    nh.param("cloud_topic", cloud_t, std::string("?"));
+
+    char l[288];
+    param_lines_.clear();
+    if (bx_dn.size() == 3 && bx_up.size() == 3)
+      snprintf(l, sizeof(l), "box | down=[%g, %g, %g] up=[%g, %g, %g]", bx_dn[0],
+               bx_dn[1], bx_dn[2], bx_up[0], bx_up[1], bx_up[2]);
+    else
+      snprintf(l, sizeof(l), "box | (box_0 params missing)");
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l),
+             "corridor | DilateRadiusSoft=%.2f DilateRadiusHard=%.2f "
+             "MaxCorridorSize=%.1f MaxVelMag=%.1f max_traj_len=%.1f "
+             "astar_safe_distance=%.2f bubble_min_radius=%.2f",
+             getd("DilateRadiusSoft", -1), getd("DilateRadiusHard", -1),
+             getd("MaxCorridorSize", -1), getd("MaxVelMag", -1),
+             getd("max_traj_len", -1), getd("bubble_astar/safe_distance", -1),
+             getd("bubble_topo/bubble_min_radius", -1));
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l),
+             "frontier | cell_size=%.2f cluster_size=[%.1f, %.1f] "
+             "cluster_min_points=%d candidate_dphi=%.2f candidate_znum=%d "
+             "good_observation_dir_score=%.2f",
+             getd("FrontierManager/cell_size", -1),
+             getd("FrontierManager/cluster_min_size", -1),
+             getd("FrontierManager/cluster_max_size", -1),
+             geti("FrontierManager/cluster_minmum_point_num", -1),
+             getd("frontier/candidate_dphi", -1), geti("frontier/candidate_znum", -1),
+             getd("FrontierManager/good_observation_direction_score", -1));
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l),
+             "viewpoint | pillar_radius=[%.1f, %.1f]x%d pillar_height=[%.1f, %.1f]x%d "
+             "circle_samples=%d min_obstacle_clearance=%.2f local_tsp_size=%d",
+             getd("ViewpointManager/sample_pillar_min_radius", -1),
+             getd("ViewpointManager/sample_pillar_max_radius", -1),
+             geti("ViewpointManager/sample_pillar_radius_layer_num", -1),
+             getd("ViewpointManager/sample_pillar_min_height", -1),
+             getd("ViewpointManager/sample_pillar_max_height", -1),
+             geti("ViewpointManager/sample_pillar_height_layer_num", -1),
+             geti("ViewpointManager/sample_pillar_circle_sample_num", -1),
+             getd("ViewpointManager/min_obstacle_clearance", -1),
+             geti("ViewpointManager/local_tsp_size", -1));
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l),
+             "fsm | takeoff_height=%.2f goal_tolerance=%.2f replan_time=%.2f "
+             "emergency_replan_error=%.1f local_plan_max_hz=%.0f "
+             "avoid_flag_timeout=%.1f auto_rth_land=%d rth_land_xy_tol=%.2f "
+             "avoidance_enabled=%d",
+             fp_->takeoff_height_, goal_tolerance_, fp_->replan_time_,
+             fp_->emergency_replan_control_error, local_planning_max_hz_,
+             avoid_flag_timeout_, auto_rth_land_ ? 1 : 0, rth_land_xy_tol_,
+             avoidance_enabled_ ? 1 : 0);
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l), "topics | odom=%s cloud=%s", odom_t.c_str(),
+             cloud_t.c_str());
+    param_lines_.push_back(l);
+  }
+  logParamsEvents(false);
+}
+
+// 캐시된 PARAM 라인들을 이벤트로 발행하고, 전체 스냅샷을 latched
+// /epic/session_info 로도 발행 (늦게 시작한 rosbag/record_on_goal 도 수신).
+void FastExplorationFSM::logParamsEvents(bool force) {
+  std::string all;
+  for (auto &l : param_lines_) {
+    elog_.log("PARAM", l, "", 0.0, EventLogger::L_INFO, force);
+    all += l + "\n";
+  }
+  // 현재 회피 상태도 함께 기록 (기동/트리거 시점 스냅샷; 이후는 에지 이벤트가 담당)
+  elog_.log("Avoidance:",
+            !avoidance_enabled_
+                ? "Disabled (local_avoidance/enable=false)"
+                : (avoiding_prev_ ? "Activated" : "Deactivated"),
+            "", 0.0, EventLogger::L_INFO, force);
+  char head[96];
+  snprintf(head, sizeof(head), "EPIC session info | published_ros=%.3f\n",
+           ros::Time::now().toSec());
+  elog_.publishSessionInfo(std::string(head) + all);
 }
 
 void FastExplorationFSM::battaryCallback(
     const sensor_msgs::BatteryStateConstPtr &msg) {
+  // 0.5V 버킷이 바뀔 때만 이벤트. 경고 전압 미만이면 WARN (자동 착륙은 안 함).
+  if (!std::isfinite(msg->voltage) || msg->voltage <= 0.1)
+    return;
+  char sig[48], d[96];
+  snprintf(sig, sizeof(sig), "%.1fV", std::floor(msg->voltage * 2.0) / 2.0);
+  snprintf(d, sizeof(d), "voltage=%.2fV percent=%.0f%%", msg->voltage,
+           msg->percentage >= 0 ? msg->percentage * 100.0 : -1.0);
+  elog_.log("BATT", sig, d, 0.0,
+            msg->voltage < battery_warn_voltage_ ? EventLogger::L_WARN
+                                                 : EventLogger::L_INFO);
   // if(msg->voltage < 21.0){
   //   transitState(LAND, "battary low");
   // }
@@ -631,12 +877,13 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   // Handle RTH mode and exploration mode separately
   if (has_goal_rth_) {
     // RTH mode: call planGoalPath and transition to PLAN_TRAJ_RTH
+    ros::Time t_rth = ros::Time::now();
     int res = expl_manager_->planGoalPath(goal_rth_.head<3>(), goal_rth_(3));
+    last_plan_ms_ = (ros::Time::now() - t_rth).toSec() * 1000.0;
+    logGlobalPlanEvent(res, last_plan_ms_);
+    publishExplDiag(); // RTH 중에도 HUD/진단 유지 (예전엔 여기서 끊겨 분석 공백)
     if (res == SUCCEED && state_ != WAIT_TRIGGER) {
       transitState(PLAN_TRAJ_RTH, "planGoalPath: succeed");
-    } else if (res == FAIL) {
-      // Keep current state, will retry on next timer callback
-      ROS_WARN("RTH global path planning failed, will retry");
     }
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
@@ -645,26 +892,20 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   }
 
   // Exploration mode: use TSP-based global planning
-  cout << endl << endl;
-  cout << "\033[1;33m------------- <" << cnt
-       << "> Plan Global Path start---------------" << "\033[0m" << endl;
+  if (verbose_console_) {
+    cout << endl << endl;
+    cout << "\033[1;33m------------- <" << cnt
+         << "> Plan Global Path start---------------" << "\033[0m" << endl;
+  }
   planner_manager_->topo_graph_->log << "<" << cnt << ">" << endl;
   ros::Time t4 = ros::Time::now();
-  // cout << "updateSkeleton time cost:" << (t3 - t2).toSec() * 1000 << "ms" <<
-  // endl; if( (t3 - t1).toSec() * 1000 > 100){
-  //   ROS_ERROR("time too long");
-  //   exit(0);
-  // }
-  ROS_INFO("update topo skeleton cost: %fms, update odom vertex cost:%fms ",
-           (t3 - t2).toSec() * 1000, (t4 - t3).toSec() * 1000);
+  if (verbose_console_)
+    ROS_INFO("update topo skeleton cost: %fms, update odom vertex cost:%fms ",
+             (t3 - t2).toSec() * 1000, (t4 - t3).toSec() * 1000);
   Eigen::Vector3d vel = fd_->odom_vel_.cast<double>();
   Eigen::Vector3d odom = fd_->odom_pos_.cast<double>();
   int res = expl_manager_->planGlobalPath(odom, vel);
   ros::Time t5 = ros::Time::now();
-
-  cout << "\033[1;33m-------------Plan Global Path end-----------------"
-       << "\033[0m" << endl
-       << endl;
 
   planner_manager_->graph_visualizer_->vizBox(planner_manager_->topo_graph_);
   if(expl_manager_->ep_->view_graph_)
@@ -674,7 +915,9 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   time_cost.data = time_cost_now;
   time_cost_pub_.publish(time_cost);
 
-  cout << "total time cost: " << time_cost_now << "ms" << endl;
+  logGlobalPlanEvent(res, time_cost_now);
+  if (verbose_console_)
+    cout << "total time cost: " << time_cost_now << "ms" << endl;
   if (res == NO_FRONTIER && state_ != WAIT_TRIGGER) {
     // Only finish if the map/frontiers were actually ready (warmup elapsed or
     // frontiers seen before); otherwise this is a startup artifact -> wait.
@@ -698,8 +941,33 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     t_p = ros::Time::now();
   }
   global_path_update_timer_.start();
-  cout << "viz&&print cost:" << (ros::Time::now() - t5).toSec() * 1000 << "ms"
-       << endl;
+  if (verbose_console_)
+    cout << "viz&&print cost:" << (ros::Time::now() - t5).toSec() * 1000 << "ms"
+         << endl;
+}
+
+// GLOBAL 계획 결과를 이벤트로 발행. sig=결과 분류(+사유), detail=카운트/투어/시간.
+// 카운트만 바뀌는 변화는 1s 코얼레싱, 결과 분류가 바뀌면 즉시 발행된다.
+void FastExplorationFSM::logGlobalPlanEvent(int res, double t_ms) {
+  auto ed = expl_manager_->ed_;
+  double tour_len = 0.0;
+  for (size_t i = 1; i < ed->global_tour_.size(); ++i)
+    tour_len += (ed->global_tour_[i] - ed->global_tour_[i - 1]).norm();
+  const Eigen::Vector3f goalp =
+      ed->next_goal_node_ ? ed->next_goal_node_->center_ : Eigen::Vector3f::Zero();
+  char d[400];
+  snprintf(d, sizeof(d),
+           "clusters=%d(reachable %d) viewpoints=%d(path_reachable %d) %s "
+           "tour=%zu_nodes/%.1fm next_goal=(%.1f, %.1f, %.1f) plan_time=%.0fms",
+           ed->diag_num_clusters_, ed->diag_num_clusters_reachable_,
+           ed->diag_num_viewpoints_, ed->diag_num_reachable_vp_,
+           expl_manager_->frontier_manager_ptr_->vp_stats_.str().c_str(),
+           ed->global_tour_.size(), tour_len, goalp.x(), goalp.y(), goalp.z(), t_ms);
+  std::string sig = "result=" + ed->diag_result_;
+  if (ed->diag_result_ != "OK" && ed->diag_reason_ != "OK" && !ed->diag_reason_.empty())
+    sig += " | why: " + ed->diag_reason_;
+  const bool bad = (res != SUCCEED);
+  elog_.log("GLOBAL", sig, d, 1.0, bad ? EventLogger::L_WARN : EventLogger::L_INFO);
 }
 
 void FastExplorationFSM::publishExplDiag() {
@@ -746,14 +1014,15 @@ void FastExplorationFSM::publishExplDiag() {
      << (fd_->static_state_ ? 1 : 0) << "  avoid " << (avoiding ? 1 : 0)
      << "  rth " << (has_goal_rth_ ? 1 : 0) << "   fail bb "
      << fd_->bb_astar_fail_cnt_ << " fs " << fd_->fast_search_fial_cnt_ << "\n"
-     << "plan: " << ed->diag_reason_;
+     << "global: " << ed->diag_result_ << "\n"
+     << "local: " << (local_reason_.empty() ? "OK" : local_reason_);
   const std::string txt = ss.str();
 
-  // 1) 기록용 문자열 (rosbag + /rosout 로 남도록 String + throttled log)
+  // 1) 기록용 문자열 (rosbag). rosout 은 이벤트 로거([EV] ...)가 담당하므로
+  //    여기서는 스로틀 로그를 찍지 않는다 (중복 스팸 방지).
   std_msgs::String smsg;
   smsg.data = txt;
   diag_str_pub_.publish(smsg);
-  ROS_INFO_STREAM_THROTTLE(1.0, "[expl-diag] " << txt);
 
   // 2) rviz HUD: 드론 위에 떠다니는 텍스트 마커 (frontier 마커와 같은 "odom" 프레임)
   visualization_msgs::Marker m;
@@ -769,7 +1038,8 @@ void FastExplorationFSM::publishExplDiag() {
   m.pose.orientation.w = 1.0;
   m.scale.z = 0.35;  // 글자 높이 [m] (줄이 많아 조금 작게)
   m.color.a = 1.0;
-  const bool bad = (ed->diag_reason_.rfind("NO_", 0) == 0);  // 실패면 빨강, 정상이면 초록
+  const bool bad = (ed->diag_result_.find("NO_") != std::string::npos ||
+                    ed->diag_result_.find("FAIL") != std::string::npos);  // 실패=빨강
   m.color.r = bad ? 1.0f : 0.2f;
   m.color.g = bad ? 0.2f : 1.0f;
   m.color.b = 0.2f;
@@ -781,13 +1051,82 @@ void FastExplorationFSM::globalPathUpdateCallback(const ros::TimerEvent &e) {
   updateTopoAndGlobalPath();
 }
 
+// rviz 2D Nav Goal 대체: 터미널에서 `rosservice call /srv_start` 한 줄로 미션 시작.
+// 토픽 방식과 달리 성공/실패와 이유를 응답으로 돌려준다.
+bool FastExplorationFSM::startServiceCallback(std_srvs::Trigger::Request &req,
+                                              std_srvs::Trigger::Response &res) {
+  (void)req;
+  if (startMission("/srv_start")) {
+    res.success = true;
+    res.message = "mission started (state -> " + fd_->state_str_[int(state_)] + ")";
+  } else {
+    res.success = false;
+    res.message = "ignored: FSM not in WAIT_TRIGGER (current: " +
+                  fd_->state_str_[int(state_)] + ")";
+  }
+  return true;
+}
+
+// 원터치 홈복귀: `rosservice call /srv_rth` (인자 없음).
+// 비행 중 어느 상태에서든 즉시 이륙 지점(takeoff anchor)으로 복귀하고,
+// 홈 xy 반경(rth_land_xy_tol) 도달 시 자동 AUTO.LAND -> LANDED (자동 RTH와 동일 경로).
+bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
+                                            std_srvs::Trigger::Response &res) {
+  (void)req;
+  if (state_ == PLAN_TRAJ_RTH && returning_home_) {
+    res.success = false;
+    res.message = "already returning home";
+    return true;
+  }
+  const bool flying =
+      (state_ == TAKEOFF_HOVER || state_ == PLAN_TRAJ_EXP || state_ == EXEC_TRAJ ||
+       state_ == CAUTION || state_ == FINISH || state_ == PLAN_TRAJ_RTH);
+  if (!flying) {
+    res.success = false;
+    res.message = "ignored: not flying (current: " + fd_->state_str_[int(state_)] + ")";
+    return true;
+  }
+
+  // 홈 = 이륙 앵커 (x0, y0, takeoff_height). takeoff 비활성 구성이면 (0,0,현재고도) 폴백.
+  Eigen::Vector3d home = takeoff_anchor_;
+  double home_yaw = takeoff_yaw_;
+  if (fp_->takeoff_height_ <= 0.0) {
+    home = Eigen::Vector3d(0.0, 0.0, std::max(0.5, (double)fd_->odom_pos_.z()));
+    home_yaw = fd_->odom_yaw_;
+  }
+  goal_rth_ << home.x(), home.y(), home.z(), home_yaw;
+  has_goal_rth_ = true;
+  returning_home_ = true;     // 홈 xy 도달 -> LAND(AUTO.LAND) -> LANDED
+  explore_finished_ = false;
+  // 현재 포즈에 앵커해 재계획 (TAKEOFF_HOVER 처럼 아직 궤적이 없는 상태에서도 안전;
+  // 비행 중이면 짧은 감속 후 홈으로 전환 — 중단 명령이므로 예측 가능성 우선)
+  fd_->static_state_ = true;
+  global_path_update_timer_.start();
+
+  char d[128];
+  snprintf(d, sizeof(d), "home=(%.2f, %.2f, %.2f) from pos=(%.2f, %.2f, %.2f)",
+           home.x(), home.y(), home.z(), fd_->odom_pos_.x(), fd_->odom_pos_.y(),
+           fd_->odom_pos_.z());
+  elog_.log("EVENT", "RTH requested (/srv_rth)", d, 0.0, EventLogger::L_WARN, true);
+  transitState(PLAN_TRAJ_RTH, "/srv_rth: return home");
+
+  char m[128];
+  snprintf(m, sizeof(m), "returning home to (%.2f, %.2f, %.2f); AUTO.LAND on arrival",
+           home.x(), home.y(), home.z());
+  res.success = true;
+  res.message = m;
+  return true;
+}
+
 bool FastExplorationFSM::goalServiceCallback(epic_planner::GoalService::Request& req,
                                              epic_planner::GoalService::Response& res) {
   goal_rth_ << req.x, req.y, req.z, req.yaw;
   has_goal_rth_ = true;
 
-  ROS_INFO("\033[32m[RTH] Goal received: (%.2f, %.2f, %.2f), yaw: %.2f\033[0m",
-           req.x, req.y, req.z, req.yaw);
+  char d[128];
+  snprintf(d, sizeof(d), "goal=(%.2f, %.2f, %.2f) yaw=%.2f", req.x, req.y, req.z,
+           req.yaw);
+  elog_.log("EVENT", "/srv_goto goal received", d, 0.0, EventLogger::L_INFO, true);
 
   // Trigger state transition
   if (state_ == WAIT_TRIGGER || state_ == EXEC_TRAJ || state_ == PLAN_TRAJ_EXP) {
@@ -803,10 +1142,14 @@ int FastExplorationFSM::callGoalPlanner() {
   ros::Time planning_start_time = ros::Time::now();
 
   // Check prerequisites
-  if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty())
+  if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty()) {
+    local_reason_ = "odom node has no topo neighbors";
     return START_FAIL;
-  if (expl_manager_->ed_->global_tour_.size() < 2)
+  }
+  if (expl_manager_->ed_->global_tour_.size() < 2) {
+    local_reason_ = "no global tour yet (RTH global plan pending)";
     return FAIL;
+  }
 
   Eigen::Vector3d goal_pos = goal_rth_.head<3>();
   double goal_yaw = goal_rth_(3);
@@ -814,6 +1157,7 @@ int FastExplorationFSM::callGoalPlanner() {
   // Call exploration manager's goal planning function to generate global_tour_
   int res = expl_manager_->planGoalPath(goal_pos, goal_yaw);
   if (res != SUCCEED) {
+    local_reason_ = "RTH global: " + expl_manager_->ed_->diag_reason_;
     return res;
   }
 
@@ -829,16 +1173,20 @@ int FastExplorationFSM::callGoalPlanner() {
       0.2, path_next_goal);
 
   if (res == ParallelBubbleAstar::NO_PATH) {
-    ROS_ERROR("[RTH] No path to goal");
+    local_reason_ = "fast-searcher: no path odom->next RTH node";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::START_FAIL) {
-    ROS_ERROR("[RTH] Start point in occ");
+    local_reason_ = "fast-searcher: start(odom) in occupancy";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return START_FAIL;
   } else if (res == ParallelBubbleAstar::END_FAIL) {
-    ROS_ERROR("[RTH] End point in occ");
+    local_reason_ = "fast-searcher: RTH node in occupancy";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::TIME_OUT) {
-    ROS_ERROR("[RTH] Time out");
+    local_reason_ = "fast-searcher: timeout";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
     return FAIL;
   }
 
@@ -882,9 +1230,16 @@ int FastExplorationFSM::callGoalPlanner() {
     planner_manager_->polyYawTraj2ROSMsg(poly_yaw_traj_msg, info->start_time_);
     fd_->newest_yaw_traj_ = poly_yaw_traj_msg;
 
+    local_reason_ = planner_manager_->last_plan_was_escape_ ? "escape traj (flyToSafeRegion)" : "";
     result = SUCCEED;
   } else {
-    ROS_ERROR("[RTH] Failed to plan trajectory");
+    // 사유는 planner_manager 가 세팅 (예: "start not in corridor ..."). 이벤트
+    // 로거가 변화 시에만 내보내므로 여기선 스로틀 콘솔만. (INC2에서 이 지점이
+    // 1174회 ROS_ERROR 스팸이었음)
+    local_reason_ = planner_manager_->last_plan_fail_reason_.empty()
+                        ? "traj optimization failed"
+                        : planner_manager_->last_plan_fail_reason_;
+    ROS_WARN_THROTTLE(2.0, "[RTH] local plan failed: %s", local_reason_.c_str());
     result = FAIL;
   }
 
@@ -892,8 +1247,8 @@ int FastExplorationFSM::callGoalPlanner() {
   double elapsed = (ros::Time::now() - planning_start_time).toSec();
   if (elapsed < local_planning_min_period_) {
     double hold_time = local_planning_min_period_ - elapsed;
-    ROS_INFO("\033[33m[Planning Hz Limit] Holding for %.3f ms (planning took %.3f ms, min period %.3f ms)\033[0m",
-             hold_time * 1000.0, elapsed * 1000.0, local_planning_min_period_ * 1000.0);
+    ROS_DEBUG("[Planning Hz Limit] Holding for %.3f ms (planning took %.3f ms, min period %.3f ms)",
+              hold_time * 1000.0, elapsed * 1000.0, local_planning_min_period_ * 1000.0);
     ros::Duration(hold_time).sleep();
   }
   return result;

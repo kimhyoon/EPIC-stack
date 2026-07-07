@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>epic_2026-07-02-19-45-33</title>
+<style>body{font-family:sans-serif;max-width:1100px;margin:24px auto;padding:0 12px}
+table{border-collapse:collapse}td{border:1px solid #ccc;padding:4px 10px}
+h1{font-size:20px}h2{font-size:15px;margin-top:28px}</style></head><body>
+<h1>EPIC session report — epic_2026-07-02-19-45-33</h1>
+<table>
+    <tr><td>세션</td><td>epic_2026-07-02-19-45-33</td></tr>
+    <tr><td>길이</td><td>35.0 s</td></tr>
+    <tr><td>상태 흐름</td><td>WAIT_TRIGGER → TAKEOFF_HOVER → PLAN_TRAJ_EXP → EXEC_TRAJ → FINISH → PLAN_TRAJ_RTH → LAND → LANDED</td></tr>
+    <tr><td>MISSION</td><td>[+20.9s] FINISH (premature? unreached clusters remain) | pos=(2.47, 0.23, 1.18) elapsed=14s clusters_left=1(reachable 0) pipeline[total=1 dormant=0 prev_unreachable=0 evaluated=1 no_candidate=0 topo_unreachable=1 no_visibility=0 survived=0]<br>[+35.0s] LANDED (mission complete, disarmed)</td></tr>
+    <tr><td>GLOBAL 실패 횟수</td><td>4</td></tr>
+    <tr><td>LOCAL 실패 횟수</td><td>3</td></tr>
+    <tr><td>STUCK 이벤트</td><td>0</td></tr>
+    <tr><td>추종 RMSE (3D/XY/Z)</td><td>0.664 / 0.535 / 0.392 m (OFFBOARD 21s, n=438)</td></tr><tr><td>MINCO 최적화 시간 (median/p95)</td><td>6.8 / 12.2 ms</td></tr>
+    </table>
+<h2>타임라인 (FSM / PX4 / Avoidance)</h2><img src="plots/timeline.png" style="max-width:100%">
+<h2>비행 경로 (XY)</h2><img src="plots/trajectory_xy.png" style="max-width:100%">
+<h2>고도 / 속도</h2><img src="plots/altitude_speed.png" style="max-width:100%">
+<h2>프론티어 / 파이프라인 / 도달 비율</h2><img src="plots/frontier_pipeline.png" style="max-width:100%">
+<h2>계획 결과 / 소요시간</h2><img src="plots/plan_health.png" style="max-width:100%">
+<h2>RTH 진행</h2><img src="plots/rth_progress.png" style="max-width:100%">
+<h2>배터리</h2><img src="plots/battery.png" style="max-width:100%">
+<h2>추종 오차 (시간)</h2><img src="traj-error/error_over_time.png" style="max-width:100%">
+<h2>추종 오차 분포</h2><img src="traj-error/error_hist.png" style="max-width:100%">
+<h2>명령 vs 실제 경로</h2><img src="traj-error/path_overlay_xy.png" style="max-width:100%">
+<h2>로컬 계획 연산시간 (시계열)</h2><img src="local-plan-time/timeseries.png" style="max-width:100%">
+<h2>로컬 계획 연산시간 (분포)</h2><img src="local-plan-time/boxplot.png" style="max-width:100%">
+</body></html>

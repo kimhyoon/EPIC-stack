@@ -1,0 +1,318 @@
+# console (/rosout_agg) log for epic_2026-07-03-11-21-46.bag
+# started at 2026-07-03-11-21-46
+[INFO] [1783045307.055] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-03-11-21-46/epic_2026-07-03-11-21-46.events.log
+[INFO] [1783045307.059] [/record_on_goal]: [record_on_goal] recording started (pid 999) -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-03-11-21-46/epic_2026-07-03-11-21-46.bag
+[INFO] [1783045307.363] [/epic_rosbag_recorder]: Subscribing to /quad0_odom_visualization/sensor
+[INFO] [1783045307.364] [/epic_rosbag_recorder]: Subscribing to /quad0_odom_visualization/robot
+[INFO] [1783045307.365] [/epic_rosbag_recorder]: Subscribing to /quad0_odom_visualization/quad0height
+[INFO] [1783045307.366] [/epic_rosbag_recorder]: Subscribing to /quad0_odom_visualization/drone_id
+[INFO] [1783045307.368] [/epic_rosbag_recorder]: Subscribing to /local_planning/bubble_astar_search_cost
+[INFO] [1783045307.368] [/epic_rosbag_recorder]: Subscribing to /visualizer/route
+[INFO] [1783045307.369] [/epic_rosbag_recorder]: Subscribing to /visualizer/routeid
+[INFO] [1783045307.370] [/epic_rosbag_recorder]: Subscribing to /visualizer/waypoints
+[INFO] [1783045307.371] [/epic_rosbag_recorder]: Subscribing to /visualizer/trajectory
+[INFO] [1783045307.372] [/epic_rosbag_recorder]: Subscribing to /visualizer/mesh
+[INFO] [1783045307.374] [/epic_rosbag_recorder]: Subscribing to /visualizer/edge
+[INFO] [1783045307.375] [/epic_rosbag_recorder]: Subscribing to /visualizer/spheres
+[INFO] [1783045307.376] [/epic_rosbag_recorder]: Subscribing to /visualizer/speed
+[INFO] [1783045307.377] [/epic_rosbag_recorder]: Subscribing to /visualizer/total_thrust
+[INFO] [1783045307.378] [/epic_rosbag_recorder]: Subscribing to /visualizer/tilt_angle
+[INFO] [1783045307.379] [/epic_rosbag_recorder]: Subscribing to /visualizer/body_rate
+[INFO] [1783045307.381] [/epic_rosbag_recorder]: Subscribing to /visualizer/PolysGenerate_timecost
+[INFO] [1783045307.382] [/epic_rosbag_recorder]: Subscribing to /visualizer/trajOptimize_timecost
+[INFO] [1783045307.383] [/epic_rosbag_recorder]: Subscribing to /visualizer/pointCloudProcess_timecost
+[INFO] [1783045307.384] [/epic_rosbag_recorder]: Subscribing to /visualizer/totoalOptimize_timecost
+[INFO] [1783045307.385] [/epic_rosbag_recorder]: Subscribing to /visualizer/cloud_input
+[INFO] [1783045307.386] [/epic_rosbag_recorder]: Subscribing to /visualizer/fast_searcher_search_cost
+[INFO] [1783045307.388] [/epic_rosbag_recorder]: Subscribing to /visualizer/bubble_astar_search_cost
+[INFO] [1783045307.389] [/epic_rosbag_recorder]: Subscribing to /visualizer/topo_graph_search_cost
+[INFO] [1783045307.390] [/epic_rosbag_recorder]: Subscribing to /visualizer/trajectory_generation_cost
+[INFO] [1783045307.391] [/epic_rosbag_recorder]: Subscribing to /visualizer/yaw_trajectory_optimization_cost
+[INFO] [1783045307.392] [/epic_rosbag_recorder]: Subscribing to /visualizer/lbfgs_optimization_cost
+[INFO] [1783045307.393] [/epic_rosbag_recorder]: Subscribing to /visualizer/path_collision_check_cost
+[INFO] [1783045307.394] [/epic_rosbag_recorder]: Subscribing to /visualizer/collision_check_cost
+[INFO] [1783045307.395] [/epic_rosbag_recorder]: Subscribing to /visualizer/velocity_check_cost
+[INFO] [1783045307.396] [/epic_rosbag_recorder]: Subscribing to /viz_graph_topic
+[INFO] [1783045307.397] [/epic_rosbag_recorder]: Subscribing to /global_tour
+[INFO] [1783045307.399] [/epic_rosbag_recorder]: Subscribing to /bubble_visualizer/sphere
+[INFO] [1783045307.400] [/epic_rosbag_recorder]: Subscribing to /bubble_visualizer/sphere_debug
+[INFO] [1783045307.401] [/epic_rosbag_recorder]: Subscribing to /bubble_visualizer/frontend_traj
+[INFO] [1783045307.401] [/epic_rosbag_recorder]: Subscribing to /yaw_state
+[INFO] [1783045307.403] [/epic_rosbag_recorder]: Subscribing to /global_planning/vp_cluster_cost
+[INFO] [1783045307.404] [/epic_rosbag_recorder]: Subscribing to /global_planning/remove_unreachable_cost
+[INFO] [1783045307.405] [/epic_rosbag_recorder]: Subscribing to /global_planning/select_vp_cost
+[INFO] [1783045307.406] [/epic_rosbag_recorder]: Subscribing to /frontier_manager/explored_cell_count
+[INFO] [1783045307.407] [/epic_rosbag_recorder]: Subscribing to /initialpose
+[INFO] [1783045307.407] [/epic_rosbag_recorder]: Subscribing to /clicked_point
+[INFO] [1783045307.408] [/epic_rosbag_recorder]: Subscribing to /global_planning/insert_viewpoint_cost
+[INFO] [1783045307.409] [/epic_rosbag_recorder]: Subscribing to /global_planning/calculate_tsp_cost
+[INFO] [1783045307.409] [/epic_rosbag_recorder]: Subscribing to /global_planning/lkh_solver_cost
+[INFO] [1783045307.410] [/epic_rosbag_recorder]: Subscribing to /local_planning/topo_graph_search_cost
+[INFO] [1783045307.411] [/epic_rosbag_recorder]: Subscribing to /epic/events
+[INFO] [1783045307.411] [/epic_rosbag_recorder]: Subscribing to /epic/session_info
+[INFO] [1783045307.412] [/epic_rosbag_recorder]: Subscribing to /planning/heartbeat
+[INFO] [1783045307.413] [/epic_rosbag_recorder]: Subscribing to /px4ctrl/takeoff_land
+[INFO] [1783045307.414] [/epic_rosbag_recorder]: Subscribing to /planning/trajectory
+[INFO] [1783045307.415] [/epic_rosbag_recorder]: Subscribing to /planning/yaw_trajectory
+[INFO] [1783045307.416] [/epic_rosbag_recorder]: Subscribing to /time_cost
+[INFO] [1783045307.417] [/epic_rosbag_recorder]: Subscribing to /planning/static
+[INFO] [1783045307.418] [/epic_rosbag_recorder]: Subscribing to /planning/state
+[INFO] [1783045307.418] [/epic_rosbag_recorder]: Subscribing to /planning/rth_distance
+[INFO] [1783045307.419] [/epic_rosbag_recorder]: Subscribing to /planning/expl_diag
+[INFO] [1783045307.421] [/epic_rosbag_recorder]: Subscribing to /planning/expl_diag_str
+[INFO] [1783045307.422] [/epic_rosbag_recorder]: Subscribing to /planning/timing/update_topo_skeleton_cost
+[INFO] [1783045307.423] [/epic_rosbag_recorder]: Subscribing to /planning/timing/update_odom_vertex_cost
+[INFO] [1783045307.424] [/epic_rosbag_recorder]: Subscribing to /planning/timing/vp_cluster_cost
+[INFO] [1783045307.425] [/epic_rosbag_recorder]: Subscribing to /planning/timing/remove_unreachable_cost
+[INFO] [1783045307.427] [/epic_rosbag_recorder]: Subscribing to /planning/timing/select_vp_cost
+[INFO] [1783045307.428] [/epic_rosbag_recorder]: Subscribing to /planning/timing/insert_viewpoint_cost
+[INFO] [1783045307.429] [/epic_rosbag_recorder]: Subscribing to /planning/timing/calculate_tsp_cost
+[INFO] [1783045307.430] [/epic_rosbag_recorder]: Subscribing to /planning/timing/lkh_solver_cost
+[INFO] [1783045307.431] [/epic_rosbag_recorder]: Subscribing to /planning/timing/call_planner_cost
+[INFO] [1783045307.434] [/epic_rosbag_recorder]: Subscribing to /planning/timing/ikd_tree_insert_cost
+[INFO] [1783045307.434] [/epic_rosbag_recorder]: Subscribing to /planning/timing/update_frontier_clusters_cost
+[INFO] [1783045307.435] [/epic_rosbag_recorder]: Subscribing to /planning/timing/fast_searcher_search_cost
+[INFO] [1783045307.436] [/epic_rosbag_recorder]: Subscribing to /planning/timing/bubble_astar_search_cost
+[INFO] [1783045307.436] [/epic_rosbag_recorder]: Subscribing to /exploration_node/sf_cluster_marker
+[INFO] [1783045307.437] [/epic_rosbag_recorder]: Subscribing to /exploration_node/bad_obs
+[INFO] [1783045307.438] [/epic_rosbag_recorder]: Subscribing to /exploration_node/good_obs
+[INFO] [1783045310.495] [/mavros]: HP: requesting home position
+[WARN] [1783045311.997] [/exploration_node]: wait for trigger.
+[WARN] [1783045317.007] [/exploration_node]: wait for trigger.
+[INFO] [1783045319.435] [/exploration_node]: [EV] [1783045319.435][    +13.5s][WAIT_TRIGGER] PX4 mode=POSCTL armed=1 | prev=POSCTL
+[INFO] [1783045320.137] [/rvizvisualisation]: Setting goal: Frame:world, Position(-2.847, -9.247, 0.000), Orientation(0.000, 0.000, 0.838, 0.546) = Angle: 1.987
+
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(-0.02, -0.00, -0.09)
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.4] up=[150, 150, 2]
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=0.9 max_traj_len=10.0 safe_dist=0.70 bubble_min_r=0.50
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[0.5, 5.0] minpts=4 dphi=0.26 znum=3 good_dir_score=0.60
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=8 local_tsp=16
+[INFO] [1783045320.138] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.20 goal_tol=0.20 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[INFO] [1783045320.139] [/exploration_node]: [EV] [1783045320.138][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[INFO] [1783045320.139] [/exploration_node]: [EV] [1783045320.139][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[INFO] [1783045320.439] [/exploration_node]: [EV] [1783045320.439][     +0.3s][TAKEOFF_HOVER] BATT 24.5V | v=24.81V pct=88% (x6)
+[INFO] [1783045320.496] [/mavros]: HP: requesting home position
+[INFO] [1783045322.434] [/exploration_node]: [EV] [1783045322.434][     +2.3s][TAKEOFF_HOVER] PX4 mode=OFFBOARD armed=1 | prev=POSCTL
+[INFO] [1783045322.436] [/exploration_node]: [EV] [1783045322.436][     +2.3s][TAKEOFF_HOVER] BATT 24.5V | v=24.80V pct=88%
+[INFO] [1783045324.437] [/exploration_node]: [EV] [1783045324.437][     +4.3s][TAKEOFF_HOVER] BATT 24.0V | v=24.29V pct=90%
+[INFO] [1783045326.436] [/exploration_node]: [EV] [1783045326.435][     +6.3s][TAKEOFF_HOVER] BATT 23.5V | v=23.96V pct=79%
+[INFO] [1783045327.937] [/exploration_node]: [EV] [1783045327.937][     +7.8s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: altitude reached & stable -> explore]
+[WARN] [1783045328.036] [/exploration_node]: [EV] [1783045328.036][     +7.9s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=18ms
+[WARN] [1783045328.040] [/exploration_node]: [EV] [1783045328.040][     +7.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.1m
+[WARN] [1783045328.040] [/exploration_node]: [EV] [1783045328.040][     +7.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: no frontier yet (warming up)]
+[INFO] [1783045328.435] [/exploration_node]: [EV] [1783045328.435][     +8.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.86V pct=76%
+[INFO] [1783045328.440] [/epic_rosbag_recorder]: Subscribing to /exploration_node/viewpoint_centers
+[INFO] [1783045328.444] [/epic_rosbag_recorder]: Subscribing to /exploration_node/occ
+[WARN] [1783045328.445] [/px4_ctrl_bridge]: [px4_bridge] /position_cmd stale -> holding pose
+[INFO] [1783045328.446] [/epic_rosbag_recorder]: Subscribing to /exploration_node/pocc
+[INFO] [1783045328.446] [/epic_rosbag_recorder]: Subscribing to /exploration_node/frt
+[WARN] [1783045329.142] [/exploration_node]: [EV] [1783045329.142][     +9.0s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=24ms (x4)
+[WARN] [1783045329.455] [/px4_ctrl_bridge]: [px4_bridge] /position_cmd stale -> holding pose
+[WARN] [1783045330.046] [/exploration_node]: [EV] [1783045330.046][     +9.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.0m (x181)
+[WARN] [1783045330.245] [/exploration_node]: [EV] [1783045330.245][    +10.1s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=19ms (x4)
+[INFO] [1783045330.435] [/exploration_node]: [EV] [1783045330.435][    +10.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.70V pct=77%
+[WARN] [1783045330.455] [/px4_ctrl_bridge]: [px4_bridge] /position_cmd stale -> holding pose
+[INFO] [1783045330.498] [/mavros]: HP: requesting home position
+[WARN] [1783045331.354] [/exploration_node]: [EV] [1783045331.354][    +11.2s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=14ms (x4)
+[WARN] [1783045331.455] [/px4_ctrl_bridge]: [px4_bridge] /position_cmd stale -> holding pose
+[WARN] [1783045332.047] [/exploration_node]: [EV] [1783045332.047][    +11.9s][PLAN_TRAJ_EXP] LOCAL EXP NO_FRONTIER | t=0.0ms goal_d=1.2m (x183)
+[WARN] [1783045332.414] [/exploration_node]: [EV] [1783045332.414][    +12.3s][PLAN_TRAJ_EXP] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=17ms (x4)
+[INFO] [1783045332.434] [/exploration_node]: [EV] [1783045332.434][    +12.3s][PLAN_TRAJ_EXP] BATT 23.5V | v=23.55V pct=71%
+[WARN] [1783045332.455] [/px4_ctrl_bridge]: [px4_bridge] /position_cmd stale -> holding pose
+[INFO] [1783045333.037] [/exploration_node]: [EV] [1783045333.037][    +12.9s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [PLAN_TRAJ_EXP: no frontier] |  (prev x457/5.0s)
+[INFO] [1783045333.052] [/exploration_node]: [EV] [1783045333.052][    +12.9s][FINISH] STATE FINISH -> FINISH [planGlobalPath: no frontier]
+[INFO] [1783045333.054] [/exploration_node]: [EV] [1783045333.054][    +12.9s][FINISH] MISSION FINISH (map fully explored) | pos=(0.81, -0.31, 1.00) elapsed=13s clusters_left=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0]
+[INFO] [1783045333.054] [/exploration_node]: [32m[FINISH] exploration done -> hover 1.0s, then return home & land[0m
+[INFO] [1783045333.441] [/epic_rosbag_recorder]: Subscribing to /mem_cost
+[INFO] [1783045333.442] [/epic_rosbag_recorder]: Subscribing to /mem_cost_2
+[INFO] [1783045333.442] [/epic_rosbag_recorder]: Subscribing to /mem_cost_3
+[WARN] [1783045333.477] [/exploration_node]: [EV] [1783045333.477][    +13.3s][FINISH] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=0, reachable_clusters=0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=0n/0.0m goal=(0.0, 0.0, 0.0) t=10ms (x4)
+[INFO] [1783045334.057] [/exploration_node]: [EV] [1783045334.057][    +13.9s][PLAN_TRAJ_RTH] STATE FINISH -> PLAN_TRAJ_RTH [FINISH: hover done -> return home] |  (prev x4/0.8s)
+[INFO] [1783045334.066] [/exploration_node]: [EV] [1783045334.066][    +13.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.89m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[WARN] [1783045334.066] [/exploration_node]: [EV] [1783045334.066][    +13.9s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: no global tour yet (RTH global plan pending) | t=0.0ms (prev x92/2.0s)
+[WARN] [1783045334.066] [/exploration_node]: [EV] [1783045334.066][    +13.9s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed]
+[INFO] [1783045334.076] [/exploration_node]: [EV] [1783045334.076][    +13.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.88m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045334.130] [/exploration_node]: [EV] [1783045334.130][    +14.0s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.86m tol=0.20m goal=(-0.02, -0.00, 1.20) (x4)
+[INFO] [1783045334.148] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045334.148] [/exploration_node]:   Segment 1: 0.87 m
+[INFO] [1783045334.149] [/exploration_node]: [EV] [1783045334.149][    +14.0s][PLAN_TRAJ_RTH] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.9m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.9m goal=(0.0, 0.0, 0.0) t=7ms (prev x2/0.4s)
+[INFO] [1783045334.150] [/exploration_node]: [EV] [1783045334.150][    +14.0s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev x6/0.1s)
+[INFO] [1783045334.157] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.02 ms[0m
+[INFO] [1783045334.157] [/exploration_node]:   Segment 1: 0.87 m
+[INFO] [1783045334.183] [/exploration_node]: [EV] [1783045334.183][    +14.0s][PLAN_TRAJ_RTH] LOCAL RTH OK | t=33.4ms (prev x6/0.1s)
+[INFO] [1783045334.184] [/exploration_node]: [EV] [1783045334.184][    +14.0s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[INFO] [1783045334.194] [/traj_server]: [32m[Metrics] Mission started[0m
+[INFO] [1783045334.371] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045334.371] [/exploration_node]:   Segment 1: 0.79 m
+[INFO] [1783045334.372] [/exploration_node]: [EV] [1783045334.372][    +14.2s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.8m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.8m goal=(-0.0, -0.0, 1.2) t=7ms
+[INFO] [1783045334.373] [/exploration_node]: [EV] [1783045334.373][    +14.2s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[INFO] [1783045334.373] [/exploration_node]: [EV] [1783045334.373][    +14.2s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.79m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[INFO] [1783045334.375] [/traj_server]: [33m[Metrics] RTH mode activated at index 1 (current state: PLAN_TRAJ_RTH)[0m
+[INFO] [1783045334.379] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.02 ms[0m
+[INFO] [1783045334.379] [/exploration_node]:   Segment 1: 0.79 m
+[INFO] [1783045334.435] [/exploration_node]: [EV] [1783045334.435][    +14.3s][EXEC_TRAJ] BATT 23.0V | v=23.35V pct=66%
+[INFO] [1783045335.022] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045335.022] [/exploration_node]:   Segment 1: 0.56 m
+[INFO] [1783045335.023] [/exploration_node]: [EV] [1783045335.023][    +14.9s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.6m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.6m goal=(-0.0, -0.0, 1.2) t=7ms
+[INFO] [1783045335.023] [/exploration_node]: [EV] [1783045335.023][    +14.9s][PLAN_TRAJ_RTH] RTH d2goal=0.5m | auto-home(xy) dist=0.55m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045335.029] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045335.029] [/exploration_node]:   Segment 1: 0.56 m
+[INFO] [1783045335.703] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045335.703] [/exploration_node]:   Segment 1: 0.48 m
+[INFO] [1783045335.705] [/exploration_node]: [EV] [1783045335.704][    +15.6s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.5m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.5m goal=(-0.0, -0.0, 1.2) t=10ms
+[INFO] [1783045335.705] [/exploration_node]: [EV] [1783045335.705][    +15.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.46m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045335.711] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045335.711] [/exploration_node]:   Segment 1: 0.48 m
+[INFO] [1783045336.348] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045336.348] [/exploration_node]:   Segment 1: 0.40 m
+[INFO] [1783045336.349] [/exploration_node]: [EV] [1783045336.349][    +16.2s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.4m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.4m goal=(-0.0, -0.0, 1.2) t=8ms
+[INFO] [1783045336.349] [/exploration_node]: [EV] [1783045336.349][    +16.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.34m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045336.356] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045336.356] [/exploration_node]:   Segment 1: 0.40 m
+[INFO] [1783045336.433] [/exploration_node]: [EV] [1783045336.433][    +16.3s][EXEC_TRAJ] BATT 23.0V | v=23.40V pct=65%
+[INFO] [1783045336.981] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045336.981] [/exploration_node]:   Segment 1: 0.37 m
+[INFO] [1783045336.984] [/exploration_node]: [EV] [1783045336.984][    +16.8s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.33m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045336.990] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045336.990] [/exploration_node]:   Segment 1: 0.36 m
+[INFO] [1783045337.619] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045337.619] [/exploration_node]:   Segment 1: 0.30 m
+[INFO] [1783045337.620] [/exploration_node]: [EV] [1783045337.620][    +17.5s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.3m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.3m goal=(-0.0, -0.0, 1.2) t=8ms (prev x1/0.6s)
+[INFO] [1783045337.620] [/exploration_node]: [EV] [1783045337.620][    +17.5s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.27m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045337.629] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045337.629] [/exploration_node]:   Segment 1: 0.30 m
+[INFO] [1783045338.283] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045338.284] [/exploration_node]:   Segment 1: 0.25 m
+[INFO] [1783045338.285] [/exploration_node]: [EV] [1783045338.285][    +18.1s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.2m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.2m goal=(-0.0, -0.0, 1.2) t=8ms
+[INFO] [1783045338.286] [/exploration_node]: [EV] [1783045338.286][    +18.1s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.22m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045338.292] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.292] [/exploration_node]:   Segment 1: 0.25 m
+[WARN] [1783045338.299] [/exploration_node]: [local-plan] minco optimize failed
+[WARN] [1783045338.299] [/exploration_node]: [RTH] local plan failed: minco optimize failed
+[WARN] [1783045338.319] [/exploration_node]: [EV] [1783045338.319][    +18.2s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: minco optimize failed | t=33.4ms (prev x6/3.9s)
+[WARN] [1783045338.319] [/exploration_node]: [EV] [1783045338.319][    +18.2s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed] |  (prev cycle x12/3.9s)
+[INFO] [1783045338.337] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045338.337] [/exploration_node]:   Segment 1: 0.25 m
+[INFO] [1783045338.375] [/exploration_node]: [EV] [1783045338.375][    +18.2s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.23m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[INFO] [1783045338.381] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.381] [/exploration_node]:   Segment 1: 0.25 m
+[INFO] [1783045338.425] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045338.425] [/exploration_node]:   Segment 1: 0.25 m
+[INFO] [1783045338.454] [/exploration_node]: [EV] [1783045338.454][    +18.3s][PLAN_TRAJ_RTH] BATT 23.0V | v=23.35V pct=64%
+[INFO] [1783045338.462] [/exploration_node]: [EV] [1783045338.462][    +18.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.24m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[INFO] [1783045338.468] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.468] [/exploration_node]:   Segment 1: 0.25 m
+[INFO] [1783045338.519] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.519] [/exploration_node]:   Segment 1: 0.26 m
+[INFO] [1783045338.520] [/exploration_node]: [EV] [1783045338.520][    +18.4s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev x4/0.2s)
+[INFO] [1783045338.520] [/exploration_node]: [EV] [1783045338.520][    +18.4s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.25m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045338.526] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.526] [/exploration_node]:   Segment 1: 0.26 m
+[INFO] [1783045338.569] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045338.569] [/exploration_node]:   Segment 1: 0.26 m
+[INFO] [1783045338.597] [/exploration_node]: [EV] [1783045338.597][    +18.5s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success] |  (prev cycle x1/0.1s)
+[INFO] [1783045339.180] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045339.180] [/exploration_node]:   Segment 1: 0.34 m
+[INFO] [1783045339.184] [/exploration_node]: [EV] [1783045339.184][    +19.0s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[INFO] [1783045339.185] [/exploration_node]: [EV] [1783045339.185][    +19.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.34m tol=0.20m goal=(-0.02, -0.00, 1.20) (x1)
+[INFO] [1783045339.191] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045339.191] [/exploration_node]:   Segment 1: 0.34 m
+[INFO] [1783045339.822] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045339.822] [/exploration_node]:   Segment 1: 0.38 m
+[INFO] [1783045339.823] [/exploration_node]: [EV] [1783045339.823][    +19.7s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.4m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.4m goal=(-0.0, -0.0, 1.2) t=8ms (prev cycle x1/1.5s)
+[INFO] [1783045339.823] [/exploration_node]: [EV] [1783045339.823][    +19.7s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.37m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045339.829] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045339.829] [/exploration_node]:   Segment 1: 0.38 m
+[INFO] [1783045340.433] [/exploration_node]: [EV] [1783045340.433][    +20.3s][EXEC_TRAJ] BATT 23.0V | v=23.36V pct=62%
+[INFO] [1783045340.454] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045340.454] [/exploration_node]:   Segment 1: 0.40 m
+[INFO] [1783045340.455] [/exploration_node]: [EV] [1783045340.455][    +20.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.39m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045340.461] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045340.461] [/exploration_node]:   Segment 1: 0.40 m
+[INFO] [1783045340.495] [/mavros]: HP: requesting home position
+[INFO] [1783045341.101] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045341.101] [/exploration_node]:   Segment 1: 0.49 m
+[INFO] [1783045341.103] [/exploration_node]: [EV] [1783045341.102][    +21.0s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.5m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.5m goal=(-0.0, -0.0, 1.2) t=7ms (prev x1/0.6s)
+[INFO] [1783045341.103] [/exploration_node]: [EV] [1783045341.103][    +21.0s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.48m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045341.109] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.01 ms[0m
+[INFO] [1783045341.109] [/exploration_node]:   Segment 1: 0.49 m
+[INFO] [1783045341.742] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045341.742] [/exploration_node]:   Segment 1: 0.44 m
+[INFO] [1783045341.743] [/exploration_node]: [EV] [1783045341.743][    +21.6s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.43m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045341.749] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045341.749] [/exploration_node]:   Segment 1: 0.44 m
+[INFO] [1783045342.406] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045342.406] [/exploration_node]:   Segment 1: 0.28 m
+[INFO] [1783045342.407] [/exploration_node]: [EV] [1783045342.407][    +22.3s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.3m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.3m goal=(-0.0, -0.0, 1.2) t=7ms (prev cycle x1/1.3s)
+[INFO] [1783045342.407] [/exploration_node]: [EV] [1783045342.407][    +22.3s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.27m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045342.413] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045342.413] [/exploration_node]:   Segment 1: 0.28 m
+[INFO] [1783045342.442] [/exploration_node]: [EV] [1783045342.442][    +22.3s][EXEC_TRAJ] BATT 23.0V | v=23.41V pct=63%
+[INFO] [1783045343.075] [/exploration_node]: [33m[Path Simplification] Reduced path from 4 to 2 nodes, 2 collision checks, 0.00 ms[0m
+[INFO] [1783045343.075] [/exploration_node]:   Segment 1: 0.15 m
+[INFO] [1783045343.076] [/exploration_node]: [EV] [1783045343.076][    +22.9s][EXEC_TRAJ] GLOBAL result=RTH_PATH_OK | why: path to goal: 2 nodes / 0.1m (connected via 2) | clusters=0(reach 0) vp=0(reach 0) pipe[tot=0 dorm=0 unreach=0 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/0.1m goal=(-0.0, -0.0, 1.2) t=7ms
+[INFO] [1783045343.076] [/exploration_node]: [EV] [1783045343.076][    +22.9s][PLAN_TRAJ_RTH] RTH d2goal=0.0m | auto-home(xy) dist=0.14m tol=0.20m goal=(-0.02, -0.00, 1.20)
+[INFO] [1783045343.077] [/exploration_node]: [EV] [1783045343.076][    +22.9s][LAND] STATE PLAN_TRAJ_RTH -> LAND [RTH: home reached -> AUTO.LAND] |  (prev cycle x12/3.9s)
+[INFO] [1783045343.077] [/exploration_node]: [32m[RTH] Home reached (xy 0.137 m) -> landing[0m
+[INFO] [1783045343.077] [/traj_server]: [33m[Metrics] RTH distance received: 0.137 m, logging metrics...[0m
+[INFO] [1783045343.078] [/traj_server]: [32m[Metrics] Mission Complete - Logged to /home/hmcl/.ros/epic_metrics.log[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  Mission time: 8.88 s[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  RTH distance to goal: 0.137 m[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  Avg speed (odometry): 0.243 m/s[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  Path length: 1.33 m[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  Avg speed (path/time): 0.150 m/s[0m
+[INFO] [1783045343.078] [/traj_server]: [36m  Avg tracking error: 0.255 m[0m
+[WARN] [1783045343.080] [/exploration_node]: [33m[LAND] AUTO.LAND requested[0m
+[WARN] [1783045343.087] [/mavros]: CMD: Unexpected command 176, result 0
+[WARN] [1783045343.097] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.198] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.297] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.398] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.431] [/exploration_node]: [EV] [1783045343.430][    +23.3s][LAND] PX4 mode=AUTO.LAND armed=1 (LEFT OFFBOARD: pilot takeover or failsafe) | prev=OFFBOARD
+[INFO] [1783045343.437] [/exploration_node]: [32m[LAND] PX4 in AUTO.LAND -> descending & auto-disarm[0m
+[WARN] [1783045343.498] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.597] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.697] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.798] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.898] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045343.999] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.098] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.198] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.298] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.398] [/mavros]: PositionTargetGlobal failed because no origin
+[INFO] [1783045344.432] [/exploration_node]: [EV] [1783045344.432][    +24.3s][LAND] BATT 23.0V | v=23.43V pct=62%
+[WARN] [1783045344.499] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.598] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.698] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.798] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.899] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045344.998] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.098] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.198] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.299] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.397] [/mavros]: PositionTargetGlobal failed because no origin
+[INFO] [1783045345.447] [/exploration_node]: [32m[LAND] PX4 in AUTO.LAND -> descending & auto-disarm[0m
+[WARN] [1783045345.498] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.599] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.699] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.799] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.897] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045345.998] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.098] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.198] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.297] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.399] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.497] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.598] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.696] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.801] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.896] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045346.998] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045347.098] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045347.198] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045347.296] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045347.398] [/mavros]: PositionTargetGlobal failed because no origin
+[WARN] [1783045347.426] [/exploration_node]: [EV] [1783045347.426][    +27.3s][LAND] PX4 mode=OFFBOARD armed=0 | prev=AUTO.LAND
+[INFO] [1783045347.427] [/exploration_node]: [EV] [1783045347.427][    +27.3s][LANDED] STATE LAND -> LANDED [LAND: touchdown & disarmed]
+[INFO] [1783045347.437] [/exploration_node]: [EV] [1783045347.437][    +27.3s][LANDED] MISSION LANDED (mission complete, disarmed)
+[INFO] [1783045347.438] [/record_on_goal]: [record_on_goal] FSM state LANDED -> finalize recording

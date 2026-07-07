@@ -1,0 +1,20 @@
+# EPIC structured flight events for epic_2026-07-02-17-02-53.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1782979372.356
+# box | down=[-150, -150, 0.5] up=[150, 150, 2.5]
+# corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.60 bubble_min_r=0.61
+# frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+# viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+# fsm | takeoff_h=1.25 goal_tol=0.10 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1782979374.240][     +1.9s][WAIT_TRIGGER] BATT 24.5V | v=24.83V pct=88%
+[1782979376.255][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(-0.80, 0.10, 1.75)
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.5] up=[150, 150, 2.5]
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.60 bubble_min_r=0.61
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.25 goal_tol=0.10 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[1782979376.255][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[1782979376.255][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[1782979384.608][     +8.4s][TAKEOFF_HOVER] AVOID ON (obstacle close, reactive layer overrides cmd) | pos=(-0.70, 0.11, 1.89)
+[1782979384.658][     +8.4s][TAKEOFF_HOVER] AVOID OFF (released, replan from current pose) | dur=0.1s

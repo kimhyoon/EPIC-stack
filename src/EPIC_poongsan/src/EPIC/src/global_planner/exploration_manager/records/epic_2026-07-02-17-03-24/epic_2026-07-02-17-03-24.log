@@ -1,0 +1,1065 @@
+# console (/rosout_agg) log for epic_2026-07-02-17-03-24.bag
+# started at 2026-07-02-17-03-24
+[INFO] [1782979404.617] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-02-17-03-24/epic_2026-07-02-17-03-24.events.log
+[INFO] [1782979407.299] [/rvizvisualisation]: Setting goal: Frame:world, Position(1.071, -0.685, 0.000), Orientation(0.000, 0.000, 0.974, 0.226) = Angle: 2.685
+
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] EVENT 2D-Nav-Goal trigger | trigger received | pos=(0.05, 0.02, 0.00)
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM box | down=[-150, -150, 0.5] up=[150, 150, 2.5]
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM corridor | DilateSoft=0.60 DilateHard=0.45 MaxCorridor=4.0 MaxVel=1.0 max_traj_len=10.0 safe_dist=0.60 bubble_min_r=0.61
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM frontier | cell=0.40 cluster_sz=[1.0, 5.0] minpts=5 dphi=0.26 znum=3 good_dir_score=0.60
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM viewpoint | pillar_r=[0.5, 2.0]x8 h=[-1.0, 1.0]x5 circle_n=4 local_tsp=12
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM fsm | takeoff_h=1.25 goal_tol=0.10 replan_t=0.20 emerg_err=3.0 max_hz=30 avoid_to=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance=1
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][WAIT_TRIGGER] PARAM topics | odom=/Odometry cloud=/cloud_registered
+[INFO] [1782979407.300] [/exploration_node]: [EV] [1782979407.300][     +0.0s][TAKEOFF_HOVER] STATE WAIT_TRIGGER -> TAKEOFF_HOVER [triggerCallback: takeoff & hover]
+[INFO] [1782979408.183] [/mavros]: HP: requesting home position
+[WARN] [1782979409.304] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.45 m, idx=600)
+[WARN] [1782979409.328] [/exploration_node]: [EV] [1782979409.328][     +2.0s][TAKEOFF_HOVER] AVOID ON (obstacle close, reactive layer overrides cmd) | pos=(0.06, 0.02, 0.00)
+[WARN] [1782979409.329] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979409.354] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.59 m
+[WARN] [1782979410.339] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979410.354] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.43 m
+[WARN] [1782979411.339] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979411.405] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.33 m
+[WARN] [1782979412.349] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979412.454] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.21 m
+[INFO] [1782979413.186] [/mavros]: GF: mission received
+[INFO] [1782979413.187] [/mavros]: RP: mission received
+[INFO] [1782979413.188] [/mavros]: WP: mission received
+[WARN] [1782979413.349] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979413.454] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[INFO] [1782979413.478] [/exploration_node]: [EV] [1782979413.478][     +6.2s][TAKEOFF_HOVER] AVOID OFF (released, replan from current pose) | dur=4.2s
+[WARN] [1782979413.479] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979413.939] [/exploration_node]: [EV] [1782979413.939][     +6.6s][PLAN_TRAJ_EXP] STATE TAKEOFF_HOVER -> PLAN_TRAJ_EXP [takeoff: altitude reached & stable -> explore]
+[INFO] [1782979413.968] [/exploration_node]: [EV] [1782979413.968][     +6.7s][CAUTION] STATE PLAN_TRAJ_EXP -> CAUTION [odom_node no nbrs]
+[WARN] [1782979414.173] [/exploration_node]: [EV] [1782979414.173][     +6.9s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.203466]
+[WARN] [1782979414.385] [/exploration_node]: [EV] [1782979414.385][     +7.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.203115] |  (prev cycle x1/0.2s)
+[WARN] [1782979414.390] [/exploration_node]: [EV] [1782979414.390][     +7.1s][PLAN_TRAJ_EXP] STATE CAUTION -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.208285] |  (prev cycle x1/0.0s)
+[WARN] [1782979414.438] [/exploration_node]: [EV] [1782979414.438][     +7.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.256834]
+[WARN] [1782979414.487] [/exploration_node]: [EV] [1782979414.487][     +7.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.305218]
+[WARN] [1782979414.538] [/exploration_node]: [EV] [1782979414.537][     +7.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.356067]
+[WARN] [1782979414.583] [/exploration_node]: [EV] [1782979414.583][     +7.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.401451]
+[INFO] [1782979418.182] [/mavros]: HP: requesting home position
+[ERROR] [1782979421.843] [/exploration_node]: [EV] [1782979421.843][    +14.5s][PLAN_TRAJ_EXP] STUCK no motion >8s in PLAN_TRAJ_EXP | last-local: OK | pos=(-0.32, 0.15, 1.17) still=8s
+[INFO] [1782979424.118] [/exploration_node]: [EV] [1782979424.118][    +16.8s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.5m goal=(0.0, 0.0, 0.0) t=3ms
+[INFO] [1782979424.118] [/exploration_node]: [EV] [1782979424.118][    +16.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979424.124] [/exploration_node]: [local-plan] next goal too close to occupancy -> re-run global
+[WARN] [1782979424.128] [/exploration_node]: [EV] [1782979424.128][    +16.8s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: next goal too close to occupancy -> re-run global | t=4.0ms goal_d=7.5m
+[WARN] [1782979424.129] [/exploration_node]: [EV] [1782979424.128][    +16.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed] |  (prev x1/0.0s)
+[INFO] [1782979424.172] [/exploration_node]: [EV] [1782979424.172][    +16.9s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=7.5m
+[INFO] [1782979424.172] [/exploration_node]: [EV] [1782979424.172][    +16.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979424.184] [/traj_server]: [32m[Metrics] Mission started[0m
+[INFO] [1782979424.735] [/exploration_node]: [EV] [1782979424.735][    +17.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979425.348] [/exploration_node]: [EV] [1782979425.348][    +18.0s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.6m goal=(5.9, 4.0, 0.7) t=4ms (x2)
+[INFO] [1782979426.558] [/exploration_node]: [EV] [1782979426.558][    +19.3s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.6m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[INFO] [1782979427.780] [/exploration_node]: [EV] [1782979427.780][    +20.5s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.6m goal=(5.9, 4.0, 0.7) t=4ms (x1)
+[INFO] [1782979428.184] [/mavros]: HP: requesting home position
+[WARN] [1782979428.344] [/exploration_node]: [31m[EMERGENCY] control error 3.00 m > 3.00 m -> replan from current pose[0m
+[WARN] [1782979428.344] [/exploration_node]: [EV] [1782979428.344][    +21.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [emergency: control error] |  (prev cycle x11/3.6s)
+[WARN] [1782979428.357] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=45)
+[INFO] [1782979428.390] [/exploration_node]: [EV] [1782979428.390][    +21.1s][PLAN_TRAJ_EXP] LOCAL EXP OK | why: escape traj (flyToSafeRegion) | t=35.9ms goal_d=7.6m (prev x6/3.6s)
+[INFO] [1782979428.392] [/exploration_node]: [EV] [1782979428.392][    +21.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979428.393] [/exploration_node]: [EV] [1782979428.393][    +21.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.135804]
+[INFO] [1782979428.434] [/exploration_node]: [EV] [1782979428.434][    +21.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979428.436] [/exploration_node]: [EV] [1782979428.436][    +21.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.181469]
+[INFO] [1782979429.009] [/exploration_node]: [EV] [1782979429.009][    +21.7s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.6m goal=(5.9, 4.0, 0.7) t=3ms (x1)
+[INFO] [1782979429.009] [/exploration_node]: [EV] [1782979429.009][    +21.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.6s)
+[INFO] [1782979430.221] [/exploration_node]: [EV] [1782979430.221][    +22.9s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.6m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[INFO] [1782979431.455] [/exploration_node]: [EV] [1782979431.455][    +24.2s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/7.4m goal=(5.9, 4.0, 0.7) t=6ms (x1)
+[INFO] [1782979432.672] [/exploration_node]: [EV] [1782979432.672][    +25.4s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.8m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[INFO] [1782979433.898] [/exploration_node]: [EV] [1782979433.898][    +26.6s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.5m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[INFO] [1782979433.932] [/exploration_node]: [EV] [1782979433.932][    +26.6s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=6.5m (x9)
+[INFO] [1782979435.108] [/exploration_node]: [EV] [1782979435.108][    +27.8s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/6.4m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[WARN] [1782979435.160] [/exploration_node]: [31m[EMERGENCY] control error 3.00 m > 3.00 m -> replan from current pose[0m
+[WARN] [1782979435.161] [/exploration_node]: [EV] [1782979435.161][    +27.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [emergency: control error] |  (prev cycle x21/6.2s)
+[INFO] [1782979435.724] [/exploration_node]: [EV] [1782979435.724][    +28.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.6s)
+[INFO] [1782979436.188] [/exploration_node]: [EV] [1782979436.188][    +28.9s][EXEC_TRAJ] BATT 24.5V | v=24.83V pct=88% (still, x16/30.0s)
+[INFO] [1782979436.329] [/exploration_node]: [EV] [1782979436.329][    +29.0s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/5.9m goal=(5.9, 4.0, 0.7) t=2ms (x1)
+[INFO] [1782979437.554] [/exploration_node]: [EV] [1782979437.554][    +30.3s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/5.6m goal=(5.9, 4.1, 0.7) t=3ms (x1)
+[WARN] [1782979437.954] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.58 m, idx=400)
+[WARN] [1782979437.979] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979438.004] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.42 m
+[INFO] [1782979438.054] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979438.079] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979438.088] [/exploration_node]: [EV] [1782979438.088][    +30.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [avoidance released: replan from current pose] |  (prev cycle x7/2.4s)
+[WARN] [1782979438.092] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=22)
+[WARN] [1782979438.104] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.40 m, idx=9352)
+[WARN] [1782979438.122] [/exploration_node]: [EV] [1782979438.122][    +30.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.979385] |  (prev cycle x1/0.0s)
+[INFO] [1782979438.182] [/mavros]: HP: requesting home position
+[INFO] [1782979438.190] [/exploration_node]: [EV] [1782979438.190][    +30.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979438.224] [/exploration_node]: [EV] [1782979438.224][    +30.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.931248] |  (prev cycle x1/0.0s)
+[WARN] [1782979438.269] [/exploration_node]: [EV] [1782979438.269][    +31.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031910] |  (prev cycle x1/0.0s)
+[WARN] [1782979438.313] [/exploration_node]: [EV] [1782979438.313][    +31.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030902] |  (prev cycle x1/0.0s)
+[WARN] [1782979438.361] [/exploration_node]: [EV] [1782979438.361][    +31.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032075] |  (prev cycle x1/0.0s)
+[WARN] [1782979438.404] [/exploration_node]: [EV] [1782979438.404][    +31.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031296] |  (prev cycle x1/0.0s)
+[INFO] [1782979438.407] [/exploration_node]: [EV] [1782979438.407][    +31.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979438.452] [/exploration_node]: [EV] [1782979438.452][    +31.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979438.554] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979438.579] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979438.583] [/exploration_node]: [EV] [1782979438.582][    +31.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[WARN] [1782979438.604] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.53 m, idx=3685)
+[INFO] [1782979438.704] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979438.729] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979438.804] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.55 m, idx=4454)
+[INFO] [1782979438.831] [/exploration_node]: [EV] [1782979438.831][    +31.5s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/5.1m goal=(6.0, 4.2, 0.6) t=12ms (x2)
+[INFO] [1782979438.831] [/exploration_node]: [EV] [1782979438.831][    +31.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x3/0.2s)
+[WARN] [1782979438.842] [/exploration_node]: [local-plan] post-check: velocity limit exceeded
+[WARN] [1782979438.865] [/exploration_node]: [EV] [1782979438.865][    +31.6s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: velocity limit exceeded | t=33.5ms goal_d=5.0m (prev cycle x2/10.5s)
+[WARN] [1782979438.865] [/exploration_node]: [EV] [1782979438.865][    +31.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[INFO] [1782979438.909] [/exploration_node]: [EV] [1782979438.908][    +31.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979438.910] [/exploration_node]: [EV] [1782979438.909][    +31.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031425]
+[WARN] [1782979438.954] [/exploration_node]: [EV] [1782979438.954][    +31.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032007] |  (prev cycle x1/0.0s)
+[WARN] [1782979438.989] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979439.006] [/exploration_node]: [EV] [1782979439.006][    +31.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040684] |  (prev cycle x1/0.1s)
+[WARN] [1782979439.008] [/exploration_node]: [EV] [1782979439.008][    +31.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042174]
+[INFO] [1782979439.050] [/exploration_node]: [EV] [1782979439.050][    +31.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979439.053] [/exploration_node]: [EV] [1782979439.053][    +31.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979439.054] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.37 m
+[WARN] [1782979439.057] [/exploration_node]: [EV] [1782979439.057][    +31.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037621]
+[INFO] [1782979439.093] [/exploration_node]: [EV] [1782979439.093][    +31.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979439.094] [/exploration_node]: [EV] [1782979439.094][    +31.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031554]
+[WARN] [1782979439.138] [/exploration_node]: [EV] [1782979439.138][    +31.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032110] |  (prev cycle x1/0.0s)
+[WARN] [1782979439.186] [/exploration_node]: [EV] [1782979439.186][    +31.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034585] |  (prev cycle x1/0.0s)
+[WARN] [1782979439.237] [/exploration_node]: [EV] [1782979439.237][    +31.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039089] |  (prev cycle x1/0.1s)
+[INFO] [1782979439.275] [/exploration_node]: [EV] [1782979439.275][    +32.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979439.317] [/exploration_node]: [EV] [1782979439.316][    +32.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.931913] |  (prev cycle x1/0.0s)
+[INFO] [1782979439.354] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979439.361] [/exploration_node]: [EV] [1782979439.361][    +32.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.982960] |  (prev cycle x1/0.0s)
+[WARN] [1782979439.379] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979439.405] [/exploration_node]: [EV] [1782979439.405][    +32.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.981617] |  (prev cycle x1/0.0s)
+[WARN] [1782979439.414] [/exploration_node]: [EV] [1782979439.414][    +32.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[INFO] [1782979439.448] [/exploration_node]: [EV] [1782979439.448][    +32.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979439.449] [/exploration_node]: [EV] [1782979439.449][    +32.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:1.032625]
+[INFO] [1782979439.491] [/exploration_node]: [EV] [1782979439.491][    +32.2s][PLAN_TRAJ_EXP] LOCAL EXP OK | t=33.4ms goal_d=4.7m (prev cycle x1/0.6s)
+[WARN] [1782979439.654] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.56 m, idx=3196)
+[WARN] [1782979439.989] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979440.054] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.32 m
+[INFO] [1782979440.110] [/exploration_node]: [EV] [1782979440.110][    +32.8s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/3.1m goal=(6.1, 4.4, 0.7) t=5ms (x2)
+[INFO] [1782979440.110] [/exploration_node]: [EV] [1782979440.110][    +32.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.7s)
+[WARN] [1782979440.113] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=23)
+[WARN] [1782979440.146] [/exploration_node]: [EV] [1782979440.146][    +32.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032248] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.190] [/exploration_node]: [EV] [1782979440.190][    +32.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032137] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.236] [/exploration_node]: [EV] [1782979440.236][    +32.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.033952] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.286] [/exploration_node]: [EV] [1782979440.286][    +33.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038901] |  (prev cycle x1/0.0s)
+[INFO] [1782979440.325] [/exploration_node]: [EV] [1782979440.325][    +33.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.365] [/exploration_node]: [EV] [1782979440.365][    +33.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032082] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.409] [/exploration_node]: [EV] [1782979440.409][    +33.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031795] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.453] [/exploration_node]: [EV] [1782979440.453][    +33.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030404] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.497] [/exploration_node]: [EV] [1782979440.497][    +33.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032068] |  (prev cycle x1/0.0s)
+[INFO] [1782979440.542] [/exploration_node]: [EV] [1782979440.542][    +33.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.544] [/exploration_node]: [EV] [1782979440.544][    +33.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035210]
+[INFO] [1782979440.582] [/exploration_node]: [EV] [1782979440.582][    +33.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979440.586] [/exploration_node]: [EV] [1782979440.586][    +33.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.033433]
+[WARN] [1782979440.636] [/exploration_node]: [EV] [1782979440.636][    +33.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040622] |  (prev cycle x1/0.1s)
+[WARN] [1782979440.681] [/exploration_node]: [EV] [1782979440.681][    +33.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040512] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.685] [/exploration_node]: [EV] [1782979440.685][    +33.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044860]
+[INFO] [1782979440.725] [/exploration_node]: [EV] [1782979440.725][    +33.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979440.736] [/exploration_node]: [EV] [1782979440.736][    +33.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041018]
+[INFO] [1782979440.773] [/exploration_node]: [EV] [1782979440.773][    +33.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.815] [/exploration_node]: [EV] [1782979440.815][    +33.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031909] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.861] [/exploration_node]: [EV] [1782979440.861][    +33.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031415] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.904] [/exploration_node]: [EV] [1782979440.904][    +33.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031575] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.948] [/exploration_node]: [EV] [1782979440.947][    +33.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031693] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.989] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979440.993] [/exploration_node]: [EV] [1782979440.993][    +33.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979440.994] [/exploration_node]: [EV] [1782979440.994][    +33.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034780]
+[INFO] [1782979441.034] [/exploration_node]: [EV] [1782979441.034][    +33.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.035] [/exploration_node]: [EV] [1782979441.035][    +33.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031696]
+[WARN] [1782979441.086] [/exploration_node]: [EV] [1782979441.086][    +33.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034233] |  (prev cycle x1/0.1s)
+[INFO] [1782979441.104] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.22 m
+[WARN] [1782979441.135] [/exploration_node]: [EV] [1782979441.135][    +33.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040586] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.180] [/exploration_node]: [EV] [1782979441.180][    +33.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040379] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.186] [/exploration_node]: [EV] [1782979441.186][    +33.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046329]
+[INFO] [1782979441.226] [/exploration_node]: [EV] [1782979441.226][    +33.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979441.230] [/exploration_node]: [EV] [1782979441.230][    +33.9s][EXEC_TRAJ] GLOBAL result=OK | clusters=1(reach 1) vp=1(reach 1) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/4.4m goal=(6.1, 4.6, 0.6) t=4ms (x4)
+[INFO] [1782979441.230] [/exploration_node]: [EV] [1782979441.230][    +33.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979441.235] [/exploration_node]: [EV] [1782979441.235][    +33.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040427]
+[INFO] [1782979441.270] [/exploration_node]: [EV] [1782979441.269][    +34.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.280] [/exploration_node]: [EV] [1782979441.280][    +34.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040651]
+[WARN] [1782979441.287] [/exploration_node]: [EV] [1782979441.287][    +34.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.048002]
+[INFO] [1782979441.323] [/exploration_node]: [EV] [1782979441.323][    +34.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.333] [/exploration_node]: [EV] [1782979441.333][    +34.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040481]
+[WARN] [1782979441.335] [/exploration_node]: [EV] [1782979441.334][    +34.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041775]
+[INFO] [1782979441.377] [/exploration_node]: [EV] [1782979441.377][    +34.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.387] [/exploration_node]: [EV] [1782979441.387][    +34.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040750]
+[INFO] [1782979441.434] [/exploration_node]: [EV] [1782979441.434][    +34.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.468] [/exploration_node]: [EV] [1782979441.468][    +34.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031394] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.512] [/exploration_node]: [EV] [1782979441.512][    +34.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032498] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.555] [/exploration_node]: [EV] [1782979441.555][    +34.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032211] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.600] [/exploration_node]: [EV] [1782979441.600][    +34.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032187] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.642] [/exploration_node]: [EV] [1782979441.642][    +34.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031080] |  (prev cycle x1/0.0s)
+[INFO] [1782979441.646] [/exploration_node]: [EV] [1782979441.646][    +34.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979441.685] [/exploration_node]: [EV] [1782979441.685][    +34.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.687] [/exploration_node]: [EV] [1782979441.687][    +34.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031877]
+[WARN] [1782979441.735] [/exploration_node]: [EV] [1782979441.735][    +34.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036959] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.783] [/exploration_node]: [EV] [1782979441.783][    +34.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040924] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.785] [/exploration_node]: [EV] [1782979441.785][    +34.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043055]
+[INFO] [1782979441.826] [/exploration_node]: [EV] [1782979441.826][    +34.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979441.834] [/exploration_node]: [EV] [1782979441.834][    +34.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038720]
+[INFO] [1782979441.878] [/exploration_node]: [EV] [1782979441.878][    +34.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.915] [/exploration_node]: [EV] [1782979441.915][    +34.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032051] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.958] [/exploration_node]: [EV] [1782979441.958][    +34.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031254] |  (prev cycle x1/0.0s)
+[WARN] [1782979441.999] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979442.002] [/exploration_node]: [EV] [1782979442.002][    +34.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032465] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.046] [/exploration_node]: [EV] [1782979442.046][    +34.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032829] |  (prev cycle x1/0.0s)
+[INFO] [1782979442.090] [/exploration_node]: [EV] [1782979442.090][    +34.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.092] [/exploration_node]: [EV] [1782979442.092][    +34.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034210]
+[INFO] [1782979442.105] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.36 m
+[INFO] [1782979442.132] [/exploration_node]: [EV] [1782979442.132][    +34.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979442.134] [/exploration_node]: [EV] [1782979442.134][    +34.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032091]
+[WARN] [1782979442.146] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=51)
+[WARN] [1782979442.187] [/exploration_node]: [EV] [1782979442.186][    +34.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040103] |  (prev cycle x1/0.1s)
+[WARN] [1782979442.232] [/exploration_node]: [EV] [1782979442.232][    +34.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038053] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.234] [/exploration_node]: [EV] [1782979442.234][    +34.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040379]
+[INFO] [1782979442.275] [/exploration_node]: [EV] [1782979442.275][    +35.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979442.285] [/exploration_node]: [EV] [1782979442.285][    +35.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040646]
+[WARN] [1782979442.288] [/exploration_node]: [EV] [1782979442.288][    +35.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042996]
+[INFO] [1782979442.297] [/exploration_node]: [EV] [1782979442.297][    +35.0s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/5.4m goal=(6.4, 3.9, 0.6) t=5ms (x4)
+[INFO] [1782979442.297] [/exploration_node]: [EV] [1782979442.297][    +35.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979442.330] [/exploration_node]: [EV] [1782979442.330][    +35.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979442.337] [/exploration_node]: [EV] [1782979442.337][    +35.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037251]
+[WARN] [1782979442.385] [/exploration_node]: [EV] [1782979442.385][    +35.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042236] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.391] [/exploration_node]: [EV] [1782979442.391][    +35.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.048210]
+[INFO] [1782979442.428] [/exploration_node]: [EV] [1782979442.427][    +35.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979442.434] [/exploration_node]: [EV] [1782979442.434][    +35.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037943]
+[WARN] [1782979442.483] [/exploration_node]: [EV] [1782979442.483][    +35.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042724] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.488] [/exploration_node]: [EV] [1782979442.488][    +35.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.047007]
+[INFO] [1782979442.525] [/exploration_node]: [EV] [1782979442.524][    +35.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979442.536] [/exploration_node]: [EV] [1782979442.536][    +35.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979442.570] [/exploration_node]: [EV] [1782979442.570][    +35.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030029] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.615] [/exploration_node]: [EV] [1782979442.615][    +35.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031503] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.659] [/exploration_node]: [EV] [1782979442.659][    +35.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.029952] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.704] [/exploration_node]: [EV] [1782979442.704][    +35.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030989] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.746] [/exploration_node]: [EV] [1782979442.746][    +35.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030297] |  (prev cycle x1/0.0s)
+[INFO] [1782979442.752] [/exploration_node]: [EV] [1782979442.752][    +35.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979442.789] [/exploration_node]: [EV] [1782979442.789][    +35.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979442.791] [/exploration_node]: [EV] [1782979442.791][    +35.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032062]
+[WARN] [1782979442.833] [/exploration_node]: [EV] [1782979442.833][    +35.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031402] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.886] [/exploration_node]: [EV] [1782979442.886][    +35.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040052] |  (prev cycle x1/0.1s)
+[WARN] [1782979442.931] [/exploration_node]: [EV] [1782979442.931][    +35.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040899] |  (prev cycle x1/0.0s)
+[WARN] [1782979442.933] [/exploration_node]: [EV] [1782979442.933][    +35.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043678]
+[INFO] [1782979442.974] [/exploration_node]: [EV] [1782979442.974][    +35.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979442.978] [/exploration_node]: [EV] [1782979442.978][    +35.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979442.985] [/exploration_node]: [EV] [1782979442.985][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041863]
+[WARN] [1782979442.999] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979443.020] [/exploration_node]: [EV] [1782979443.020][    +35.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979443.030] [/exploration_node]: [EV] [1782979443.030][    +35.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040836]
+[WARN] [1782979443.033] [/exploration_node]: [EV] [1782979443.033][    +35.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043705]
+[INFO] [1782979443.076] [/exploration_node]: [EV] [1782979443.076][    +35.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979443.087] [/exploration_node]: [EV] [1782979443.087][    +35.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044680]
+[WARN] [1782979443.133] [/exploration_node]: [EV] [1782979443.132][    +35.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041015] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.134] [/exploration_node]: [EV] [1782979443.134][    +35.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042248]
+[INFO] [1782979443.154] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.20 m
+[INFO] [1782979443.176] [/exploration_node]: [EV] [1782979443.176][    +35.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979443.193] [/exploration_node]: [EV] [1782979443.193][    +35.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979443.229] [/exploration_node]: [EV] [1782979443.229][    +35.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032492] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.233] [/exploration_node]: [EV] [1782979443.233][    +35.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036830]
+[INFO] [1782979443.271] [/exploration_node]: [EV] [1782979443.271][    +36.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979443.282] [/exploration_node]: [EV] [1782979443.282][    +36.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041855]
+[WARN] [1782979443.285] [/exploration_node]: [EV] [1782979443.285][    +36.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045645]
+[INFO] [1782979443.327] [/exploration_node]: [EV] [1782979443.327][    +36.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979443.333] [/exploration_node]: [EV] [1782979443.333][    +36.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036925]
+[WARN] [1782979443.380] [/exploration_node]: [EV] [1782979443.380][    +36.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040647] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.385] [/exploration_node]: [EV] [1782979443.385][    +36.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045430]
+[INFO] [1782979443.424] [/exploration_node]: [EV] [1782979443.424][    +36.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979443.456] [/exploration_node]: [EV] [1782979443.456][    +36.2s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/7.7m goal=(6.5, 4.7, 0.5) t=32ms (x4)
+[INFO] [1782979443.456] [/exploration_node]: [EV] [1782979443.456][    +36.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979443.493] [/exploration_node]: [EV] [1782979443.493][    +36.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034640] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.535] [/exploration_node]: [EV] [1782979443.535][    +36.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030832] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.586] [/exploration_node]: [EV] [1782979443.586][    +36.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039272] |  (prev cycle x1/0.1s)
+[WARN] [1782979443.634] [/exploration_node]: [EV] [1782979443.634][    +36.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043553] |  (prev cycle x1/0.0s)
+[INFO] [1782979443.679] [/exploration_node]: [EV] [1782979443.679][    +36.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.715] [/exploration_node]: [EV] [1782979443.715][    +36.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032091] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.757] [/exploration_node]: [EV] [1782979443.757][    +36.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031033] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.802] [/exploration_node]: [EV] [1782979443.802][    +36.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032117] |  (prev cycle x1/0.0s)
+[WARN] [1782979443.844] [/exploration_node]: [EV] [1782979443.844][    +36.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030865] |  (prev cycle x1/0.0s)
+[INFO] [1782979443.896] [/exploration_node]: [EV] [1782979443.896][    +36.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979443.898] [/exploration_node]: [EV] [1782979443.898][    +36.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040491]
+[INFO] [1782979443.934] [/exploration_node]: [EV] [1782979443.934][    +36.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979443.935] [/exploration_node]: [EV] [1782979443.935][    +36.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031804]
+[WARN] [1782979443.985] [/exploration_node]: [EV] [1782979443.985][    +36.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038046] |  (prev cycle x1/0.1s)
+[WARN] [1782979444.009] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979444.031] [/exploration_node]: [EV] [1782979444.031][    +36.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040310] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.034] [/exploration_node]: [EV] [1782979444.034][    +36.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043274]
+[INFO] [1782979444.075] [/exploration_node]: [EV] [1782979444.074][    +36.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.085] [/exploration_node]: [EV] [1782979444.085][    +36.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040472]
+[WARN] [1782979444.090] [/exploration_node]: [EV] [1782979444.090][    +36.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045301]
+[INFO] [1782979444.128] [/exploration_node]: [EV] [1782979444.128][    +36.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979444.135] [/exploration_node]: [EV] [1782979444.135][    +36.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979444.135] [/exploration_node]: [EV] [1782979444.135][    +36.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037661]
+[INFO] [1782979444.154] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.21 m
+[INFO] [1782979444.174] [/exploration_node]: [EV] [1782979444.174][    +36.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.185] [/exploration_node]: [EV] [1782979444.185][    +36.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041524]
+[WARN] [1782979444.188] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=27)
+[WARN] [1782979444.230] [/exploration_node]: [EV] [1782979444.230][    +36.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041190] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.234] [/exploration_node]: [EV] [1782979444.234][    +36.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045106]
+[INFO] [1782979444.273] [/exploration_node]: [EV] [1782979444.273][    +37.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.283] [/exploration_node]: [EV] [1782979444.283][    +37.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040707]
+[WARN] [1782979444.285] [/exploration_node]: [EV] [1782979444.285][    +37.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042520]
+[INFO] [1782979444.327] [/exploration_node]: [EV] [1782979444.327][    +37.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.334] [/exploration_node]: [EV] [1782979444.334][    +37.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038416]
+[INFO] [1782979444.341] [/exploration_node]: [EV] [1782979444.341][    +37.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979444.375] [/exploration_node]: [EV] [1782979444.375][    +37.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.384] [/exploration_node]: [EV] [1782979444.384][    +37.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039813]
+[WARN] [1782979444.431] [/exploration_node]: [EV] [1782979444.431][    +37.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042551] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.435] [/exploration_node]: [EV] [1782979444.435][    +37.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046043]
+[INFO] [1782979444.473] [/exploration_node]: [EV] [1782979444.473][    +37.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.483] [/exploration_node]: [EV] [1782979444.483][    +37.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040672]
+[WARN] [1782979444.485] [/exploration_node]: [EV] [1782979444.485][    +37.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042921]
+[INFO] [1782979444.526] [/exploration_node]: [EV] [1782979444.526][    +37.2s][PLAN_TRAJ_EXP] LOCAL EXP OK | why: escape traj (flyToSafeRegion) | t=33.4ms goal_d=3.7m (x93)
+[INFO] [1782979444.526] [/exploration_node]: [EV] [1782979444.526][    +37.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.536] [/exploration_node]: [EV] [1782979444.536][    +37.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040349]
+[WARN] [1782979444.540] [/exploration_node]: [EV] [1782979444.540][    +37.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044018]
+[INFO] [1782979444.551] [/exploration_node]: [EV] [1782979444.549][    +37.2s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=3(reach 3) vp=3(reach 3) pipe[tot=3 dorm=0 unreach=0 cons=3 nocand=0 topo=0 novis=0 ok=3] tour=4n/10.4m goal=(5.5, 6.3, 1.3) t=7ms (x4)
+[INFO] [1782979444.551] [/exploration_node]: [EV] [1782979444.551][    +37.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979444.584] [/exploration_node]: [EV] [1782979444.584][    +37.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.586] [/exploration_node]: [EV] [1782979444.586][    +37.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030799]
+[WARN] [1782979444.636] [/exploration_node]: [EV] [1782979444.636][    +37.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038956] |  (prev cycle x1/0.1s)
+[WARN] [1782979444.683] [/exploration_node]: [EV] [1782979444.683][    +37.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042371] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.687] [/exploration_node]: [EV] [1782979444.687][    +37.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046105]
+[INFO] [1782979444.725] [/exploration_node]: [EV] [1782979444.725][    +37.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979444.736] [/exploration_node]: [EV] [1782979444.736][    +37.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041268]
+[INFO] [1782979444.779] [/exploration_node]: [EV] [1782979444.779][    +37.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.816] [/exploration_node]: [EV] [1782979444.816][    +37.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031973] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.859] [/exploration_node]: [EV] [1782979444.859][    +37.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031726] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.903] [/exploration_node]: [EV] [1782979444.903][    +37.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031899] |  (prev cycle x1/0.0s)
+[WARN] [1782979444.946] [/exploration_node]: [EV] [1782979444.946][    +37.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031845] |  (prev cycle x1/0.0s)
+[INFO] [1782979444.997] [/exploration_node]: [EV] [1782979444.997][    +37.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979444.999] [/exploration_node]: [EV] [1782979444.999][    +37.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041062]
+[WARN] [1782979445.019] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979445.034] [/exploration_node]: [EV] [1782979445.034][    +37.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.035] [/exploration_node]: [EV] [1782979445.035][    +37.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031454]
+[WARN] [1782979445.085] [/exploration_node]: [EV] [1782979445.085][    +37.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036677] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.131] [/exploration_node]: [EV] [1782979445.131][    +37.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039785] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.135] [/exploration_node]: [EV] [1782979445.135][    +37.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043091]
+[INFO] [1782979445.175] [/exploration_node]: [EV] [1782979445.175][    +37.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.185] [/exploration_node]: [EV] [1782979445.185][    +37.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039943]
+[INFO] [1782979445.204] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.21 m
+[INFO] [1782979445.231] [/exploration_node]: [EV] [1782979445.231][    +37.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.234] [/exploration_node]: [EV] [1782979445.234][    +37.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045098]
+[INFO] [1782979445.269] [/exploration_node]: [EV] [1782979445.269][    +38.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.281] [/exploration_node]: [EV] [1782979445.281][    +38.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043101]
+[WARN] [1782979445.285] [/exploration_node]: [EV] [1782979445.285][    +38.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046655]
+[INFO] [1782979445.322] [/exploration_node]: [EV] [1782979445.322][    +38.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.334] [/exploration_node]: [EV] [1782979445.334][    +38.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042578]
+[WARN] [1782979445.379] [/exploration_node]: [EV] [1782979445.379][    +38.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040010] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.384] [/exploration_node]: [EV] [1782979445.384][    +38.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044861]
+[INFO] [1782979445.423] [/exploration_node]: [EV] [1782979445.423][    +38.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979445.445] [/exploration_node]: [EV] [1782979445.445][    +38.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979445.450] [/exploration_node]: [EV] [1782979445.450][    +38.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.057913]
+[INFO] [1782979445.484] [/exploration_node]: [EV] [1782979445.484][    +38.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.486] [/exploration_node]: [EV] [1782979445.486][    +38.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031599]
+[WARN] [1782979445.534] [/exploration_node]: [EV] [1782979445.534][    +38.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035465] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.581] [/exploration_node]: [EV] [1782979445.581][    +38.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039749] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.585] [/exploration_node]: [EV] [1782979445.585][    +38.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043297]
+[INFO] [1782979445.627] [/exploration_node]: [EV] [1782979445.627][    +38.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.634] [/exploration_node]: [EV] [1782979445.634][    +38.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037851]
+[INFO] [1782979445.680] [/exploration_node]: [EV] [1782979445.680][    +38.4s][EXEC_TRAJ] GLOBAL result=OK | clusters=3(reach 3) vp=3(reach 3) pipe[tot=3 dorm=0 unreach=0 cons=3 nocand=0 topo=0 novis=0 ok=3] tour=4n/9.2m goal=(7.0, 4.9, 0.8) t=6ms (x4)
+[INFO] [1782979445.680] [/exploration_node]: [EV] [1782979445.680][    +38.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.717] [/exploration_node]: [EV] [1782979445.717][    +38.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031315] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.761] [/exploration_node]: [EV] [1782979445.761][    +38.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.028549] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.805] [/exploration_node]: [EV] [1782979445.805][    +38.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031582] |  (prev cycle x1/0.0s)
+[WARN] [1782979445.849] [/exploration_node]: [EV] [1782979445.848][    +38.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032008] |  (prev cycle x1/0.0s)
+[INFO] [1782979445.904] [/exploration_node]: [EV] [1782979445.904][    +38.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979445.905] [/exploration_node]: [EV] [1782979445.905][    +38.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045249]
+[INFO] [1782979445.940] [/exploration_node]: [EV] [1782979445.940][    +38.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979445.941] [/exploration_node]: [EV] [1782979445.941][    +38.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032045]
+[WARN] [1782979445.984] [/exploration_node]: [EV] [1782979445.984][    +38.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031395] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.030] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979446.034] [/exploration_node]: [EV] [1782979446.034][    +38.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037228] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.080] [/exploration_node]: [EV] [1782979446.080][    +38.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040398] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.084] [/exploration_node]: [EV] [1782979446.084][    +38.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044291]
+[INFO] [1782979446.125] [/exploration_node]: [EV] [1782979446.125][    +38.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979446.135] [/exploration_node]: [EV] [1782979446.135][    +38.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979446.170] [/exploration_node]: [EV] [1782979446.170][    +38.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031874] |  (prev cycle x1/0.0s)
+[INFO] [1782979446.207] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.21 m
+[WARN] [1782979446.214] [/exploration_node]: [EV] [1782979446.214][    +38.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031678] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.225] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=27)
+[WARN] [1782979446.258] [/exploration_node]: [EV] [1782979446.258][    +39.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032217] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.301] [/exploration_node]: [EV] [1782979446.301][    +39.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031606] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.345] [/exploration_node]: [EV] [1782979446.345][    +39.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031946] |  (prev cycle x1/0.0s)
+[INFO] [1782979446.354] [/exploration_node]: [EV] [1782979446.354][    +39.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979446.387] [/exploration_node]: [EV] [1782979446.387][    +39.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979446.388] [/exploration_node]: [EV] [1782979446.388][    +39.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031595]
+[WARN] [1782979446.433] [/exploration_node]: [EV] [1782979446.433][    +39.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.033494] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.483] [/exploration_node]: [EV] [1782979446.483][    +39.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035669] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.532] [/exploration_node]: [EV] [1782979446.531][    +39.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040538] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.535] [/exploration_node]: [EV] [1782979446.535][    +39.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043725]
+[INFO] [1782979446.575] [/exploration_node]: [EV] [1782979446.575][    +39.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979446.607] [/exploration_node]: [EV] [1782979446.607][    +39.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979446.642] [/exploration_node]: [EV] [1782979446.642][    +39.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032102] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.685] [/exploration_node]: [EV] [1782979446.685][    +39.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031214] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.735] [/exploration_node]: [EV] [1782979446.735][    +39.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037843] |  (prev cycle x1/0.1s)
+[WARN] [1782979446.743] [/exploration_node]: [local-plan] post-check: new traj collides within 1s
+[WARN] [1782979446.772] [/exploration_node]: [EV] [1782979446.772][    +39.5s][PLAN_TRAJ_EXP] LOCAL EXP FAIL | why: post-check: new traj collides within 1s | t=33.4ms goal_d=4.2m (prev cycle x1/7.3s)
+[WARN] [1782979446.772] [/exploration_node]: [EV] [1782979446.772][    +39.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[WARN] [1782979446.783] [/exploration_node]: [EV] [1782979446.783][    +39.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.085765]
+[INFO] [1782979446.830] [/exploration_node]: [EV] [1782979446.830][    +39.5s][PLAN_TRAJ_EXP] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 1) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=2n/4.0m goal=(8.9, 6.1, 0.8) t=12ms (x4)
+[INFO] [1782979446.830] [/exploration_node]: [EV] [1782979446.830][    +39.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.865] [/exploration_node]: [EV] [1782979446.865][    +39.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.168316] |  (prev cycle x1/0.0s)
+[WARN] [1782979446.908] [/exploration_node]: [EV] [1782979446.908][    +39.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.211036] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.039] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979447.046] [/exploration_node]: [EV] [1782979447.046][    +39.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[INFO] [1782979447.082] [/exploration_node]: [EV] [1782979447.082][    +39.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979447.083] [/exploration_node]: [EV] [1782979447.083][    +39.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030616]
+[WARN] [1782979447.134] [/exploration_node]: [EV] [1782979447.134][    +39.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039873] |  (prev cycle x1/0.1s)
+[WARN] [1782979447.179] [/exploration_node]: [EV] [1782979447.179][    +39.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040846] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.182] [/exploration_node]: [EV] [1782979447.182][    +39.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043930]
+[INFO] [1782979447.222] [/exploration_node]: [EV] [1782979447.222][    +39.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979447.234] [/exploration_node]: [EV] [1782979447.234][    +39.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041696]
+[WARN] [1782979447.237] [/exploration_node]: [EV] [1782979447.237][    +39.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045063]
+[INFO] [1782979447.256] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.46 m
+[INFO] [1782979447.276] [/exploration_node]: [EV] [1782979447.276][    +40.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979447.283] [/exploration_node]: [EV] [1782979447.283][    +40.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979447.320] [/exploration_node]: [EV] [1782979447.320][    +40.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031445] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.365] [/exploration_node]: [EV] [1782979447.365][    +40.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032769] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.407] [/exploration_node]: [EV] [1782979447.407][    +40.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.029228] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.452] [/exploration_node]: [EV] [1782979447.452][    +40.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032517] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.494] [/exploration_node]: [EV] [1782979447.494][    +40.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031533] |  (prev cycle x1/0.0s)
+[INFO] [1782979447.502] [/exploration_node]: [EV] [1782979447.502][    +40.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979447.537] [/exploration_node]: [EV] [1782979447.537][    +40.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979447.539] [/exploration_node]: [EV] [1782979447.539][    +40.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032231]
+[WARN] [1782979447.582] [/exploration_node]: [EV] [1782979447.582][    +40.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031590] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.635] [/exploration_node]: [EV] [1782979447.635][    +40.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.034785] |  (prev cycle x1/0.1s)
+[WARN] [1782979447.681] [/exploration_node]: [EV] [1782979447.681][    +40.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040828] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.682] [/exploration_node]: [EV] [1782979447.682][    +40.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041381]
+[INFO] [1782979447.725] [/exploration_node]: [EV] [1782979447.725][    +40.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979447.729] [/exploration_node]: [EV] [1782979447.729][    +40.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979447.770] [/exploration_node]: [EV] [1782979447.770][    +40.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031653] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.812] [/exploration_node]: [EV] [1782979447.812][    +40.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030841] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.857] [/exploration_node]: [EV] [1782979447.857][    +40.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032437] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.899] [/exploration_node]: [EV] [1782979447.899][    +40.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031049] |  (prev cycle x1/0.0s)
+[INFO] [1782979447.949] [/exploration_node]: [EV] [1782979447.948][    +40.6s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/7.2m goal=(5.9, 6.4, 0.9) t=5ms (x4)
+[INFO] [1782979447.949] [/exploration_node]: [EV] [1782979447.949][    +40.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979447.951] [/exploration_node]: [EV] [1782979447.951][    +40.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038176]
+[INFO] [1782979447.954] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979447.979] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979447.986] [/exploration_node]: [EV] [1782979447.986][    +40.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979447.987] [/exploration_node]: [EV] [1782979447.987][    +40.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031536]
+[WARN] [1782979447.996] [/exploration_node]: [EV] [1782979447.996][    +40.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[INFO] [1782979447.996] [/exploration_node]: [EV] [1782979447.996][    +40.7s][PLAN_TRAJ_EXP] AVOID OFF (released, replan from current pose)  <->  ON (obstacle close, reactive layer overrides cmd) | cycling x10 over 34.5s
+[WARN] [1782979448.004] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.24 m, idx=3464)
+[INFO] [1782979448.030] [/exploration_node]: [EV] [1782979448.030][    +40.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.037] [/exploration_node]: [EV] [1782979448.037][    +40.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036910]
+[WARN] [1782979448.039] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979448.084] [/exploration_node]: [EV] [1782979448.084][    +40.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041198] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.128] [/exploration_node]: [EV] [1782979448.128][    +40.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040677] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.140] [/exploration_node]: [EV] [1782979448.139][    +40.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.052069]
+[INFO] [1782979448.177] [/exploration_node]: [EV] [1782979448.177][    +40.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979448.182] [/mavros]: HP: requesting home position
+[INFO] [1782979448.191] [/exploration_node]: [EV] [1782979448.190][    +40.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979448.225] [/exploration_node]: [EV] [1782979448.225][    +40.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030371] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.235] [/exploration_node]: [EV] [1782979448.235][    +40.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040245]
+[WARN] [1782979448.239] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=29)
+[INFO] [1782979448.270] [/exploration_node]: [EV] [1782979448.270][    +41.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.280] [/exploration_node]: [EV] [1782979448.280][    +41.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040521]
+[WARN] [1782979448.288] [/exploration_node]: [EV] [1782979448.288][    +41.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.048455]
+[INFO] [1782979448.304] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.23 m
+[INFO] [1782979448.323] [/exploration_node]: [EV] [1782979448.323][    +41.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.334] [/exploration_node]: [EV] [1782979448.334][    +41.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041597]
+[WARN] [1782979448.379] [/exploration_node]: [EV] [1782979448.379][    +41.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041220] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.387] [/exploration_node]: [EV] [1782979448.387][    +41.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.049515]
+[INFO] [1782979448.423] [/exploration_node]: [EV] [1782979448.423][    +41.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979448.431] [/exploration_node]: [EV] [1782979448.431][    +41.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[INFO] [1782979448.454] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979448.469] [/exploration_node]: [EV] [1782979448.468][    +41.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032527] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.479] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979448.504] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.24 m, idx=6147)
+[WARN] [1782979448.511] [/exploration_node]: [EV] [1782979448.511][    +41.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031149] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.521] [/exploration_node]: [EV] [1782979448.521][    +41.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[INFO] [1782979448.555] [/exploration_node]: [EV] [1782979448.555][    +41.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.557] [/exploration_node]: [EV] [1782979448.557][    +41.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.030794]
+[WARN] [1782979448.599] [/exploration_node]: [EV] [1782979448.599][    +41.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031167] |  (prev cycle x1/0.0s)
+[INFO] [1782979448.650] [/exploration_node]: [EV] [1782979448.650][    +41.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979448.687] [/exploration_node]: [EV] [1782979448.687][    +41.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032212] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.689] [/exploration_node]: [EV] [1782979448.689][    +41.4s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.033982]
+[INFO] [1782979448.729] [/exploration_node]: [EV] [1782979448.729][    +41.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.739] [/exploration_node]: [EV] [1782979448.739][    +41.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040956]
+[WARN] [1782979448.784] [/exploration_node]: [EV] [1782979448.784][    +41.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041521] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.788] [/exploration_node]: [EV] [1782979448.788][    +41.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.045619]
+[INFO] [1782979448.829] [/exploration_node]: [EV] [1782979448.829][    +41.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.839] [/exploration_node]: [EV] [1782979448.839][    +41.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039896]
+[INFO] [1782979448.885] [/exploration_node]: [EV] [1782979448.885][    +41.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979448.886] [/exploration_node]: [EV] [1782979448.886][    +41.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042677]
+[INFO] [1782979448.920] [/exploration_node]: [EV] [1782979448.920][    +41.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.930] [/exploration_node]: [EV] [1782979448.930][    +41.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040642]
+[WARN] [1782979448.939] [/exploration_node]: [EV] [1782979448.939][    +41.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.049649]
+[INFO] [1782979448.974] [/exploration_node]: [EV] [1782979448.974][    +41.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979448.984] [/exploration_node]: [EV] [1782979448.984][    +41.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040326]
+[WARN] [1782979448.988] [/exploration_node]: [EV] [1782979448.988][    +41.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043763]
+[INFO] [1782979449.028] [/exploration_node]: [EV] [1782979449.028][    +41.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.038] [/exploration_node]: [EV] [1782979449.038][    +41.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040728]
+[WARN] [1782979449.040] [/exploration_node]: [EV] [1782979449.040][    +41.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042469]
+[WARN] [1782979449.049] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979449.082] [/exploration_node]: [EV] [1782979449.081][    +41.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979449.094] [/exploration_node]: [EV] [1782979449.094][    +41.8s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 2) vp=2(reach 2) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=3n/6.3m goal=(6.9, 6.3, 0.8) t=8ms (x4)
+[INFO] [1782979449.094] [/exploration_node]: [EV] [1782979449.094][    +41.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979449.095] [/exploration_node]: [EV] [1782979449.095][    +41.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044293]
+[INFO] [1782979449.129] [/exploration_node]: [EV] [1782979449.129][    +41.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.140] [/exploration_node]: [EV] [1782979449.140][    +41.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040790]
+[WARN] [1782979449.142] [/exploration_node]: [EV] [1782979449.142][    +41.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042937]
+[INFO] [1782979449.183] [/exploration_node]: [EV] [1782979449.183][    +41.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.191] [/exploration_node]: [EV] [1782979449.191][    +41.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039126]
+[WARN] [1782979449.237] [/exploration_node]: [EV] [1782979449.237][    +41.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040365] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.283] [/exploration_node]: [EV] [1782979449.283][    +42.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032547] |  (prev cycle x1/0.0s)
+[INFO] [1782979449.305] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.27 m
+[WARN] [1782979449.288] [/exploration_node]: [EV] [1782979449.288][    +42.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.037467]
+[INFO] [1782979449.324] [/exploration_node]: [EV] [1782979449.324][    +42.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[INFO] [1782979449.335] [/exploration_node]: [EV] [1782979449.335][    +42.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979449.370] [/exploration_node]: [EV] [1782979449.370][    +42.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031605] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.413] [/exploration_node]: [EV] [1782979449.413][    +42.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031358] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.458] [/exploration_node]: [EV] [1782979449.458][    +42.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032694] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.500] [/exploration_node]: [EV] [1782979449.500][    +42.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031414] |  (prev cycle x1/0.0s)
+[INFO] [1782979449.549] [/exploration_node]: [EV] [1782979449.549][    +42.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.551] [/exploration_node]: [EV] [1782979449.551][    +42.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038985]
+[INFO] [1782979449.587] [/exploration_node]: [EV] [1782979449.587][    +42.3s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.592] [/exploration_node]: [EV] [1782979449.592][    +42.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036720]
+[WARN] [1782979449.642] [/exploration_node]: [EV] [1782979449.642][    +42.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041837] |  (prev cycle x1/0.1s)
+[WARN] [1782979449.683] [/exploration_node]: [EV] [1782979449.682][    +42.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035808] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.731] [/exploration_node]: [EV] [1782979449.731][    +42.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041274] |  (prev cycle x1/0.0s)
+[WARN] [1782979449.778] [/exploration_node]: [EV] [1782979449.778][    +42.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032801] |  (prev cycle x1/0.0s)
+[INFO] [1782979449.784] [/exploration_node]: [EV] [1782979449.784][    +42.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [planGlobalPath: succeed]
+[WARN] [1782979449.786] [/exploration_node]: [EV] [1782979449.786][    +42.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041386]
+[INFO] [1782979449.822] [/exploration_node]: [EV] [1782979449.822][    +42.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.832] [/exploration_node]: [EV] [1782979449.832][    +42.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042030]
+[WARN] [1782979449.839] [/exploration_node]: [EV] [1782979449.839][    +42.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.048275]
+[INFO] [1782979449.877] [/exploration_node]: [EV] [1782979449.877][    +42.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.887] [/exploration_node]: [EV] [1782979449.887][    +42.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040926]
+[WARN] [1782979449.888] [/exploration_node]: [EV] [1782979449.888][    +42.6s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042262]
+[INFO] [1782979449.930] [/exploration_node]: [EV] [1782979449.930][    +42.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979449.938] [/exploration_node]: [EV] [1782979449.938][    +42.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038370]
+[WARN] [1782979449.983] [/exploration_node]: [EV] [1782979449.983][    +42.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040883] |  (prev cycle x1/0.0s)
+[INFO] [1782979450.031] [/exploration_node]: [EV] [1782979450.031][    +42.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.050] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979450.067] [/exploration_node]: [EV] [1782979450.066][    +42.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031613] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.109] [/exploration_node]: [EV] [1782979450.109][    +42.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031220] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.154] [/exploration_node]: [EV] [1782979450.154][    +42.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.032482] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.197] [/exploration_node]: [EV] [1782979450.197][    +42.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031912] |  (prev cycle x1/0.0s)
+[INFO] [1782979450.251] [/exploration_node]: [EV] [1782979450.251][    +43.0s][EXEC_TRAJ] GLOBAL result=OK | clusters=2(reach 1) vp=1(reach 1) pipe[tot=2 dorm=0 unreach=1 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=2n/3.8m goal=(4.5, 8.8, 0.9) t=10ms (x4)
+[INFO] [1782979450.251] [/exploration_node]: [EV] [1782979450.251][    +43.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [planGlobalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979450.253] [/exploration_node]: [EV] [1782979450.253][    +43.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044026]
+[WARN] [1782979450.257] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=31)
+[INFO] [1782979450.288] [/exploration_node]: [EV] [1782979450.288][    +43.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.289] [/exploration_node]: [EV] [1782979450.289][    +43.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.031996]
+[WARN] [1782979450.342] [/exploration_node]: [EV] [1782979450.342][    +43.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042295] |  (prev cycle x1/0.1s)
+[INFO] [1782979450.354] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.30 m
+[WARN] [1782979450.385] [/exploration_node]: [EV] [1782979450.385][    +43.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038776] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.432] [/exploration_node]: [EV] [1782979450.432][    +43.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040689] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.440] [/exploration_node]: [EV] [1782979450.440][    +43.1s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.048754]
+[INFO] [1782979450.475] [/exploration_node]: [EV] [1782979450.475][    +43.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.484] [/exploration_node]: [EV] [1782979450.484][    +43.2s][EXEC_TRAJ] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=2, reachable_clusters=0) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] | clusters=2(reach 0) vp=0(reach 0) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] tour=2n/3.8m goal=(4.5, 8.8, 0.9) t=7ms
+[INFO] [1782979450.484] [/exploration_node]: [EV] [1782979450.484][    +43.2s][FINISH] STATE EXEC_TRAJ -> FINISH [planGlobalPath: no frontier]
+[WARN] [1782979450.485] [/exploration_node]: [EV] [1782979450.485][    +43.2s][FINISH] MISSION FINISH (premature? unreached clusters remain) | pos=(5.81, 5.37, 1.57) elapsed=43s clusters_left=2(reach 0) pipe[tot=2 dorm=1 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0]
+[INFO] [1782979450.485] [/exploration_node]: [32m[FINISH] exploration done -> hover 1.0s, then return home & land[0m
+[WARN] [1782979450.491] [/exploration_node]: [EV] [1782979450.491][    +43.2s][PLAN_TRAJ_EXP] STATE FINISH -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046852]
+[INFO] [1782979450.529] [/exploration_node]: [EV] [1782979450.529][    +43.2s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.539] [/exploration_node]: [EV] [1782979450.539][    +43.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039670]
+[WARN] [1782979450.583] [/exploration_node]: [EV] [1782979450.583][    +43.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040303] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.629] [/exploration_node]: [EV] [1782979450.629][    +43.3s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040160] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.638] [/exploration_node]: [EV] [1782979450.638][    +43.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.049693]
+[INFO] [1782979450.674] [/exploration_node]: [EV] [1782979450.674][    +43.4s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.683] [/exploration_node]: [EV] [1782979450.683][    +43.4s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041760]
+[INFO] [1782979450.729] [/exploration_node]: [EV] [1782979450.729][    +43.4s][FINISH] STATE EXEC_TRAJ -> FINISH [planGlobalPath: no frontier] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.739] [/exploration_node]: [EV] [1782979450.738][    +43.4s][PLAN_TRAJ_EXP] STATE FINISH -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.050804]
+[INFO] [1782979450.773] [/exploration_node]: [EV] [1782979450.773][    +43.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.783] [/exploration_node]: [EV] [1782979450.783][    +43.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040473]
+[WARN] [1782979450.788] [/exploration_node]: [EV] [1782979450.788][    +43.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044984]
+[INFO] [1782979450.827] [/exploration_node]: [EV] [1782979450.827][    +43.5s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.837] [/exploration_node]: [EV] [1782979450.837][    +43.5s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040272]
+[WARN] [1782979450.839] [/exploration_node]: [EV] [1782979450.839][    +43.5s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.042202]
+[INFO] [1782979450.883] [/exploration_node]: [EV] [1782979450.882][    +43.6s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.888] [/exploration_node]: [EV] [1782979450.888][    +43.6s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.036014]
+[WARN] [1782979450.937] [/exploration_node]: [EV] [1782979450.937][    +43.6s][EXEC_TRAJ] GLOBAL result=NO_VIEWPOINTS | why: NO_FRONTIER: 0 viewpoints (clusters=1, reachable_clusters=0) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] | clusters=1(reach 0) vp=0(reach 0) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] tour=2n/3.8m goal=(4.5, 8.8, 0.9) t=6ms (prev x1/0.2s)
+[INFO] [1782979450.937] [/exploration_node]: [EV] [1782979450.937][    +43.6s][FINISH] STATE EXEC_TRAJ -> FINISH [planGlobalPath: no frontier] |  (prev cycle x1/0.0s)
+[WARN] [1782979450.945] [/exploration_node]: [EV] [1782979450.944][    +43.6s][PLAN_TRAJ_EXP] STATE FINISH -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.049230]
+[INFO] [1782979450.980] [/exploration_node]: [EV] [1782979450.980][    +43.7s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979450.988] [/exploration_node]: [EV] [1782979450.988][    +43.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038256]
+[WARN] [1782979451.034] [/exploration_node]: [EV] [1782979451.033][    +43.7s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040055] |  (prev cycle x1/0.0s)
+[WARN] [1782979451.038] [/exploration_node]: [EV] [1782979451.037][    +43.7s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.044058]
+[WARN] [1782979451.059] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979451.077] [/exploration_node]: [EV] [1782979451.077][    +43.8s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979451.089] [/exploration_node]: [EV] [1782979451.089][    +43.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041607]
+[WARN] [1782979451.134] [/exploration_node]: [EV] [1782979451.134][    +43.8s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039181] |  (prev cycle x1/0.0s)
+[WARN] [1782979451.138] [/exploration_node]: [EV] [1782979451.138][    +43.8s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.043674]
+[INFO] [1782979451.145] [/exploration_node]: [EV] [1782979451.144][    +43.8s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [planGlobalPath: no frontier]
+[WARN] [1782979451.189] [/exploration_node]: [EV] [1782979451.189][    +43.9s][PLAN_TRAJ_EXP] STATE FINISH -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.094027]
+[INFO] [1782979451.229] [/exploration_node]: [EV] [1782979451.229][    +43.9s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979451.239] [/exploration_node]: [EV] [1782979451.239][    +43.9s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.040465]
+[WARN] [1782979451.241] [/exploration_node]: [EV] [1782979451.241][    +43.9s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041863]
+[INFO] [1782979451.282] [/exploration_node]: [EV] [1782979451.282][    +44.0s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979451.291] [/exploration_node]: [EV] [1782979451.291][    +44.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.039452]
+[WARN] [1782979451.336] [/exploration_node]: [EV] [1782979451.336][    +44.0s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.038911] |  (prev cycle x1/0.0s)
+[WARN] [1782979451.338] [/exploration_node]: [EV] [1782979451.338][    +44.0s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041254]
+[INFO] [1782979451.355] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.30 m
+[INFO] [1782979451.355] [/exploration_node]: [EV] [1782979451.355][    +44.1s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [planGlobalPath: no frontier]
+[WARN] [1782979451.388] [/exploration_node]: [EV] [1782979451.388][    +44.1s][PLAN_TRAJ_EXP] STATE FINISH -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.091354]
+[INFO] [1782979451.430] [/exploration_node]: [EV] [1782979451.430][    +44.1s][EXEC_TRAJ] STATE PLAN_TRAJ_EXP -> EXEC_TRAJ [plan success: new traj pub]
+[WARN] [1782979451.434] [/exploration_node]: [EV] [1782979451.434][    +44.1s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.035006]
+[WARN] [1782979451.485] [/exploration_node]: [EV] [1782979451.485][    +44.2s][PLAN_TRAJ_EXP] STATE EXEC_TRAJ -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.041588] |  (prev cycle x1/0.1s)
+[WARN] [1782979451.491] [/exploration_node]: [EV] [1782979451.491][    +44.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.046918]
+[WARN] [1782979451.498] [/exploration_node]: [local-plan] post-check: new traj collides within 1s
+[INFO] [1782979451.504] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979451.527] [/exploration_node]: [EV] [1782979451.527][    +44.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[WARN] [1782979451.529] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979451.538] [/exploration_node]: [EV] [1782979451.537][    +44.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [safetyCallback: not safe, time:0.093779]
+[WARN] [1782979451.539] [/exploration_node]: [EV] [1782979451.539][    +44.2s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [avoidance released: replan from current pose]
+[WARN] [1782979451.554] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.31 m, idx=664)
+[WARN] [1782979451.573] [/exploration_node]: [EV] [1782979451.572][    +44.3s][PLAN_TRAJ_EXP] STATE PLAN_TRAJ_EXP -> PLAN_TRAJ_EXP [PLAN_TRAJ_EXP: plan failed]
+[INFO] [1782979451.579] [/exploration_node]: [EV] [1782979451.579][    +44.3s][FINISH] STATE PLAN_TRAJ_EXP -> FINISH [planGlobalPath: no frontier]
+[INFO] [1782979451.583] [/exploration_node]: [EV] [1782979451.583][    +44.3s][PLAN_TRAJ_RTH] STATE FINISH -> PLAN_TRAJ_RTH [FINISH: hover done -> return home]
+[WARN] [1782979451.588] [/exploration_node]: [EV] [1782979451.588][    +44.3s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.144233]
+[INFO] [1782979451.593] [/exploration_node]: [EV] [1782979451.593][    +44.3s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.14m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979451.593] [/traj_server]: [33m[Metrics] RTH mode activated at index 608 (current state: PLAN_TRAJ_RTH)[0m
+[WARN] [1782979451.593] [/exploration_node]: [Goal Planning] Goal not reachable! Fallback: navigate to closest frontier
+[ERROR] [1782979451.594] [/exploration_node]: [Goal Planning] No frontiers available for fallback!
+[WARN] [1782979451.594] [/exploration_node]: [EV] [1782979451.594][    +44.3s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] | t=0.9ms (prev cycle x2/4.8s)
+[WARN] [1782979451.605] [/exploration_node]: [EV] [1782979451.605][    +44.3s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | t=0.3ms
+[INFO] [1782979451.605] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979451.631] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979451.635] [/exploration_node]: [EV] [1782979451.635][    +44.3s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[WARN] [1782979451.637] [/exploration_node]: [EV] [1782979451.637][    +44.3s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.193340]
+[WARN] [1782979451.654] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.31 m, idx=4127)
+[INFO] [1782979451.705] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979451.729] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979451.754] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.32 m, idx=4136)
+[WARN] [1782979451.784] [/exploration_node]: [EV] [1782979451.784][    +44.5s][PLAN_TRAJ_RTH] GLOBAL result=RTH_NO_FRONTIER | why: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=1(reach 0) vp=0(reach 0) pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=2n/3.8m goal=(4.5, 8.8, 0.9) t=0ms (prev x3/0.6s)
+[INFO] [1782979451.794] [/exploration_node]: [EV] [1782979451.794][    +44.5s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.13m tol=0.20m goal=(0.05, 0.02, 1.25) (x18)
+[INFO] [1782979451.804] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979451.829] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979451.854] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.28 m, idx=5067)
+[INFO] [1782979451.897] [/exploration_node]: [EV] [1782979451.897][    +44.6s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.12m tol=0.20m goal=(0.05, 0.02, 1.25) (x9)
+[INFO] [1782979452.040] [/exploration_node]: [EV] [1782979452.040][    +44.7s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.11m tol=0.20m goal=(0.05, 0.02, 1.25) (x12)
+[WARN] [1782979452.061] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979452.104] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.129] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979452.154] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.31 m, idx=4539)
+[INFO] [1782979452.204] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.239] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979452.240] [/exploration_node]: [EV] [1782979452.240][    +44.9s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.10m tol=0.20m goal=(0.05, 0.02, 1.25) (x16)
+[WARN] [1782979452.254] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.39 m, idx=1083)
+[INFO] [1782979452.305] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.339] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979452.346] [/exploration_node]: [EV] [1782979452.346][    +45.0s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.09m tol=0.20m goal=(0.05, 0.02, 1.25) (x9)
+[WARN] [1782979452.355] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.31 m, idx=4991)
+[INFO] [1782979452.391] [/exploration_node]: [EV] [1782979452.391][    +45.1s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.08m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979452.409] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.429] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979452.454] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.26 m, idx=5951)
+[INFO] [1782979452.497] [/exploration_node]: [EV] [1782979452.497][    +45.2s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.07m tol=0.20m goal=(0.05, 0.02, 1.25) (x9)
+[INFO] [1782979452.504] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.529] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979452.538] [/exploration_node]: [EV] [1782979452.538][    +45.2s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.06m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[WARN] [1782979452.554] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.30 m, idx=4099)
+[INFO] [1782979452.589] [/exploration_node]: [EV] [1782979452.589][    +45.3s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.05m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[WARN] [1782979452.592] [/exploration_node]: [Goal Planning] goal unreachable -> redirect to closest frontier (1.48, 6.68, 0.66), 6.8m from goal
+[INFO] [1782979452.596] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.14 ms[0m
+[INFO] [1782979452.596] [/exploration_node]:   Segment 1: 5.59 m
+[INFO] [1782979452.596] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.604] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.629] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979452.596] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.596] [/exploration_node]:   Segment 4: 1.57 m
+[INFO] [1782979452.596] [/exploration_node]:   Segment 5: 6.84 m
+[WARN] [1782979452.601] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=15)
+[INFO] [1782979452.623] [/exploration_node]: [EV] [1782979452.623][    +45.3s][PLAN_TRAJ_RTH] LOCAL RTH OK | why: escape traj (flyToSafeRegion) | t=33.4ms (prev cycle x8/1.0s)
+[INFO] [1782979452.623] [/exploration_node]: [EV] [1782979452.623][    +45.3s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success] |  (prev cycle x1/1.0s)
+[INFO] [1782979452.631] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.19 ms[0m
+[INFO] [1782979452.631] [/exploration_node]:   Segment 1: 5.59 m
+[INFO] [1782979452.631] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.631] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.631] [/exploration_node]:   Segment 4: 1.57 m
+[INFO] [1782979452.631] [/exploration_node]:   Segment 5: 6.84 m
+[INFO] [1782979452.635] [/exploration_node]: [EV] [1782979452.635][    +45.3s][EXEC_TRAJ] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 6 nodes / 24.5m (connected via 4) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=2 dorm=0 unreach=1 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=6n/24.5m goal=(4.3, 0.3, 1.0) t=9ms (prev x3/0.6s)
+[INFO] [1782979452.635] [/exploration_node]: [EV] [1782979452.635][    +45.3s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[WARN] [1782979452.635] [/exploration_node]: [EV] [1782979452.635][    +45.3s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[INFO] [1782979452.644] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.14 ms[0m
+[INFO] [1782979452.645] [/exploration_node]:   Segment 1: 5.59 m
+[INFO] [1782979452.645] [/exploration_node]:   Segment 2: 6.35 m
+[WARN] [1782979452.654] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.31 m, idx=3352)
+[INFO] [1782979452.645] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.645] [/exploration_node]:   Segment 4: 1.57 m
+[INFO] [1782979452.645] [/exploration_node]:   Segment 5: 6.84 m
+[INFO] [1782979452.668] [/exploration_node]: [EV] [1782979452.668][    +45.4s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979452.669] [/exploration_node]: [EV] [1782979452.669][    +45.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.019604]
+[INFO] [1782979452.678] [/exploration_node]: [EV] [1782979452.678][    +45.4s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.04m tol=0.20m goal=(0.05, 0.02, 1.25) (x1)
+[INFO] [1782979452.685] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.16 ms[0m
+[INFO] [1782979452.685] [/exploration_node]:   Segment 1: 5.58 m
+[INFO] [1782979452.685] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.685] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.685] [/exploration_node]:   Segment 4: 1.57 m
+[INFO] [1782979452.685] [/exploration_node]:   Segment 5: 6.84 m
+[INFO] [1782979452.704] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979452.714] [/exploration_node]: [EV] [1782979452.714][    +45.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.025117] |  (prev cycle x1/0.0s)
+[INFO] [1782979452.723] [/exploration_node]: [EV] [1782979452.723][    +45.4s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.03m tol=0.20m goal=(0.05, 0.02, 1.25)
+[WARN] [1782979452.729] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979452.731] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.17 ms[0m
+[INFO] [1782979452.731] [/exploration_node]:   Segment 1: 5.56 m
+[INFO] [1782979452.731] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.731] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.731] [/exploration_node]:   Segment 4: 1.21 m
+[INFO] [1782979452.731] [/exploration_node]:   Segment 5: 6.92 m
+[WARN] [1782979452.754] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.27 m, idx=3060)
+[WARN] [1782979452.757] [/exploration_node]: [EV] [1782979452.757][    +45.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.022288] |  (prev cycle x1/0.0s)
+[WARN] [1782979452.767] [/exploration_node]: [EV] [1782979452.767][    +45.5s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[INFO] [1782979452.767] [/exploration_node]: [EV] [1782979452.767][    +45.5s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.02m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979452.774] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.17 ms[0m
+[INFO] [1782979452.774] [/exploration_node]:   Segment 1: 5.55 m
+[INFO] [1782979452.774] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.774] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.774] [/exploration_node]:   Segment 4: 1.21 m
+[INFO] [1782979452.774] [/exploration_node]:   Segment 5: 6.92 m
+[INFO] [1782979452.800] [/exploration_node]: [EV] [1782979452.800][    +45.5s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979452.802] [/exploration_node]: [EV] [1782979452.802][    +45.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.022876]
+[INFO] [1782979452.804] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[INFO] [1782979452.810] [/exploration_node]: [EV] [1782979452.810][    +45.5s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.01m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979452.817] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.18 ms[0m
+[INFO] [1782979452.817] [/exploration_node]:   Segment 1: 5.53 m
+[INFO] [1782979452.817] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.817] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.817] [/exploration_node]:   Segment 4: 1.21 m
+[INFO] [1782979452.817] [/exploration_node]:   Segment 5: 6.92 m
+[WARN] [1782979452.829] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979452.854] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.27 m, idx=5617)
+[INFO] [1782979452.861] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.11 ms[0m
+[INFO] [1782979452.861] [/exploration_node]:   Segment 1: 5.53 m
+[INFO] [1782979452.861] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.861] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.861] [/exploration_node]:   Segment 4: 1.21 m
+[INFO] [1782979452.861] [/exploration_node]:   Segment 5: 6.92 m
+[INFO] [1782979452.862] [/exploration_node]: [EV] [1782979452.862][    +45.6s][EXEC_TRAJ] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 6 nodes / 24.2m (connected via 4) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=2 dorm=0 unreach=1 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=6n/24.2m goal=(4.3, 0.3, 1.0) t=7ms
+[INFO] [1782979452.862] [/exploration_node]: [EV] [1782979452.862][    +45.6s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979452.863] [/exploration_node]: [EV] [1782979452.863][    +45.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.041710]
+[WARN] [1782979452.864] [/exploration_node]: [EV] [1782979452.864][    +45.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[INFO] [1782979452.864] [/exploration_node]: [EV] [1782979452.864][    +45.6s][PLAN_TRAJ_RTH] RTH d2goal=8.0m | auto-home(xy) dist=8.00m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979452.870] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 6 nodes, 6 collision checks, 2.13 ms[0m
+[INFO] [1782979452.870] [/exploration_node]:   Segment 1: 5.52 m
+[INFO] [1782979452.870] [/exploration_node]:   Segment 2: 6.35 m
+[INFO] [1782979452.870] [/exploration_node]:   Segment 3: 4.16 m
+[INFO] [1782979452.870] [/exploration_node]:   Segment 4: 1.21 m
+[INFO] [1782979452.870] [/exploration_node]:   Segment 5: 6.92 m
+[INFO] [1782979452.907] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[INFO] [1782979452.900] [/exploration_node]: [EV] [1782979452.900][    +45.6s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979452.902] [/exploration_node]: [EV] [1782979452.902][    +45.6s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.027745]
+[INFO] [1782979452.910] [/exploration_node]: [EV] [1782979452.910][    +45.6s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=8.00m tol=0.20m goal=(0.05, 0.02, 1.25)
+[WARN] [1782979452.912] [/exploration_node]: [Goal Planning] A* search failed on topology graph!
+[WARN] [1782979452.912] [/exploration_node]: [EV] [1782979452.912][    +45.6s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: RTH global: A* on topo graph failed (goal connected to 1 nodes) | t=1.3ms (prev x6/0.2s)
+[WARN] [1782979452.912] [/exploration_node]: [EV] [1782979452.912][    +45.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed]
+[WARN] [1782979452.929] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979452.933] [/exploration_node]: [EV] [1782979452.933][    +45.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose] |  (prev x1/0.0s)
+[WARN] [1782979452.936] [/exploration_node]: [EV] [1782979452.936][    +45.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.061778] |  (prev cycle x1/0.0s)
+[INFO] [1782979452.943] [/exploration_node]: [EV] [1782979452.943][    +45.6s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.99m tol=0.20m goal=(0.05, 0.02, 1.25) (x2)
+[WARN] [1782979452.954] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.27 m, idx=3400)
+[WARN] [1782979452.990] [/exploration_node]: [EV] [1782979452.990][    +45.7s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.115841] |  (prev cycle x1/0.1s)
+[INFO] [1782979452.991] [/exploration_node]: [EV] [1782979452.991][    +45.7s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.98m tol=0.20m goal=(0.05, 0.02, 1.25) (x2)
+[WARN] [1782979452.992] [/exploration_node]: [EV] [1782979452.991][    +45.7s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | t=0.1ms (prev x5/0.1s)
+[INFO] [1782979453.004] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979453.029] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979453.032] [/exploration_node]: [EV] [1782979453.032][    +45.7s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[WARN] [1782979453.039] [/exploration_node]: [EV] [1782979453.039][    +45.7s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.165468]
+[WARN] [1782979453.054] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.26 m, idx=4707)
+[WARN] [1782979453.066] [/exploration_node]: [EV] [1782979453.066][    +45.8s][PLAN_TRAJ_RTH] GLOBAL result=RTH_NO_FRONTIER | why: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] | clusters=1(reach 0) vp=0(reach 0) pipe[tot=1 dorm=0 unreach=1 cons=0 nocand=0 topo=0 novis=0 ok=0] tour=6n/24.2m goal=(4.3, 0.3, 1.0) t=0ms
+[WARN] [1782979453.079] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979453.090] [/exploration_node]: [EV] [1782979453.090][    +45.8s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.216470]
+[INFO] [1782979453.092] [/exploration_node]: [EV] [1782979453.092][    +45.8s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.97m tol=0.20m goal=(0.05, 0.02, 1.25) (x8)
+[WARN] [1782979453.093] [/exploration_node]: [EV] [1782979453.093][    +45.8s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=1 novis=0 ok=0] | t=1.1ms (prev x8/0.1s)
+[INFO] [1782979453.104] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979453.128] [/exploration_node]: [EV] [1782979453.128][    +45.8s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [avoidance released: replan from current pose]
+[WARN] [1782979453.129] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[WARN] [1782979453.154] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.25 m, idx=5773)
+[INFO] [1782979453.191] [/exploration_node]: [EV] [1782979453.191][    +45.9s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.96m tol=0.20m goal=(0.05, 0.02, 1.25) (x8)
+[INFO] [1782979453.204] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979453.229] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979453.244] [/exploration_node]: [EV] [1782979453.244][    +45.9s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.95m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[WARN] [1782979453.257] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.24 m, idx=6723)
+[INFO] [1782979453.304] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979453.329] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979453.339] [/exploration_node]: [EV] [1782979453.339][    +46.0s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.94m tol=0.20m goal=(0.05, 0.02, 1.25) (x8)
+[WARN] [1782979453.354] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.20 m, idx=2915)
+[INFO] [1782979453.404] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.47 m
+[INFO] [1782979453.437] [/exploration_node]: [EV] [1782979453.437][    +46.1s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.93m tol=0.20m goal=(0.05, 0.02, 1.25) (x8)
+[INFO] [1782979453.494] [/exploration_node]: [EV] [1782979453.494][    +46.2s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.92m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979453.541] [/exploration_node]: [EV] [1782979453.541][    +46.2s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.91m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979453.593] [/exploration_node]: [EV] [1782979453.591][    +46.3s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.89m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[WARN] [1782979453.594] [/exploration_node]: [Goal Planning] Goal not reachable! Fallback: navigate to closest frontier
+[ERROR] [1782979453.594] [/exploration_node]: [Goal Planning] No frontiers available for fallback!
+[INFO] [1782979453.640] [/exploration_node]: [EV] [1782979453.640][    +46.3s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.87m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979453.700] [/exploration_node]: [EV] [1782979453.700][    +46.4s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.84m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979453.745] [/exploration_node]: [EV] [1782979453.745][    +46.4s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.81m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979453.796] [/exploration_node]: [EV] [1782979453.796][    +46.5s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.79m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979453.838] [/exploration_node]: [EV] [1782979453.838][    +46.5s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.75m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979453.890] [/exploration_node]: [EV] [1782979453.890][    +46.6s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.71m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979453.938] [/exploration_node]: [EV] [1782979453.938][    +46.6s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.68m tol=0.20m goal=(0.05, 0.02, 1.25) (x2)
+[INFO] [1782979454.000] [/exploration_node]: [EV] [1782979454.000][    +46.7s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.64m tol=0.20m goal=(0.05, 0.02, 1.25) (x5)
+[INFO] [1782979454.044] [/exploration_node]: [EV] [1782979454.044][    +46.7s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.60m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[WARN] [1782979454.091] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[INFO] [1782979454.095] [/exploration_node]: [EV] [1782979454.095][    +46.8s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.57m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979454.137] [/exploration_node]: [EV] [1782979454.137][    +46.8s][PLAN_TRAJ_RTH] RTH d2goal=7.5m | auto-home(xy) dist=7.53m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979454.194] [/exploration_node]: [EV] [1782979454.194][    +46.9s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.50m tol=0.20m goal=(0.05, 0.02, 1.25) (prev x4/0.0s)
+[INFO] [1782979454.237] [/exploration_node]: [EV] [1782979454.237][    +46.9s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.46m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979454.291] [/exploration_node]: [EV] [1782979454.291][    +47.0s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.42m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979454.344] [/exploration_node]: [EV] [1782979454.344][    +47.0s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.37m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979454.354] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979454.379] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979454.396] [/exploration_node]: [EV] [1782979454.396][    +47.1s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.33m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979454.449] [/exploration_node]: [EV] [1782979454.449][    +47.1s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.29m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[INFO] [1782979454.492] [/exploration_node]: [EV] [1782979454.492][    +47.2s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.25m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[WARN] [1782979454.504] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.50 m, idx=5808)
+[INFO] [1782979454.542] [/exploration_node]: [EV] [1782979454.542][    +47.2s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.20m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[INFO] [1782979454.554] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1782979454.579] [/px4_ctrl_bridge]: [px4_bridge] avoidance released -> published /planning/replan
+[INFO] [1782979454.604] [/exploration_node]: [EV] [1782979454.604][    +47.3s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.16m tol=0.20m goal=(0.05, 0.02, 1.25) (x5)
+[WARN] [1782979454.605] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.47 m, idx=6052)
+[WARN] [1782979454.607] [/exploration_node]: [EV] [1782979454.607][    +47.3s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=1 novis=1 ok=0] | t=2.3ms (prev cycle x21/1.5s)
+[WARN] [1782979454.617] [/exploration_node]: [EV] [1782979454.617][    +47.3s][PLAN_TRAJ_RTH] LOCAL RTH NO_FRONTIER | why: RTH global: goal unreachable (0 verified connections) and no frontier viewpoints for fallback pipe[tot=2 dorm=0 unreach=2 cons=0 nocand=0 topo=0 novis=0 ok=0] | t=0.2ms
+[INFO] [1782979454.638] [/exploration_node]: [EV] [1782979454.638][    +47.3s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.12m tol=0.20m goal=(0.05, 0.02, 1.25) (x2)
+[INFO] [1782979454.655] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.46 m
+[INFO] [1782979454.694] [/exploration_node]: [EV] [1782979454.694][    +47.4s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.07m tol=0.20m goal=(0.05, 0.02, 1.25) (x4)
+[WARN] [1782979454.699] [/exploration_node]: [Goal Planning] goal unreachable -> redirect to closest frontier (4.83, 6.73, 0.90), 8.3m from goal
+[INFO] [1782979454.701] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.07 ms[0m
+[INFO] [1782979454.701] [/exploration_node]:   Segment 1: 4.44 m
+[INFO] [1782979454.701] [/exploration_node]:   Segment 2: 6.48 m
+[INFO] [1782979454.701] [/exploration_node]:   Segment 3: 8.26 m
+[WARN] [1782979454.705] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=15)
+[INFO] [1782979454.728] [/exploration_node]: [EV] [1782979454.727][    +47.4s][PLAN_TRAJ_RTH] LOCAL RTH OK | why: escape traj (flyToSafeRegion) | t=33.4ms (prev x6/0.1s)
+[INFO] [1782979454.728] [/exploration_node]: [EV] [1782979454.728][    +47.4s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success] |  (prev x4/1.5s)
+[WARN] [1782979454.737] [/exploration_node]: [EV] [1782979454.737][    +47.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.181403]
+[INFO] [1782979454.757] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.06 ms[0m
+[INFO] [1782979454.757] [/exploration_node]:   Segment 1: 4.39 m
+[INFO] [1782979454.757] [/exploration_node]:   Segment 2: 6.48 m
+[INFO] [1782979454.757] [/exploration_node]:   Segment 3: 8.26 m
+[INFO] [1782979454.758] [/exploration_node]: [EV] [1782979454.758][    +47.5s][PLAN_TRAJ_RTH] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 4 nodes / 19.1m (connected via 4) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=3 dorm=0 unreach=1 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=4n/19.1m goal=(4.3, 0.3, 1.0) t=14ms (prev x7/1.5s)
+[INFO] [1782979454.758] [/exploration_node]: [EV] [1782979454.758][    +47.5s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[INFO] [1782979454.760] [/exploration_node]: [EV] [1782979454.759][    +47.5s][PLAN_TRAJ_RTH] RTH d2goal=7.0m | auto-home(xy) dist=7.03m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979454.764] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.07 ms[0m
+[INFO] [1782979454.764] [/exploration_node]:   Segment 1: 4.39 m
+[INFO] [1782979454.764] [/exploration_node]:   Segment 2: 6.48 m
+[INFO] [1782979454.764] [/exploration_node]:   Segment 3: 8.26 m
+[INFO] [1782979454.793] [/exploration_node]: [EV] [1782979454.793][    +47.5s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979454.795] [/exploration_node]: [EV] [1782979454.795][    +47.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.226831]
+[INFO] [1782979454.803] [/exploration_node]: [EV] [1782979454.803][    +47.5s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.98m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979454.816] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.06 ms[0m
+[INFO] [1782979454.816] [/exploration_node]:   Segment 1: 4.34 m
+[INFO] [1782979454.816] [/exploration_node]:   Segment 2: 6.48 m
+[INFO] [1782979454.816] [/exploration_node]:   Segment 3: 8.26 m
+[WARN] [1782979454.840] [/exploration_node]: [EV] [1782979454.840][    +47.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.370508] |  (prev cycle x1/0.0s)
+[INFO] [1782979454.850] [/exploration_node]: [EV] [1782979454.850][    +47.5s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.94m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979454.854] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.07 ms[0m
+[INFO] [1782979454.854] [/exploration_node]:   Segment 1: 4.29 m
+[INFO] [1782979454.854] [/exploration_node]:   Segment 2: 6.48 m
+[INFO] [1782979454.854] [/exploration_node]:   Segment 3: 8.26 m
+[WARN] [1782979454.887] [/exploration_node]: [EV] [1782979454.887][    +47.6s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.277388] |  (prev cycle x1/0.0s)
+[INFO] [1782979454.893] [/exploration_node]: [EV] [1782979454.893][    +47.6s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.89m tol=0.20m goal=(0.05, 0.02, 1.25)
+[ERROR] [1782979454.895] [/exploration_node]: [Goal Planning] Even closest frontier is unreachable!
+[WARN] [1782979454.895] [/exploration_node]: [EV] [1782979454.895][    +47.6s][PLAN_TRAJ_RTH] LOCAL RTH FAIL | why: RTH global: goal unreachable and even closest frontier unreachable | t=1.9ms (prev x3/0.1s)
+[WARN] [1782979454.895] [/exploration_node]: [EV] [1782979454.895][    +47.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [PLAN_TRAJ_RTH: plan failed]
+[INFO] [1782979454.948] [/exploration_node]: [EV] [1782979454.948][    +47.6s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.85m tol=0.20m goal=(0.05, 0.02, 1.25) (x3)
+[WARN] [1782979454.971] [/exploration_node]: [EV] [1782979454.971][    +47.7s][PLAN_TRAJ_RTH] GLOBAL result=RTH_FAIL | why: goal unreachable and even closest frontier unreachable | clusters=1(reach 0) vp=0(reach 0) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=4n/19.0m goal=(4.3, 0.3, 1.0) t=4ms
+[WARN] [1782979454.988] [/exploration_node]: [EV] [1782979454.988][    +47.7s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.127893] |  (prev x5/0.1s)
+[INFO] [1782979454.989] [/exploration_node]: [EV] [1782979454.989][    +47.7s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.81m tol=0.20m goal=(0.05, 0.02, 1.25) (x1)
+[INFO] [1782979454.991] [/exploration_node]: [33m[Path Simplification] Reduced path from 5 to 4 nodes, 3 collision checks, 0.02 ms[0m
+[INFO] [1782979454.991] [/exploration_node]:   Segment 1: 1.31 m
+[INFO] [1782979454.991] [/exploration_node]:   Segment 2: 3.06 m
+[INFO] [1782979454.991] [/exploration_node]:   Segment 3: 7.67 m
+[INFO] [1782979455.023] [/exploration_node]: [EV] [1782979455.023][    +47.7s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979455.033] [/exploration_node]: [EV] [1782979455.033][    +47.7s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.137178]
+[WARN] [1782979455.037] [/exploration_node]: [EV] [1782979455.037][    +47.7s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.141052]
+[INFO] [1782979455.043] [/exploration_node]: [EV] [1782979455.043][    +47.7s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.76m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.044] [/exploration_node]: [33m[Path Simplification] Reduced path from 5 to 4 nodes, 3 collision checks, 0.02 ms[0m
+[INFO] [1782979455.044] [/exploration_node]:   Segment 1: 1.28 m
+[INFO] [1782979455.044] [/exploration_node]:   Segment 2: 3.05 m
+[INFO] [1782979455.044] [/exploration_node]:   Segment 3: 7.62 m
+[INFO] [1782979455.076] [/exploration_node]: [EV] [1782979455.076][    +47.8s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979455.099] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979455.087] [/exploration_node]: [EV] [1782979455.087][    +47.8s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.237691]
+[INFO] [1782979455.089] [/exploration_node]: [EV] [1782979455.089][    +47.8s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.72m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.104] [/exploration_node]: [33m[Path Simplification] Reduced path from 5 to 4 nodes, 3 collision checks, 0.02 ms[0m
+[INFO] [1782979455.104] [/exploration_node]:   Segment 1: 1.28 m
+[INFO] [1782979455.104] [/exploration_node]:   Segment 2: 2.53 m
+[INFO] [1782979455.104] [/exploration_node]:   Segment 3: 8.84 m
+[INFO] [1782979455.123] [/exploration_node]: [EV] [1782979455.123][    +47.8s][PLAN_TRAJ_RTH] LOCAL RTH OK | t=33.4ms (prev cycle x1/0.2s)
+[WARN] [1782979455.187] [/exploration_node]: [EV] [1782979455.187][    +47.9s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.079739] |  (prev cycle x1/0.1s)
+[INFO] [1782979455.193] [/exploration_node]: [EV] [1782979455.193][    +47.9s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.64m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.200] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.35 ms[0m
+[INFO] [1782979455.200] [/exploration_node]:   Segment 1: 1.16 m
+[INFO] [1782979455.200] [/exploration_node]:   Segment 2: 3.48 m
+[INFO] [1782979455.200] [/exploration_node]:   Segment 3: 8.84 m
+[WARN] [1782979455.237] [/exploration_node]: [EV] [1782979455.237][    +47.9s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.132115] |  (prev cycle x1/0.1s)
+[INFO] [1782979455.238] [/exploration_node]: [EV] [1782979455.238][    +47.9s][PLAN_TRAJ_RTH] RTH d2goal=6.5m | auto-home(xy) dist=6.59m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.240] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.30 ms[0m
+[INFO] [1782979455.240] [/exploration_node]:   Segment 1: 1.13 m
+[INFO] [1782979455.240] [/exploration_node]:   Segment 2: 3.48 m
+[INFO] [1782979455.240] [/exploration_node]:   Segment 3: 8.84 m
+[WARN] [1782979455.386] [/exploration_node]: [EV] [1782979455.386][    +48.1s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.142429] |  (prev cycle x1/0.1s)
+[INFO] [1782979455.392] [/exploration_node]: [EV] [1782979455.392][    +48.1s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.46m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.399] [/exploration_node]: [33m[Path Simplification] Reduced path from 6 to 4 nodes, 4 collision checks, 0.28 ms[0m
+[INFO] [1782979455.399] [/exploration_node]:   Segment 1: 1.03 m
+[INFO] [1782979455.399] [/exploration_node]:   Segment 2: 3.48 m
+[INFO] [1782979455.399] [/exploration_node]:   Segment 3: 8.84 m
+[WARN] [1782979455.587] [/exploration_node]: [EV] [1782979455.587][    +48.3s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.183836] |  (prev cycle x1/0.2s)
+[INFO] [1782979455.595] [/exploration_node]: [EV] [1782979455.595][    +48.3s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.31m tol=0.20m goal=(0.05, 0.02, 1.25)
+[WARN] [1782979455.597] [/exploration_node]: [Goal Planning] Goal not reachable! Fallback: navigate to closest frontier
+[INFO] [1782979455.599] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 4 nodes, 6 collision checks, 2.28 ms[0m
+[INFO] [1782979455.599] [/exploration_node]:   Segment 1: 0.94 m
+[INFO] [1782979455.599] [/exploration_node]:   Segment 2: 6.42 m
+[INFO] [1782979455.599] [/exploration_node]:   Segment 3: 11.61 m
+[WARN] [1782979455.688] [/exploration_node]: [EV] [1782979455.688][    +48.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.084346] |  (prev cycle x1/0.1s)
+[INFO] [1782979455.692] [/exploration_node]: [EV] [1782979455.692][    +48.4s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.23m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.696] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 4 nodes, 6 collision checks, 2.28 ms[0m
+[INFO] [1782979455.696] [/exploration_node]:   Segment 1: 0.93 m
+[INFO] [1782979455.696] [/exploration_node]:   Segment 2: 6.42 m
+[INFO] [1782979455.696] [/exploration_node]:   Segment 3: 11.61 m
+[INFO] [1782979455.704] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.44 m
+[WARN] [1782979455.737] [/exploration_node]: [EV] [1782979455.737][    +48.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.085607] |  (prev cycle x1/0.0s)
+[INFO] [1782979455.738] [/exploration_node]: [EV] [1782979455.738][    +48.4s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.20m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.742] [/exploration_node]: [33m[Path Simplification] Reduced path from 8 to 4 nodes, 6 collision checks, 2.23 ms[0m
+[INFO] [1782979455.742] [/exploration_node]:   Segment 1: 0.93 m
+[INFO] [1782979455.742] [/exploration_node]:   Segment 2: 6.42 m
+[INFO] [1782979455.742] [/exploration_node]:   Segment 3: 11.61 m
+[WARN] [1782979455.782] [/exploration_node]: [EV] [1782979455.782][    +48.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.284414] |  (prev cycle x1/0.0s)
+[INFO] [1782979455.800] [/exploration_node]: [33m[Path Simplification] Reduced path from 9 to 4 nodes, 7 collision checks, 3.37 ms[0m
+[INFO] [1782979455.800] [/exploration_node]:   Segment 1: 3.37 m
+[INFO] [1782979455.800] [/exploration_node]:   Segment 2: 7.82 m
+[INFO] [1782979455.801] [/exploration_node]:   Segment 3: 11.61 m
+[INFO] [1782979455.802] [/exploration_node]: [EV] [1782979455.802][    +48.5s][PLAN_TRAJ_RTH] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 4 nodes / 22.8m (connected via 3) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=4n/22.8m goal=(4.3, 3.6, 1.0) t=8ms
+[INFO] [1782979455.802] [/exploration_node]: [EV] [1782979455.802][    +48.5s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [planGoalPath: succeed]
+[WARN] [1782979455.803] [/exploration_node]: [EV] [1782979455.803][    +48.5s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.105415]
+[INFO] [1782979455.804] [/exploration_node]: [EV] [1782979455.804][    +48.5s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.17m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.819] [/exploration_node]: [33m[Path Simplification] Reduced path from 9 to 4 nodes, 7 collision checks, 3.47 ms[0m
+[INFO] [1782979455.819] [/exploration_node]:   Segment 1: 3.32 m
+[INFO] [1782979455.819] [/exploration_node]:   Segment 2: 7.82 m
+[INFO] [1782979455.819] [/exploration_node]:   Segment 3: 11.61 m
+[INFO] [1782979455.838] [/exploration_node]: [EV] [1782979455.838][    +48.5s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979455.840] [/exploration_node]: [EV] [1782979455.840][    +48.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.116667]
+[INFO] [1782979455.848] [/exploration_node]: [EV] [1782979455.848][    +48.5s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.14m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979455.856] [/exploration_node]: [33m[Path Simplification] Reduced path from 9 to 4 nodes, 7 collision checks, 3.36 ms[0m
+[INFO] [1782979455.856] [/exploration_node]:   Segment 1: 3.28 m
+[INFO] [1782979455.856] [/exploration_node]:   Segment 2: 7.82 m
+[INFO] [1782979455.856] [/exploration_node]:   Segment 3: 11.61 m
+[WARN] [1782979456.037] [/exploration_node]: [EV] [1782979456.037][    +48.7s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.176667] |  (prev cycle x1/0.2s)
+[INFO] [1782979456.042] [/exploration_node]: [EV] [1782979456.042][    +48.7s][PLAN_TRAJ_RTH] RTH d2goal=6.0m | auto-home(xy) dist=6.03m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.050] [/exploration_node]: [33m[Path Simplification] Reduced path from 9 to 4 nodes, 7 collision checks, 2.95 ms[0m
+[INFO] [1782979456.050] [/exploration_node]:   Segment 1: 1.00 m
+[INFO] [1782979456.050] [/exploration_node]:   Segment 2: 5.03 m
+[INFO] [1782979456.050] [/exploration_node]:   Segment 3: 11.46 m
+[WARN] [1782979456.109] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979456.190] [/exploration_node]: [EV] [1782979456.190][    +48.9s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.135909] |  (prev cycle x1/0.2s)
+[INFO] [1782979456.195] [/exploration_node]: [EV] [1782979456.195][    +48.9s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.93m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.201] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 5 nodes, 5 collision checks, 1.56 ms[0m
+[INFO] [1782979456.201] [/exploration_node]:   Segment 1: 0.92 m
+[INFO] [1782979456.201] [/exploration_node]:   Segment 2: 6.33 m
+[INFO] [1782979456.201] [/exploration_node]:   Segment 3: 3.82 m
+[INFO] [1782979456.201] [/exploration_node]:   Segment 4: 9.43 m
+[INFO] [1782979456.264] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 5 nodes, 5 collision checks, 1.54 ms[0m
+[INFO] [1782979456.264] [/exploration_node]:   Segment 1: 0.92 m
+[INFO] [1782979456.264] [/exploration_node]:   Segment 2: 6.33 m
+[INFO] [1782979456.264] [/exploration_node]:   Segment 3: 3.82 m
+[INFO] [1782979456.264] [/exploration_node]:   Segment 4: 9.43 m
+[INFO] [1782979456.265] [/exploration_node]: [EV] [1782979456.265][    +49.0s][EXEC_TRAJ] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 5 nodes / 20.5m (connected via 4) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=2 dorm=0 unreach=0 cons=2 nocand=0 topo=0 novis=0 ok=2] tour=5n/20.5m goal=(5.9, 2.6, 1.0) t=8ms
+[INFO] [1782979456.265] [/exploration_node]: [EV] [1782979456.265][    +49.0s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979456.267] [/exploration_node]: [EV] [1782979456.267][    +49.0s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.261121]
+[INFO] [1782979456.268] [/exploration_node]: [EV] [1782979456.268][    +49.0s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.89m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.277] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.52 ms[0m
+[INFO] [1782979456.277] [/exploration_node]:   Segment 1: 0.90 m
+[INFO] [1782979456.277] [/exploration_node]:   Segment 2: 5.43 m
+[INFO] [1782979456.277] [/exploration_node]:   Segment 3: 11.84 m
+[INFO] [1782979456.301] [/exploration_node]: [EV] [1782979456.301][    +49.0s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979456.302] [/exploration_node]: [EV] [1782979456.302][    +49.0s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.170508]
+[INFO] [1782979456.311] [/exploration_node]: [EV] [1782979456.311][    +49.0s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.86m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.319] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.57 ms[0m
+[INFO] [1782979456.319] [/exploration_node]:   Segment 1: 0.89 m
+[INFO] [1782979456.319] [/exploration_node]:   Segment 2: 5.43 m
+[INFO] [1782979456.319] [/exploration_node]:   Segment 3: 11.84 m
+[WARN] [1782979456.492] [/exploration_node]: [EV] [1782979456.492][    +49.2s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.165907] |  (prev cycle x1/0.2s)
+[INFO] [1782979456.495] [/exploration_node]: [EV] [1782979456.495][    +49.2s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.72m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.501] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.49 ms[0m
+[INFO] [1782979456.501] [/exploration_node]:   Segment 1: 0.87 m
+[INFO] [1782979456.501] [/exploration_node]:   Segment 2: 5.43 m
+[INFO] [1782979456.501] [/exploration_node]:   Segment 3: 11.84 m
+[WARN] [1782979456.586] [/exploration_node]: [EV] [1782979456.586][    +49.3s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.080444] |  (prev cycle x1/0.1s)
+[INFO] [1782979456.588] [/exploration_node]: [EV] [1782979456.588][    +49.3s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.66m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.602] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.94 ms[0m
+[INFO] [1782979456.602] [/exploration_node]:   Segment 1: 0.89 m
+[INFO] [1782979456.602] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.602] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979456.632] [/exploration_node]: [EV] [1782979456.632][    +49.3s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.124497] |  (prev cycle x1/0.0s)
+[WARN] [1782979456.643] [/exploration_node]: [EV] [1782979456.643][    +49.3s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.035317]
+[INFO] [1782979456.644] [/exploration_node]: [EV] [1782979456.644][    +49.3s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.62m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.653] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.79 ms[0m
+[INFO] [1782979456.653] [/exploration_node]:   Segment 1: 0.90 m
+[INFO] [1782979456.653] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.653] [/exploration_node]:   Segment 3: 11.87 m
+[INFO] [1782979456.678] [/exploration_node]: [EV] [1782979456.677][    +49.4s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979456.736] [/exploration_node]: [EV] [1782979456.736][    +49.4s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.078545]
+[INFO] [1782979456.738] [/exploration_node]: [EV] [1782979456.738][    +49.4s][PLAN_TRAJ_RTH] RTH d2goal=5.5m | auto-home(xy) dist=5.55m tol=0.20m goal=(0.05, 0.02, 1.25)
+[WARN] [1782979456.743] [/exploration_node]: [Goal Planning] goal unreachable -> redirect to closest frontier (10.60, 5.43, 0.73), 11.9m from goal
+[INFO] [1782979456.746] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.83 ms[0m
+[INFO] [1782979456.746] [/exploration_node]:   Segment 1: 0.94 m
+[INFO] [1782979456.746] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.746] [/exploration_node]:   Segment 3: 11.87 m
+[INFO] [1782979456.753] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.42 m
+[WARN] [1782979456.845] [/exploration_node]: [EV] [1782979456.845][    +49.5s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.093413] |  (prev cycle x1/0.1s)
+[INFO] [1782979456.851] [/exploration_node]: [EV] [1782979456.851][    +49.6s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.47m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.857] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.83 ms[0m
+[INFO] [1782979456.857] [/exploration_node]:   Segment 1: 1.00 m
+[INFO] [1782979456.857] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.857] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979456.864] [/exploration_node]: [local-plan] start not in corridor (static start; corridor pieces=13)
+[INFO] [1782979456.906] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 5 nodes, 5 collision checks, 1.98 ms[0m
+[INFO] [1782979456.906] [/exploration_node]:   Segment 1: 1.00 m
+[INFO] [1782979456.906] [/exploration_node]:   Segment 2: 6.33 m
+[INFO] [1782979456.906] [/exploration_node]:   Segment 3: 1.21 m
+[INFO] [1782979456.907] [/exploration_node]:   Segment 4: 11.87 m
+[INFO] [1782979456.908] [/exploration_node]: [EV] [1782979456.908][    +49.6s][EXEC_TRAJ] GLOBAL result=RTH_FALLBACK_FRONTIER | why: path to goal: 5 nodes / 20.4m (connected via 3) | clusters=1(reach 0) vp=0(reach 0) pipe[tot=1 dorm=0 unreach=0 cons=1 nocand=0 topo=0 novis=0 ok=1] tour=5n/20.4m goal=(5.9, 2.6, 1.0) t=16ms
+[INFO] [1782979456.908] [/exploration_node]: [EV] [1782979456.908][    +49.6s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [planGoalPath: succeed] |  (prev cycle x1/0.1s)
+[WARN] [1782979456.909] [/exploration_node]: [EV] [1782979456.909][    +49.6s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.145288]
+[INFO] [1782979456.910] [/exploration_node]: [EV] [1782979456.910][    +49.6s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.43m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.917] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.98 ms[0m
+[INFO] [1782979456.917] [/exploration_node]:   Segment 1: 1.03 m
+[INFO] [1782979456.917] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.917] [/exploration_node]:   Segment 3: 11.87 m
+[INFO] [1782979456.944] [/exploration_node]: [EV] [1782979456.944][    +49.6s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979456.946] [/exploration_node]: [EV] [1782979456.946][    +49.6s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.123613]
+[INFO] [1782979456.961] [/exploration_node]: [EV] [1782979456.961][    +49.7s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.40m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979456.967] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 2.01 ms[0m
+[INFO] [1782979456.967] [/exploration_node]:   Segment 1: 1.06 m
+[INFO] [1782979456.967] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979456.968] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979456.995] [/exploration_node]: [EV] [1782979456.995][    +49.7s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.622917] |  (prev cycle x1/0.0s)
+[INFO] [1782979457.004] [/exploration_node]: [EV] [1782979457.004][    +49.7s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.36m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.011] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 2.27 ms[0m
+[INFO] [1782979457.011] [/exploration_node]:   Segment 1: 1.10 m
+[INFO] [1782979457.011] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979457.011] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979457.039] [/exploration_node]: [EV] [1782979457.039][    +49.7s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.773707] |  (prev cycle x1/0.0s)
+[INFO] [1782979457.049] [/exploration_node]: [EV] [1782979457.049][    +49.7s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.33m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.065] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.94 ms[0m
+[INFO] [1782979457.065] [/exploration_node]:   Segment 1: 1.14 m
+[INFO] [1782979457.065] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979457.065] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979457.112] [/px4_ctrl_bridge]: [px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance
+[WARN] [1782979457.186] [/exploration_node]: [EV] [1782979457.186][    +49.9s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.116075] |  (prev cycle x1/0.1s)
+[INFO] [1782979457.193] [/exploration_node]: [EV] [1782979457.193][    +49.9s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.23m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.199] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 5 nodes, 5 collision checks, 1.58 ms[0m
+[INFO] [1782979457.199] [/exploration_node]:   Segment 1: 1.24 m
+[INFO] [1782979457.199] [/exploration_node]:   Segment 2: 6.33 m
+[INFO] [1782979457.199] [/exploration_node]:   Segment 3: 1.21 m
+[INFO] [1782979457.199] [/exploration_node]:   Segment 4: 11.87 m
+[WARN] [1782979457.385] [/exploration_node]: [EV] [1782979457.385][    +50.1s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:0.181393] |  (prev cycle x1/0.2s)
+[INFO] [1782979457.387] [/exploration_node]: [EV] [1782979457.387][    +50.1s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.10m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.402] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.78 ms[0m
+[INFO] [1782979457.402] [/exploration_node]:   Segment 1: 1.40 m
+[INFO] [1782979457.402] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979457.402] [/exploration_node]:   Segment 3: 11.87 m
+[WARN] [1782979457.431] [/exploration_node]: [EV] [1782979457.430][    +50.1s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.123459] |  (prev cycle x1/0.0s)
+[WARN] [1782979457.441] [/exploration_node]: [EV] [1782979457.441][    +50.1s][PLAN_TRAJ_RTH] STATE PLAN_TRAJ_RTH -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.034264]
+[INFO] [1782979457.443] [/exploration_node]: [EV] [1782979457.443][    +50.1s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.07m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.451] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.91 ms[0m
+[INFO] [1782979457.451] [/exploration_node]:   Segment 1: 1.44 m
+[INFO] [1782979457.451] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979457.451] [/exploration_node]:   Segment 3: 11.87 m
+[INFO] [1782979457.476] [/exploration_node]: [EV] [1782979457.476][    +50.2s][EXEC_TRAJ] STATE PLAN_TRAJ_RTH -> EXEC_TRAJ [PLAN_TRAJ_RTH: plan success]
+[WARN] [1782979457.486] [/exploration_node]: [EV] [1782979457.486][    +50.2s][PLAN_TRAJ_RTH] STATE EXEC_TRAJ -> PLAN_TRAJ_RTH [safetyCallback: not safe, time:1.029761]
+[INFO] [1782979457.487] [/exploration_node]: [EV] [1782979457.487][    +50.2s][PLAN_TRAJ_RTH] RTH d2goal=5.0m | auto-home(xy) dist=5.04m tol=0.20m goal=(0.05, 0.02, 1.25)
+[INFO] [1782979457.493] [/exploration_node]: [33m[Path Simplification] Reduced path from 7 to 4 nodes, 5 collision checks, 1.94 ms[0m
+[INFO] [1782979457.493] [/exploration_node]:   Segment 1: 1.48 m
+[INFO] [1782979457.493] [/exploration_node]:   Segment 2: 5.46 m
+[INFO] [1782979457.493] [/exploration_node]:   Segment 3: 11.87 m

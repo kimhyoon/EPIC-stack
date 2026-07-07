@@ -19,6 +19,17 @@
   <arg name="config_file" default="real.yaml"/>   <!-- 튜닝 대상 config (그대로 로드) -->
   <arg name="odom_topic"  default="/Odometry"/>   <!-- FAST-LIO odom (재생 토픽) -->
   <arg name="rviz"        default="true"/>
+  <!-- 기록: real_flight 와 동일하게 EPIC 기동 시점부터
+       <epic_planner 패키지>/records/replay_<ts>/ 에 bag + params.yaml + .log +
+       .events.log 저장. (재생/실비행 세션을 접두사 replay/epic 으로 구분) -->
+  <arg name="record"      default="true"/>
+  <arg name="record_dir"  default=""/>   <!-- 빈 값 = 패키지 경로 동적 감지 -->
+  <arg name="record_args" default="-a"/>
+  <!-- 산출물별 개별 on/off -->
+  <arg name="record_bag"    default="true"/>  <!-- .bag (재생 튜닝에선 꺼도 됨) -->
+  <arg name="record_log"    default="true"/>  <!-- .log -->
+  <arg name="record_params" default="true"/>  <!-- .params.yaml (튜닝값 스냅샷) -->
+  <arg name="record_events" default="true"/>  <!-- .events.log -->
 
   <!-- sim time: rosbag 을 clock 플래그로 재생할 때 필요. 노드보다 먼저 설정 -->
   <param name="/use_sim_time" value="true"/>
@@ -47,6 +58,23 @@
     <remap from="~goal" to="/move_base_simple/goal"/>
     <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
     <param name="waypoint_type" value="point"/>
+  </node>
+
+  <!-- 2.5) 녹화: exploration_node 기동(/planning/state 첫 발행) 즉시 rosbag record
+       시작 + rosparam 덤프 + /rosout(.log) + /epic/events(.events.log) 저장.
+       record:=false 로 끔. 재생은 LANDED 에 도달하지 않으므로 Ctrl-C 시 마감.
+       NOTE: use_sim_time=true 라 bag 내부 타임스탬프는 재생 clock 을 따름
+       -> 원본 bag 시각과 그대로 대조 가능. 폴더명(벽시계)은 세션 구분용. -->
+  <node pkg="epic_planner" name="record_on_goal" type="record_on_goal.py"
+        output="screen" if="$(arg record)">
+    <param name="record_dir"  value="$(arg record_dir)"/>
+    <param name="record_args" value="$(arg record_args)"/>
+    <param name="name_prefix" value="replay"/>
+    <param name="once"        value="true"/>
+    <param name="save_bag"    value="$(arg record_bag)"/>
+    <param name="save_log"    value="$(arg record_log)"/>
+    <param name="save_params" value="$(arg record_params)"/>
+    <param name="save_events" value="$(arg record_events)"/>
   </node>
 
   <!-- 3) 드론 mesh 시각화 (제어와 무관, 순수 viz) -->
