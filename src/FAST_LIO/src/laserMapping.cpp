@@ -824,6 +824,8 @@ int main(int argc, char** argv)
     p_imu->set_gyr_bias_cov(V3D(b_gyr_cov, b_gyr_cov, b_gyr_cov));
     p_imu->set_acc_bias_cov(V3D(b_acc_cov, b_acc_cov, b_acc_cov));
     p_imu->lidar_type = lidar_type;
+    // 중력 정렬 모드: 키 없으면 false = 기존 동작 (시뮬/타 config 영향 없음)
+    nh.param<bool>("mapping/gravity_align", p_imu->gravity_align_en, false);
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);
     kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);

@@ -2,6 +2,26 @@
 # 실비행용. FAST-LIO 출력에 맞춰 시뮬 토픽에서 변경.
 odometry_topic: /Odometry          # FAST-LIO odom  (시뮬: /quad_0/lidar_slam/odom)
 cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
+
+# ── ML-X FOV 에뮬레이션: 센서 crop 브릿지 (cloud_crop_bridge) ──────────────
+# Mid-360(수평 360°) 데이터를 ML-X(전방 120°x35°)처럼 잘라 EPIC 에 공급하는 스위치.
+# FAST-LIO 는 raw 센서를 그대로 쓰므로 localization 영향 없음 — EPIC 입력만 잘린다.
+# true  = 브릿지가 위 cloud_topic 을 스캔 시점 기체 자세 기준 FOV/거리로 crop 해
+#         cloud_crop/output_topic 으로 재발행하고, exploration_node 도 같은 키를
+#         읽어 자동으로 crop 토픽을 구독 (cloud_topic 은 raw 소스로 그대로 둔다).
+# false = 브릿지 자진 종료, EPIC 은 cloud_topic 을 그대로 구독 (기존 동작).
+cloud_crop/enable: true
+cloud_crop/output_topic: /cloud_registered_cropped
+# ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
+cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
+cloud_crop/fov_up: 37.5           # 수직 상한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+cloud_crop/fov_down: 0        # 수직 하한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+cloud_crop/min_range: 0.0         # [m]
+cloud_crop/max_range: 30.0        # [m], <= (0 = 무제한)
+cloud_crop/yaw_offset_deg: 0.0    # 센서 정면이 기체 +x 에서 벗어난 장착각 [deg, CCW]
+# ⚠ crop 켤 때 아래 lidar_perception/fov_up(52)/fov_down(-7)은 Mid-360 물리값이라
+#   crop 데이터(±17.5°)보다 넓다 — EPIC 이 FOV 밖을 '관측됨'으로 오인하지 않게
+#   17.5/-17.5 로(viewpoint 는 그보다 보수적으로) 함께 줄이는 것 권장.
 global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
@@ -25,9 +45,9 @@ max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 
-lidar_perception/fov_up: 52.0
-lidar_perception/fov_down: -7
-lidar_perception/lidar_pitch: 0.0   
+lidar_perception/fov_up: 37.5  #라이다 수평일 때: 52.0 / 기울일 때는 보정하기
+lidar_perception/fov_down: 5  #라이다 수평일 때: -7 / 기울일 때는 보정하기
+lidar_perception/lidar_pitch: 25.0   #25도
 lidar_perception/fov_viewpoint_up: 48.0
 lidar_perception/fov_viewpoint_down: -5
 lidar_perception/max_ray_length: 10  #13
@@ -67,7 +87,7 @@ dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
 DilateRadiusSoft: 0.6 # corrido
-DilateRadiusHard: 0.45 # collision check threshold
+DilateRadiusHard: 0.5 # collision check threshold
 MaxCorridorSize: 4.0
 MaxVelMag: 0.9 #4.0
 maxBdrMag: 10000.0
@@ -83,9 +103,11 @@ SpeedEps: 0.0001
 WeightT: 700.0
 WeightSafeT: 200.0
 ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
+#원본: 2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5
+#
 SmoothingEps: 0.015
 IntegralIntervs: 32
-RelCostTol: 1.1e-6
+RelCostTol: 1.0e-6
 #param for yaw opt
 yaw_max_vel: 1.0 # 角速度限制, 要大
 yaw_rho_vis: 10000.0

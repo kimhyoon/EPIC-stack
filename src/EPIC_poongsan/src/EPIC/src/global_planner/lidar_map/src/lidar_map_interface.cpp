@@ -14,8 +14,35 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   ikd_Tree_map.Set_delete_criterion_param(0.3);
   ikd_Tree_map.Set_balance_criterion_param(0.6);
   string odom_topic, cloud_topic;
-  nh.getParam("odometry_topic", odom_topic);
-  nh.getParam("cloud_topic", cloud_topic);
+  // 토픽명은 config yaml(odometry_topic/cloud_topic)이 유일한 소스. 폴백 금지
+  // — 없으면 즉시 종료 (잘못된 토픽으로 조용히 도는 것 방지).
+  if (!nh.getParam("odometry_topic", odom_topic) || odom_topic.empty() ||
+      !nh.getParam("cloud_topic", cloud_topic) || cloud_topic.empty()) {
+    ROS_FATAL("[LIOInterface] odometry_topic / cloud_topic not set in config "
+              "yaml. REFUSING TO START - no fallback.");
+    ros::shutdown();
+    exit(1);
+  }
+  // ML-X FOV 에뮬레이션: cloud_crop/enable=true 면 crop 브릿지(cloud_crop_bridge)
+  // 출력을 대신 사용 — FSM 의 구독 전환과 동일 로직 (fast_exploration_fsm.cpp 참조).
+  {
+    bool cloud_crop_enable = false;
+    nh.param("cloud_crop/enable", cloud_crop_enable, false);
+    if (cloud_crop_enable) {
+      string cropped_topic;
+      if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
+          cropped_topic.empty()) {
+        ROS_FATAL("[LIOInterface] cloud_crop/enable=true but "
+                  "cloud_crop/output_topic not set in config yaml. "
+                  "REFUSING TO START - no fallback.");
+        ros::shutdown();
+        exit(1);
+      }
+      ROS_WARN("[LIOInterface] cloud_crop ON: using %s (raw: %s)",
+               cropped_topic.c_str(), cloud_topic.c_str());
+      cloud_topic = cropped_topic;
+    }
+  }
   nh.getParam("box_num", lp_->box_num_);
   nh.getParam("lidar_perception/lidar_pitch", lp_->lidar_pitch_);
   for (int i = 0; i < lp_->box_num_; i++) {

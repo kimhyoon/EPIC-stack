@@ -682,8 +682,33 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   bubble_astar_search_cost_pub_ = nh.advertise<std_msgs::Float32>("/planning/timing/bubble_astar_search_cost", 10);
 
   string odom_topic, cloud_topic;
-  nh.getParam("odometry_topic", odom_topic);
-  nh.getParam("cloud_topic", cloud_topic);
+  // 토픽명은 config yaml(odometry_topic/cloud_topic)이 유일한 소스. 폴백 금지
+  // — 없으면 즉시 종료 (잘못된 토픽으로 조용히 도는 것 방지).
+  if (!nh.getParam("odometry_topic", odom_topic) || odom_topic.empty() ||
+      !nh.getParam("cloud_topic", cloud_topic) || cloud_topic.empty()) {
+    ROS_FATAL("[FSM] odometry_topic / cloud_topic not set in config yaml. "
+              "REFUSING TO START - no fallback.");
+    ros::shutdown();
+    exit(1);
+  }
+  // ML-X FOV 에뮬레이션: cloud_crop/enable=true 면 crop 브릿지(cloud_crop_bridge)
+  // 출력을 대신 구독. real.yaml 의 enable 하나로 브릿지 기동/구독 토픽이 함께
+  // 전환된다 (시뮬 yaml 엔 키가 없음 -> false = 기존 동작).
+  bool cloud_crop_enable = false;
+  nh.param("cloud_crop/enable", cloud_crop_enable, false);
+  if (cloud_crop_enable) {
+    string cropped_topic;
+    if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
+        cropped_topic.empty()) {
+      ROS_FATAL("[FSM] cloud_crop/enable=true but cloud_crop/output_topic not "
+                "set in config yaml. REFUSING TO START - no fallback.");
+      ros::shutdown();
+      exit(1);
+    }
+    ROS_WARN("[FSM] cloud_crop ON: subscribing %s (raw: %s)",
+             cropped_topic.c_str(), cloud_topic.c_str());
+    cloud_topic = cropped_topic;
+  }
   cloud_sub_.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(
       nh, cloud_topic, 1));
   odom_sub_.reset(
@@ -713,6 +738,11 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     std::string odom_t, cloud_t;
     nh.param("odometry_topic", odom_t, std::string("?"));
     nh.param("cloud_topic", cloud_t, std::string("?"));
+    // 이벤트 로그엔 실제 구독 중인(=crop 반영된) 토픽을 남긴다
+    bool crop_on = false;
+    nh.param("cloud_crop/enable", crop_on, false);
+    if (crop_on)
+      nh.param("cloud_crop/output_topic", cloud_t, cloud_t);
 
     char l[288];
     param_lines_.clear();
@@ -770,8 +800,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              avoidance_enabled_ ? 1 : 0);
     param_lines_.push_back(l);
 
-    snprintf(l, sizeof(l), "topics | odom=%s cloud=%s", odom_t.c_str(),
-             cloud_t.c_str());
+    snprintf(l, sizeof(l), "topics | odom=%s cloud=%s%s", odom_t.c_str(),
+             cloud_t.c_str(), crop_on ? " (cropped)" : "");
     param_lines_.push_back(l);
   }
   logParamsEvents(false);

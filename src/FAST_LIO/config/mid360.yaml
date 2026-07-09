@@ -13,6 +13,13 @@ preprocess:
                                  # ⚠️ 줄이면 LIO 회전(yaw) 관측성↓ — 불안정하면 180으로 되돌리기
 
 mapping:
+    # 중력 정렬: world(camera_init)를 IMU 실측 중력 기준 z-up 으로 초기화.
+    #   true  = 장착각 무관하게 odom/맵이 수평 좌표로 출력 — 기울임(예: 전방 25°)/수평
+    #           장착 모두 이 값 하나로 커버 (수평이면 정렬회전≈identity 라 무해).
+    #           초기화 중(첫 ~10 lidar 프레임) 정지 필요한 건 기존과 동일.
+    #   false = 기존 동작: world = 시작 순간 센서 자세 그대로 (기울여 달면 world 도
+    #           같이 기울어 PX4 EV/EPIC 의 z-up 가정이 깨짐 — 기울임 장착 실기에선 금지).
+    gravity_align: true
     acc_cov: 0.1
     gyr_cov: 0.1
     b_acc_cov: 0.0001

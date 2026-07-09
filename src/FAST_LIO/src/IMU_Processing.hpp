@@ -61,6 +61,9 @@ class ImuProcess
   V3D cov_bias_acc;
   double first_lidar_time;
   int lidar_type;
+  // 중력 정렬 모드 (mapping/gravity_align): world(camera_init)를 z-up 으로 초기화.
+  // 기울임 장착(예: Mid360 전방 25°)에서도 odom/맵이 수평 좌표로 나온다.
+  bool gravity_align_en = false;
 
  private:
   void IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 12, input_ikfom> &kf_state, int &N);
@@ -193,8 +196,22 @@ void ImuProcess::IMU_init(const MeasureGroup &meas, esekfom::esekf<state_ikfom, 
     N ++;
   }
   state_ikfom init_state = kf_state.get_x();
-  init_state.grav = S2(- mean_acc / mean_acc.norm() * G_m_s2);
-  
+  // 중력 정렬: 측정 중력(mean_acc)을 world +z 로 보내는 최소 회전(yaw 비틀림 없음)을
+  // 초기 자세로 넣어 world 가 장착각과 무관하게 항상 z-up 이 되게 한다.
+  // (수평 장착이면 회전≈identity. 초기화 동안 정지 필요한 건 기존 grav 추정과 동일.)
+  // off 면 기존 동작: rot=identity 유지, 기울어진 중력을 grav 상태로만 기록.
+  if (gravity_align_en && mean_acc.norm() > 0.1)
+  {
+    init_state.rot = SO3(Eigen::Quaterniond::FromTwoVectors(mean_acc, V3D(0.0, 0.0, 1.0)));
+    init_state.grav = S2(0.0, 0.0, -G_m_s2);
+  }
+  else
+  {
+    if (gravity_align_en)
+      ROS_WARN_ONCE("gravity_align: |mean_acc| too small, fallback to unaligned init");
+    init_state.grav = S2(- mean_acc / mean_acc.norm() * G_m_s2);
+  }
+
   //state_inout.rot = Eye3d; // Exp(mean_acc.cross(V3D(0, 0, -1 / scale_gravity)));
   init_state.bg  = mean_gyr;
   init_state.offset_T_L_I = Lidar_T_wrt_IMU;
@@ -371,6 +388,14 @@ void ImuProcess::Process(const MeasureGroup &meas,  esekfom::esekf<state_ikfom, 
       cov_acc = cov_acc_scale;
       cov_gyr = cov_gyr_scale;
       ROS_INFO("IMU Initial Done");
+      if (gravity_align_en)
+      {
+        // z_body·z_world 로 장착 기울기 확인용 (25° 장착이면 ~25 가 찍혀야 정상)
+        double c = imu_state.rot.toRotationMatrix()(2, 2);
+        c = std::max(-1.0, std::min(1.0, c));
+        ROS_INFO("gravity_align ON: world set z-up, initial sensor tilt %.1f deg",
+                 acos(c) * 180.0 / M_PI);
+      }
       // ROS_INFO("IMU Initial Done: Gravity: %.4f %.4f %.4f %.4f; state.bias_g: %.4f %.4f %.4f; acc covarience: %.8f %.8f %.8f; gry covarience: %.8f %.8f %.8f",\
       //          imu_state.grav[0], imu_state.grav[1], imu_state.grav[2], mean_acc.norm(), cov_bias_gyr[0], cov_bias_gyr[1], cov_bias_gyr[2], cov_acc[0], cov_acc[1], cov_acc[2], cov_gyr[0], cov_gyr[1], cov_gyr[2]);
       fout_imu.open(DEBUG_FILE_DIR("imu.txt"),ios::out);

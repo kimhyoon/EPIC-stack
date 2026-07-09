@@ -41,6 +41,14 @@
     <arg name="config_file" value="$(arg config_file)"/>
   </include>
 
+  <!-- 1.5) ML-X FOV 에뮬레이션 crop 브릿지 — on/off 는 real.yaml 의 cloud_crop/enable
+       하나로 제어 (launch 수정 불필요). enable=true 면 cloud_topic 을 crop 해
+       cloud_crop/output_topic 으로 재발행하고 exploration_node 가 그걸 구독,
+       false 면 이 노드는 곧바로 자진 종료(clean exit)하고 EPIC 은 raw 를 구독. -->
+  <node pkg="epic_planner" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
+  </node>
+
   <!-- 2) traj_server : 시뮬과 달리 /position_cmd remap 하지 않음
        (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다) -->
   <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen">
@@ -99,6 +107,9 @@
   <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization"
         output="screen">
     <remap from="~odom" to="$(arg odom_topic)"/>
+    <!-- real.yaml 공유 로드: lidar_perception/lidar_pitch 를 메시 장착각 보상에 사용
+         (라이다를 기울여 달면 /Odometry 자세=센서 자세라 메시가 숙여 보이는 것 방지) -->
+    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
     <param name="color/a" value="1.0"/>
     <param name="color/r" value="0.0"/>
     <param name="color/g" value="1.0"/>

@@ -55,6 +55,9 @@ visualization_msgs::Marker sensorROS;
 visualization_msgs::Marker meshROS;
 sensor_msgs::Range heightROS;
 string _frame_id;
+// 라이다 장착각(전방 pitch) 보상 [rad] — 0 이면 무보정(기존 동작).
+// /Odometry 자세는 센서(IMU) 자세라 기울임 장착 시 메시가 숙여 보이는 것을 되돌림.
+double mount_pitch_rad = 0.0;
 string sub_quadpose_topic;
 string relative_pose_topic;
 string sub_pointcloud_topic;
@@ -384,6 +387,17 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
         ypr(0) += 45.0 * PI / 180.0;
         q = R_to_quaternion(ypr_to_R(ypr));
     }
+    // 장착각 보상 (시각화 전용): /Odometry 자세는 센서(IMU) 자세라 기울임 장착 시
+    // 메시가 숙여 보임 → q ⊗ R_y(-pitch) 로 기체 자세로 되돌려 표시.
+    if (mount_pitch_rad != 0.0) {
+        double cw = cos(-mount_pitch_rad / 2), sy = sin(-mount_pitch_rad / 2);
+        colvec qc(4);
+        qc(0) = q(0) * cw - q(2) * sy;
+        qc(1) = q(1) * cw - q(3) * sy;
+        qc(2) = q(0) * sy + q(2) * cw;
+        qc(3) = q(3) * cw + q(1) * sy;
+        q = qc;
+    }
     meshROS.pose.orientation.w = q(0);
     meshROS.pose.orientation.x = q(1);
     meshROS.pose.orientation.y = q(2);
@@ -527,6 +541,17 @@ int main(int argc, char **argv) {
     n.param("robot_scale", scale, 2.0);
     n.param("frame_id", _frame_id, string("world"));
     n.param("cross_config", cross_config, false);
+    {
+        // 라이다 장착각(전방 pitch, deg). real_flight.launch 가 real.yaml 을 이 노드
+        // private ns 에도 load 해서 lidar_perception/lidar_pitch 를 공유(단일 소스).
+        // 키 없으면 0 = 무보정 (시뮬 launch 등 기존 동작 그대로).
+        double mount_pitch_deg = 0.0;
+        n.param("lidar_perception/lidar_pitch", mount_pitch_deg, 0.0);
+        mount_pitch_rad = mount_pitch_deg * PI / 180.0;
+        if (mount_pitch_deg != 0.0)
+            ROS_INFO("[odom_visualization] mesh mount-pitch compensation: %.1f deg",
+                     mount_pitch_deg);
+    }
     n.param("tf45", tf45, false);
     n.param("covariance_scale", cov_scale, 100.0);
     n.param("covariance_position", cov_pos, false);

@@ -1,0 +1,41 @@
+# EPIC structured flight events for epic_2026-07-09-21-22-28.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1783599747.581
+# box | down=[-150, -150, 0.4] up=[150, 150, 2]
+# corridor | DilateRadiusSoft=0.60 DilateRadiusHard=0.50 MaxCorridorSize=4.0 MaxVelMag=0.9 max_traj_len=10.0 astar_safe_distance=0.65 bubble_min_radius=0.50
+# frontier | cell_size=0.20 cluster_size=[0.5, 7.0] cluster_min_points=4 candidate_dphi=0.26 candidate_znum=3 good_observation_dir_score=0.80
+# viewpoint | pillar_radius=[0.5, 2.0]x8 pillar_height=[-1.0, 1.0]x5 circle_samples=8 min_obstacle_clearance=0.65 local_tsp_size=10
+# fsm | takeoff_height=1.20 goal_tolerance=0.20 replan_time=0.20 emergency_replan_error=3.0 local_plan_max_hz=30 avoid_flag_timeout=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance_enabled=1
+# topics | odom=/Odometry cloud=/cloud_registered_cropped (cropped)
+[1783599778.892][    +31.3s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x279 over 30.3s
+[1783599780.167][    +32.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783599808.982][    +61.4s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x557 over 60.4s
+[1783599812.167][    +64.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783599839.032][    +91.5s][WAIT_TRIGGER] Avoidance: Activated  <->  Deactivated | cycling x834 over 90.4s
+[1783599844.167][    +96.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783599869.082][   +121.5s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x1113 over 120.5s
+[1783599874.167][   +126.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x15 over 28.0s)
+[1783599899.125][   +151.6s][WAIT_TRIGGER] Avoidance: Activated  <->  Deactivated | cycling x1392 over 150.5s
+[1783599904.167][   +156.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x15 over 28.0s)
+[1783599929.155][   +181.6s][WAIT_TRIGGER] Avoidance: Activated  <->  Deactivated | cycling x1668 over 180.6s
+[1783599936.158][   +188.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783599959.175][   +211.6s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x1943 over 210.6s
+[1783599968.153][   +220.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783599989.185][   +241.6s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x2223 over 240.6s
+[1783599998.154][   +250.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x15 over 28.0s)
+[1783600019.235][   +271.7s][WAIT_TRIGGER] Avoidance: Activated  <->  Deactivated | cycling x2502 over 270.6s
+[1783600030.150][   +282.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783600049.275][   +301.7s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x2787 over 300.7s
+[1783600062.140][   +314.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (still repeating x16 over 30.0s)
+[1783600079.285][   +331.7s][WAIT_TRIGGER] Avoidance: Deactivated  <->  Activated | cycling x3067 over 330.7s
+[1783600084.132][   +336.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.71V percent=51% (repeated x10)
+[1783600086.135][   +338.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51%
+[1783600102.126][   +354.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.71V percent=51% (repeated x7)
+[1783600104.126][   +356.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51%
+[1783600108.129][   +360.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.71V percent=51% (repeated x1)
+[1783600109.325][   +361.8s][WAIT_TRIGGER] Avoidance: Activated  <->  Deactivated | cycling x3350 over 360.7s
+[1783600110.123][   +362.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51%
+[1783600118.120][   +370.6s][WAIT_TRIGGER] BATT 23.5V | voltage=23.71V percent=51% (repeated x3)
+[1783600124.117][   +376.5s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (repeated x2)
+[1783600126.118][   +378.5s][WAIT_TRIGGER] BATT 23.5V | voltage=23.71V percent=51%
+[1783600130.116][   +382.5s][WAIT_TRIGGER] BATT 23.5V | voltage=23.72V percent=51% (repeated x1)

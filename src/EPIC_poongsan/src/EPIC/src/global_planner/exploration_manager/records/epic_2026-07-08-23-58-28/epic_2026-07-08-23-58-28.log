@@ -1,0 +1,63 @@
+# console (/rosout_agg) log for epic_2026-07-08-23-58-28.bag
+# started at 2026-07-08-23-58-28
+[INFO] [1783522708.933] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-08-23-58-28/epic_2026-07-08-23-58-28.events.log
+[INFO] [1783522708.935] [/record_on_goal]: [record_on_goal] recording started (pid 2916211) -> /home/hmcl/stack1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-08-23-58-28/epic_2026-07-08-23-58-28.bag
+[INFO] [1783522709.404] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522709.454] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=462)
+[INFO] [1783522709.604] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522709.654] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=905)
+[INFO] [1783522709.704] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522709.754] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=651)
+[INFO] [1783522709.804] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522709.854] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=1357)
+[INFO] [1783522709.904] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522709.954] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=8399)
+[INFO] [1783522710.004] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.054] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=2105)
+[INFO] [1783522710.104] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.154] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=1529)
+[INFO] [1783522710.204] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.254] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=8210)
+[INFO] [1783522710.304] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.354] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=2077)
+[INFO] [1783522710.404] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.454] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=8939)
+[INFO] [1783522710.504] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.554] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=9837)
+[INFO] [1783522710.604] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522710.654] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.34 m, idx=1983)
+[INFO] [1783522710.704] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.59 m
+[INFO] [1783522711.453] [/cloud_crop_bridge]: [CloudCrop] 2612 -> 675 pts (26%)
+[INFO] [1783522711.704] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.35 m
+[INFO] [1783522712.754] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.34 m
+[INFO] [1783522713.754] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.35 m
+[WARN] [1783522713.878] [/exploration_node]: wait for trigger.
+[INFO] [1783522714.554] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522714.604] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=6531)
+[INFO] [1783522714.654] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522714.705] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=319)
+[INFO] [1783522714.755] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522714.804] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=7073)
+[INFO] [1783522714.855] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522714.904] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=758)
+[INFO] [1783522714.954] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.005] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=1773)
+[INFO] [1783522715.054] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.104] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=8531)
+[INFO] [1783522715.154] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.204] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=9533)
+[INFO] [1783522715.254] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.304] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=1767)
+[INFO] [1783522715.354] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.404] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=2682)
+[INFO] [1783522715.454] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.505] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=9516)
+[INFO] [1783522715.554] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.604] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=3134)
+[INFO] [1783522715.654] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.704] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=2648)
+[INFO] [1783522715.754] [/local_avoidance]: [local_avoidance] DEACTIVATED
+[WARN] [1783522715.804] [/local_avoidance]: [local_avoidance] ACTIVATED  (min_dist=0.35 m, idx=9519)
+[INFO] [1783522715.854] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.59 m
+[INFO] [1783522716.503] [/cloud_crop_bridge]: [CloudCrop] 2539 -> 635 pts (25%)
+[INFO] [1783522716.854] [/local_avoidance]: [local_avoidance] avoiding...  min_dist=0.35 m
