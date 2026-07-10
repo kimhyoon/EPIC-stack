@@ -66,6 +66,12 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
   nh.getParam("lidar_perception/fov_viewpoint_down", vpp_.fov_down_);
+  // [feature: cone-clip] limited-FOV LiDAR boundary model for the data-driven
+  // yaw FOV-edge scan. yaw_fov read in degrees, stored in radians.
+  nh.param("lidar_perception/is_360lidar", frtp_.is_360_lidar_, true);
+  float yaw_fov_deg = 360.0f;
+  nh.param("lidar_perception/yaw_fov", yaw_fov_deg, 360.0f);
+  frtp_.yaw_fov_ = yaw_fov_deg * static_cast<float>(M_PI) / 180.0f;
 
   vpp_.view_direction_range_ = cos(vpp_.view_direction_range_ * M_PI / 180.0);
   vpp_.fov_up_ = vpp_.fov_up_ * M_PI / 180.0;
@@ -194,6 +200,15 @@ CELL_STATE FrontierManager::get_state(const Eigen::Vector3i &idx) {
     return UNKNOWN;
   else
     return (CELL_STATE)frtd_.label_map_[bytes];
+}
+
+// [feature: cone-clip] world-point observation state for the local planner.
+CELL_STATE FrontierManager::getCellState(const Eigen::Vector3f &p) {
+  PointType pt;
+  pt.x = p.x();
+  pt.y = p.y();
+  pt.z = p.z();
+  return get_state(pt);
 }
 
 void FrontierManager::get_cells_2_update(
@@ -619,6 +634,37 @@ void FrontierManager::update_lidar_fov_edge(const vector<float> &depth) {
       }
     }
   }
+  // [feature: cone-clip] data-driven yaw (left/right) FOV edge for a cropped
+  // LiDAR. The spherical image wraps in azimuth with forward at column 0, so a
+  // naive left->right scan would mis-mark the forward center. Instead sweep
+  // inward from the back (column 100 == 180 deg, guaranteed empty for a forward
+  // crop) toward forward on both sides and mark the first valid pixel per row.
+  // This is the azimuth analog of the pitch (top/bottom) scan above and needs
+  // NO angular margin: it locates the actual outermost observed cell itself.
+  if (!frtp_.is_360_lidar_ &&
+      frtp_.yaw_fov_ < 2.0f * static_cast<float>(M_PI) - 1.0e-3f) {
+    const int back_col = 100; // azimuth 180 deg, outside a forward crop
+    for (int i = 0; i < 100; i++) {
+      for (int s = 0; s < 200; s++) { // sweep back -> forward (one side)
+        const int j = (back_col + s) % 200;
+        if (depth[i * 200 + j] <= 0.1)
+          frtd_.is_fov_edge_[i * 200 + j] = true;
+        else {
+          frtd_.is_fov_edge_[i * 200 + j] = true;
+          break;
+        }
+      }
+      for (int s = 0; s < 200; s++) { // sweep back -> forward (other side)
+        const int j = (back_col - s + 200) % 200;
+        if (depth[i * 200 + j] <= 0.1)
+          frtd_.is_fov_edge_[i * 200 + j] = true;
+        else {
+          frtd_.is_fov_edge_[i * 200 + j] = true;
+          break;
+        }
+      }
+    }
+  }
   cv::Mat img_origin(100, 200, CV_8UC1);
   for (int j = 0; j < 200; j++) {
     for (int i = 0; i < 100; i++) {
@@ -629,7 +675,12 @@ void FrontierManager::update_lidar_fov_edge(const vector<float> &depth) {
 }
 
 bool FrontierManager::is_fov_edge(const PointType &pt) {
-  return frtd_.is_fov_edge_[surface_pos2idx(pt)];
+  const int idx = surface_pos2idx(pt);
+  // yaw & pitch FOV edges are both marked data-driven in update_lidar_fov_edge()
+  // (self-locating, no angular margin). The added yaw scan can mark more cells,
+  // so bounds-check the projected index before indexing.
+  return idx >= 0 && idx < static_cast<int>(frtd_.is_fov_edge_.size()) &&
+         frtd_.is_fov_edge_[idx];
 }
 
 void FrontierManager::updateFrontierClusters(
@@ -638,6 +689,7 @@ void FrontierManager::updateFrontierClusters(
   // ROS_INFO("[DEBUG updateFrontierClusters] Function called. Current cluster_list_ size: %lu", cluster_list_.size());
 
   PointVector frt_new;
+  fov_edge_cells_.clear(); // [feature: cone-clip] rebuilt this frame
   auto has_dense_nbr = [&](const Eigen::Vector3i &idx) -> bool {
     for (int i = -1; i <= 1; i++) {
       for (int j = -1; j <= 1; j++) {
@@ -753,6 +805,11 @@ void FrontierManager::updateFrontierClusters(
     PointType pt;
     idx2pos(cells_2_update[i], pt);
     float view_distance = (pt.getVector3fMap() - lidar_position).norm();
+    // [feature: cone-clip] this cell reached classification and is a FOV-edge
+    // cell => it becomes a FOV-edge frontier; record its world position for the
+    // local planner's corridor cone clipping (rebuilt each frame).
+    if (is_fov_edge(pt))
+      fov_edge_cells_.push_back(pt);
     if (view_distance < frtp_.good_observation_force_trust_length_ &&
         !is_fov_edge(pt)) {
       // if (view_distance < frtp_.good_observation_force_trust_length_) {

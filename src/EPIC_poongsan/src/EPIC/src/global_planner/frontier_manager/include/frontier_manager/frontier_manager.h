@@ -38,6 +38,10 @@ struct FrontierParam {
   int cluster_minmum_point_num_;
   float cell_size_;
   float inv_cell_size_;
+  // [feature: cone-clip] limited-FOV LiDAR boundary model. is_360_lidar_ false
+  // => the data-driven yaw FOV-edge scan runs; yaw_fov_ stored in radians.
+  bool is_360_lidar_ = true;
+  float yaw_fov_ = 2.0f * M_PI;
   float occ_min_dis_;
   float good_observation_direction_score_;
   float good_observation_trust_length_;
@@ -298,6 +302,14 @@ public:
   // unordered_map<int, ClusterInfo::Ptr> new_clusters_;
   std::list<ClusterInfo::Ptr> cluster_list_;
   VpPipelineStats vp_stats_; // 마지막 generateTSPViewpoints 단계별 통계
+  // [feature: cone-clip] this frame's FOV-edge frontier cells (rebuilt every
+  // updateFrontierClusters); consumed by the local planner to clip its SFC
+  // corridor to the observed FOV cone.
+  PointVector fov_edge_cells_;
+  // Observation/occupancy state at a world point and the frontier grid size;
+  // used by the local planner's cone clipping.
+  CELL_STATE getCellState(const Eigen::Vector3f &p);
+  float getCellSize() const { return frtp_.cell_size_; }
   void printMemoryCost();
 
   void viz_pocc();
