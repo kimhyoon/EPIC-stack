@@ -38,8 +38,8 @@ lidar_perception/max_ray_length: 18   # [SIM 유지] real=1.5 로 바꾸면 1.5m
 lidar_perception/is_360lidar: true    # false => run the data-driven yaw FOV-edge scan
 lidar_perception/yaw_fov: 360.0       # sensor horizontal FOV [deg] (e.g. 120 when cropped)
 # 2) Enable the clipping (Method B) + the robot-body seed box P0:
-local_planning/clip_corridor_to_observed: false  # master switch
-local_planning/clip_cone_faces: false            # Method B: intersect polytopes with FOV cone
+local_planning/clip_corridor_to_observed: true  # master switch
+local_planning/clip_cone_faces: true            # Method B: intersect polytopes with FOV cone
 local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
