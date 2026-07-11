@@ -21,6 +21,7 @@ find_package(catkin REQUIRED COMPONENTS
   pointcloud_topo
   path_searching
   lidar_map
+  frontier_manager
   traj_utils
   cv_bridge
   pcl_ros
@@ -31,7 +32,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES plan_manage
-  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lidar_map
+  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lidar_map frontier_manager
 )
 
 include_directories(
