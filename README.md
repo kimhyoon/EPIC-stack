@@ -7,7 +7,20 @@ cloud.
 
 ## Summary
 
-The important runtime structure is:
+This branch combines two related changes for Poongsan garage simulation:
+
+1. **PR #1 observed FOV corridor clipping**
+
+   The local SFC/FIRI corridor generation is clipped against the observed LiDAR
+   FOV cone so the planner does not expand corridor polytopes as if unobserved
+   space were known free space.
+
+2. **Garage simulation ML-X cloud crop wiring**
+
+   MARSIM still generates the full simulated LiDAR cloud, but EPIC consumes a
+   cropped ML-X-style cloud through `cloud_crop_bridge`.
+
+The resulting runtime structure is:
 
 ```text
 MARSIM local_sensing
@@ -23,7 +36,8 @@ EPIC exploration_node                       # frontier/viewpoint/corridor planni
 
 MARSIM still generates the original full cloud. Only the cloud consumed by EPIC
 is cropped, which matches the real-flight validation pattern more closely than
-modifying the MARSIM renderer itself.
+modifying the MARSIM renderer itself. PR #1 then uses the cropped/observed FOV
+assumption when building the local corridor for MINCO/GCOPTER planning.
 
 ## Branch And Source
 
