@@ -8,6 +8,26 @@ This branch vendors EPIC_poongsan from kimhyoon/psc_stack.
 - Upstream commit: efbd804ecba6642fe3ca26aec44688ff1ae01021
 - Import policy: src/EPIC_poongsan keeps the onboard tree shape; simulation-only MARSIM/garage/RViz wiring must live outside EPIC_poongsan.
 
+Source ownership in this workspace:
+
+- `src/EPIC_poongsan`
+  - Source repository: https://github.com/kimhyoon/psc_stack.git
+  - Source commit: `efbd804ecba6642fe3ca26aec44688ff1ae01021`
+  - Purpose: onboard planner tree. This is the only directory that should be
+    treated as the onboard EPIC planner payload.
+- `src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real.yaml`
+  - Source repository: https://github.com/kimhyoon/psc_stack.git
+  - Source commit: `efbd804ecba6642fe3ca26aec44688ff1ae01021`
+  - Validation note: this file is byte-identical to the onboard reference at
+    the source commit above.
+  - SHA256: `ee988f2223d21fcbd3cfe0cc8a328a84a2d373421ea7946668071e122bfc08a7`
+- `src/ml_x_cropping`
+  - Tracking repository: https://github.com/kimhyoon/EPIC-stack.git
+  - Intended branch: `donghyuck`
+  - Purpose: optional MID360-to-ML-X cloud crop bridge for lab and MARSIM
+    validation. This package is not part of the onboard `psc_stack`
+    `EPIC_poongsan` reference.
+
 # EPIC-stack Poongsan Garage Simulation
 
 This branch contains the Poongsan garage simulation setup based on
@@ -66,8 +86,46 @@ donghyuck
 - Container workspace used during validation:
 
 ```text
-/workspace/EPIC-stack-donghyuck
+/workspace/EPIC-stack-onboard-pr1
 ```
+
+- Validation branch inside the container:
+
+```text
+donghyuck-onboard-pr1-port-20260714
+```
+
+## Clone Only EPIC_poongsan For Onboard Use
+
+For real onboard deployment, the required planner payload is:
+
+```text
+src/EPIC_poongsan
+```
+
+Git cannot clone a single subdirectory directly. Use sparse checkout to fetch
+only `src/EPIC_poongsan` from the `donghyuck` branch:
+
+```bash
+git clone --filter=blob:none --sparse --branch donghyuck \
+  https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-poongsan-onboard
+
+cd EPIC-stack-poongsan-onboard
+git sparse-checkout set src/EPIC_poongsan
+```
+
+The resulting checkout shape is:
+
+```text
+EPIC-stack-poongsan-onboard/
+└── src/
+    └── EPIC_poongsan/
+```
+
+Use this sparse checkout when the target machine only needs the onboard planner
+tree. Do not copy `src/MARSIM`, `src/sim_bringup`, or `src/ml_x_cropping` to the
+onboard payload unless that machine is also being used for simulation or lab
+MID360-to-ML-X emulation.
 
 ## Version Tracking
 
@@ -100,21 +158,19 @@ sanghun17:feat/clip-corridor-fov-cone
 pr-1
 ```
 
-- PR integration commits visible in this branch:
+- PR integration commit in the validated port branch:
 
 ```text
-00a0fc2 local_planner: clip local SFC corridor to observed FOV cone (Method B)
-6026559 Merge PR #1 observed FOV corridor clipping
-9ee31e8 Enable observed corridor clipping for Poongsan garage
+fd91726 Port PR #1 observed FOV corridor clipping
 ```
 
 ### Local Garage Simulation Commit
 
 After PR #1 was integrated, the garage simulation was additionally wired to use
-`cloud_crop_bridge` for EPIC input cropping:
+the separated `ml_x_cropping` package for EPIC input cropping:
 
 ```text
-91508fb garage sim: crop EPIC cloud input with cloud_crop_bridge
+5162342 Add separated MARSIM garage simulation bringup
 ```
 
 That commit does not replace PR #1. It adds the simulation-side cloud path so
@@ -139,12 +195,10 @@ PR title:
 local_planner: clip local SFC corridor to observed FOV cone (Method B)
 ```
 
-Relevant commits visible in this branch:
+Relevant commit in the validated port branch:
 
 ```text
-00a0fc2 local_planner: clip local SFC corridor to observed FOV cone (Method B)
-6026559 Merge PR #1 observed FOV corridor clipping
-9ee31e8 Enable observed corridor clipping for Poongsan garage
+fd91726 Port PR #1 observed FOV corridor clipping
 ```
 
 Main files touched by PR #1:
@@ -177,10 +231,10 @@ against the observed FOV cone.
 The MARSIM garage map is replaced with the processed Poongsan garage-style PCD:
 
 ```text
-src/EPIC_poongsan/src/EPIC/src/MARSIM/map_generator/resource/garage.pcd
+src/MARSIM/map_generator/resource/garage.pcd
 ```
 
-This file is the map consumed by MARSIM when `epic_planner garage.launch` starts.
+This file is the map consumed by MARSIM when `sim_bringup garage_sim.launch` starts.
 It has been prepared as a garage-style world map for simulation use.
 
 Expected SHA256:
@@ -197,14 +251,15 @@ cropped cloud while MARSIM continues publishing the full cloud.
 Commit:
 
 ```text
-91508fb garage sim: crop EPIC cloud input with cloud_crop_bridge
+5162342 Add separated MARSIM garage simulation bringup
 ```
 
 Modified files:
 
 ```text
 src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/garage.yaml
-src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/garage.launch
+src/sim_bringup/launch/garage_sim.launch
+src/ml_x_cropping/*
 ```
 
 Key configuration in `garage.yaml`:
@@ -228,12 +283,18 @@ lidar_perception/is_360lidar: false
 lidar_perception/yaw_fov: 120.0
 ```
 
-Key launch addition in `garage.launch`:
+Key launch addition in `sim_bringup/launch/garage_sim.launch`:
 
 ```xml
-<node pkg="epic_planner" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
-  <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
-</node>
+<arg name="use_cloud_crop_bridge" default="false" />
+
+<group if="$(arg use_cloud_crop_bridge)">
+  <param name="/exploration_node/cloud_topic" value="/quad0_pcl_render_node/cloud_cropped" />
+  <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
+    <param name="cloud_topic" value="/quad0_pcl_render_node/cloud" />
+  </node>
+</group>
 ```
 
 The intended behavior is:
@@ -241,7 +302,7 @@ The intended behavior is:
 - `/quad0_pcl_render_node/cloud` remains the raw MARSIM output.
 - `cloud_crop_bridge` subscribes to the raw cloud.
 - `cloud_crop_bridge` publishes `/quad0_pcl_render_node/cloud_cropped`.
-- `exploration_node` uses the cropped topic when `cloud_crop/enable: true`.
+- `exploration_node` uses the cropped topic when `use_cloud_crop_bridge:=true`.
 
 ## What Was Not Changed
 
@@ -257,33 +318,114 @@ logs/
 .catkin_tools/
 ```
 
-## Build
+## Build Targets
 
-Run this inside the ROS Noetic container:
+Use one of the following build paths depending on the target machine.
+
+### A. Real ML-X Onboard Deployment
+
+Use this when the aircraft already has the real ML-X sensor input and does not
+need MID360-to-ML-X cloud cropping.
+
+Only clone the onboard planner tree:
 
 ```bash
-cd /workspace/EPIC-stack-donghyuck
+git clone --filter=blob:none --sparse --branch donghyuck \
+  https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-poongsan-onboard
+
+cd EPIC-stack-poongsan-onboard
+git sparse-checkout set src/EPIC_poongsan
+```
+
+Build with the crop bridge disabled:
+
+```bash
+cd EPIC-stack-poongsan-onboard
 source /opt/ros/noetic/setup.bash
-catkin config --cmake-args -DROS_EDITION=ROS1
+catkin config --cmake-args -DROS_EDITION=ROS1 -DBUILD_CLOUD_CROP_BRIDGE=OFF
 catkin build
 source devel/setup.bash
 ```
 
-The validated container build result was:
+This mode keeps `real.yaml` as the onboard flight configuration.
 
-```text
-All 26 packages succeeded.
-```
+### B. MID360 Drone, ML-X Emulation
 
-## Run Garage Simulation
+Use this when the lab aircraft uses MID360 but should emulate the ML-X field of
+view before EPIC consumes the point cloud.
 
-Use the top-level EPIC launch:
+Clone only the packages needed for onboard EPIC plus MID360/LiDAR support and
+the optional crop bridge:
 
 ```bash
-cd /workspace/EPIC-stack-donghyuck
+git clone --filter=blob:none --sparse --branch donghyuck \
+  https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-mid360-mlx
+
+cd EPIC-stack-mid360-mlx
+git sparse-checkout set \
+  src/EPIC_poongsan \
+  src/FAST_LIO \
+  src/livox_ros_driver2 \
+  src/reactive_local_avoidance \
+  src/ml_x_cropping
+```
+
+Build with the crop bridge enabled:
+
+```bash
+cd EPIC-stack-mid360-mlx
 source /opt/ros/noetic/setup.bash
+catkin config --cmake-args -DROS_EDITION=ROS1 -DBUILD_CLOUD_CROP_BRIDGE=ON
+catkin build
 source devel/setup.bash
-roslaunch epic_planner garage.launch
+```
+
+In this mode, make sure the runtime launch and YAML agree as a set:
+
+```text
+BUILD_CLOUD_CROP_BRIDGE=ON
+use_cloud_crop_bridge=true
+EPIC cloud topic = cropped cloud topic
+crop input topic = MID360/Fast-LIO cloud topic
+```
+
+Do not set `use_cloud_crop_bridge=true` if the workspace was built with
+`BUILD_CLOUD_CROP_BRIDGE=OFF`.
+
+### C. MARSIM Garage Simulation
+
+Use this when the machine runs the MARSIM garage simulator, RViz, and EPIC
+together.
+
+Clone the full simulation workspace:
+
+```bash
+git clone --branch donghyuck \
+  https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-marsim
+
+cd EPIC-stack-marsim
+```
+
+Build with the crop bridge enabled:
+
+```bash
+cd EPIC-stack-marsim
+source /opt/ros/noetic/setup.bash
+catkin config --cmake-args -DROS_EDITION=ROS1 -DBUILD_CLOUD_CROP_BRIDGE=ON
+catkin build
+source devel/setup.bash
+```
+
+Run the garage simulation through `sim_bringup`:
+
+```bash
+roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true
+```
+
+The validated container build result for this mode was:
+
+```text
+All 29 packages succeeded.
 ```
 
 Do not launch the internal MARSIM file directly for normal use:
@@ -292,15 +434,16 @@ Do not launch the internal MARSIM file directly for normal use:
 roslaunch mars_drone_sim garage.launch
 ```
 
-That file is included by the EPIC launch and expects parent launch arguments
-such as `sensing_horizon`.
+That file is included by `sim_bringup` and expects parent launch arguments such
+as `sensing_horizon`.
 
 ## Validation Commands
 
-Check that the expected nodes are present in the launch graph:
+Check that the expected simulation nodes are present in the launch graph:
 
 ```bash
-roslaunch --nodes epic_planner garage.launch | grep -E "cloud_crop_bridge|exploration_node|quad0_pcl_render_node|traj_server"
+roslaunch --nodes sim_bringup garage_sim.launch use_cloud_crop_bridge:=true | \
+  grep -E "cloud_crop_bridge|exploration_node|quad0_pcl_render_node|traj_server"
 ```
 
 Expected key nodes:
@@ -315,7 +458,7 @@ Expected key nodes:
 Dump and inspect the crop-related launch parameters:
 
 ```bash
-roslaunch --dump-params epic_planner garage.launch > /tmp/garage_params_dump.yaml
+roslaunch --dump-params sim_bringup garage_sim.launch use_cloud_crop_bridge:=true > /tmp/garage_params_dump.yaml
 grep -nE "cloud_crop|cloud_topic|lidar_perception/(is_360lidar|yaw_fov|fov_up|fov_down|lidar_pitch)" /tmp/garage_params_dump.yaml
 ```
 
@@ -324,8 +467,7 @@ Expected important parameters:
 ```text
 /cloud_crop_bridge/cloud_topic: /quad0_pcl_render_node/cloud
 /cloud_crop_bridge/cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
-/exploration_node/cloud_crop/enable: true
-/exploration_node/cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
+/exploration_node/cloud_topic: /quad0_pcl_render_node/cloud_cropped
 /exploration_node/lidar_perception/is_360lidar: false
 /exploration_node/lidar_perception/yaw_fov: 120.0
 ```
@@ -335,7 +477,7 @@ Expected important parameters:
 Before committing changes, check:
 
 ```bash
-cd /workspace/EPIC-stack-donghyuck
+cd /workspace/EPIC-stack-onboard-pr1
 git branch
 git status
 git remote -v
@@ -371,7 +513,7 @@ mounts.
 Use:
 
 ```bash
-roslaunch epic_planner garage.launch
+roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true
 ```
 
 The MARSIM launch is an internal include and is not the entry point for this
