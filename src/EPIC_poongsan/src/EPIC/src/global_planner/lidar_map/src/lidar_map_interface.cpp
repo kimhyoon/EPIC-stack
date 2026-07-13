@@ -1,4 +1,5 @@
 #include "visualization_msgs/Marker.h"
+#include <cmath>
 #include <lidar_map/lidar_map.h>
 #include <pcl/filters/voxel_grid.h>
 namespace fast_planner {
@@ -14,8 +15,8 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   ikd_Tree_map.Set_delete_criterion_param(0.3);
   ikd_Tree_map.Set_balance_criterion_param(0.6);
   string odom_topic, cloud_topic;
-  // 토픽명은 config yaml(odometry_topic/cloud_topic)이 유일한 소스. 폴백 금지
-  // — 없으면 즉시 종료 (잘못된 토픽으로 조용히 도는 것 방지).
+  // Topic names must come from the config yaml. Refuse to start instead of
+  // silently running with a stale fallback topic.
   if (!nh.getParam("odometry_topic", odom_topic) || odom_topic.empty() ||
       !nh.getParam("cloud_topic", cloud_topic) || cloud_topic.empty()) {
     ROS_FATAL("[LIOInterface] odometry_topic / cloud_topic not set in config "
@@ -25,7 +26,7 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   }
   nh.getParam("box_num", lp_->box_num_);
   nh.getParam("lidar_perception/lidar_pitch", lp_->lidar_pitch_);
-  // 구 config(yaw 키 없음)와의 호환을 위해 기본값 0 (= 기존 동작 그대로).
+  // Keep old configs valid when the yaw key is absent.
   nh.param("lidar_perception/lidar_yaw", lp_->lidar_yaw_, 0.0);
   for (int i = 0; i < lp_->box_num_; i++) {
     std::vector<double> tmp;
@@ -99,32 +100,88 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   nh.getParam("lidar_perception/max_ray_length", lp_->max_ray_length_);
   ld_->first_map_flag_ = true;
 
-  // Initialize TF listener for frame transforms
+  // Initialize TF listener for frame transforms.
   tf_buffer_.reset(new tf2_ros::Buffer);
   tf_listener_.reset(new tf2_ros::TransformListener(*tf_buffer_));
 
-  // Wait for first messages to get frame information
-  ROS_INFO("[LIOInterface] Waiting for first odometry message on %s...", odom_topic.c_str());
-  nav_msgs::Odometry::ConstPtr first_odom =
-      ros::topic::waitForMessage<nav_msgs::Odometry>(odom_topic, nh, ros::Duration(10.0));
+  std::string frame_mode;
+  nh.param("lidar_perception/cloud_frame_mode", frame_mode, std::string("auto"));
+  T_body_to_cloud_ = Eigen::Matrix4f::Identity();
+  needs_transform_ = false;
 
-  ROS_INFO("[LIOInterface] Waiting for first pointcloud message on %s...", cloud_topic.c_str());
-  sensor_msgs::PointCloud2::ConstPtr first_cloud =
-      ros::topic::waitForMessage<sensor_msgs::PointCloud2>(cloud_topic, nh, ros::Duration(10.0));
-
-  if (first_odom && first_cloud) {
-    std::string map_frame = first_odom->header.frame_id;
-    std::string body_frame = first_odom->child_frame_id;
-    std::string cloud_frame = first_cloud->header.frame_id;
-
-    ROS_INFO("[LIOInterface] Detected frames - Map: %s, Body: %s, Cloud: %s",
-             map_frame.c_str(), body_frame.c_str(), cloud_frame.c_str());
-
-    // Initialize transform lookup
-    initializeTransform(map_frame, body_frame, cloud_frame);
-  } else {
-    ROS_WARN("[LIOInterface] Failed to receive initial messages, transform initialization skipped");
+  if (frame_mode == "world") {
+    // The cloud is already registered in the odometry/map frame. Ignore the
+    // PointCloud2 frame_id because some drivers publish a misleading value.
     needs_transform_ = false;
+    ROS_WARN("[LIOInterface] cloud_frame_mode=world: using %s as registered "
+             "world/odom cloud and ignoring PointCloud2 frame_id",
+             cloud_topic.c_str());
+  } else if (frame_mode == "sensor") {
+    // The cloud is raw sensor-frame data. Transform every synchronized scan by
+    // T_map_body(odom) * T_body_cloud(configured mount extrinsic).
+    double mount_pitch_deg = 0.0;
+    double mount_yaw_deg = 0.0;
+    std::vector<double> mount_offset;
+    nh.param("lidar_perception/sensor_mount_pitch_deg", mount_pitch_deg, 0.0);
+    nh.param("lidar_perception/sensor_mount_yaw_deg", mount_yaw_deg, 0.0);
+    nh.param("lidar_perception/sensor_mount_offset", mount_offset,
+             std::vector<double>());
+
+    Eigen::AngleAxisf pitch_axis(M_PI / 180.0 * mount_pitch_deg,
+                                 Eigen::Vector3f::UnitY());
+    Eigen::AngleAxisf yaw_axis(M_PI / 180.0 * mount_yaw_deg,
+                               Eigen::Vector3f::UnitZ());
+    T_body_to_cloud_ = Eigen::Matrix4f::Identity();
+    T_body_to_cloud_.block<3, 3>(0, 0) =
+        (Eigen::Quaternionf(yaw_axis) * Eigen::Quaternionf(pitch_axis))
+            .toRotationMatrix();
+    if (mount_offset.size() == 3) {
+      T_body_to_cloud_.block<3, 1>(0, 3) =
+          Eigen::Vector3f(mount_offset[0], mount_offset[1], mount_offset[2]);
+    }
+    needs_transform_ = true;
+    ROS_WARN("[LIOInterface] cloud_frame_mode=sensor: applying configured "
+             "body->cloud mount transform pitch=%.2fdeg yaw=%.2fdeg offset=[%.3f %.3f %.3f]",
+             mount_pitch_deg, mount_yaw_deg,
+             mount_offset.size() == 3 ? mount_offset[0] : 0.0,
+             mount_offset.size() == 3 ? mount_offset[1] : 0.0,
+             mount_offset.size() == 3 ? mount_offset[2] : 0.0);
+  } else if (frame_mode == "auto") {
+    ROS_WARN("[LIOInterface] cloud_frame_mode=auto: inferring cloud transform "
+             "from frame_id strings. Use explicit world/sensor mode for real flight.");
+
+    ROS_INFO("[LIOInterface] Waiting for first odometry message on %s...",
+             odom_topic.c_str());
+    nav_msgs::Odometry::ConstPtr first_odom =
+        ros::topic::waitForMessage<nav_msgs::Odometry>(odom_topic, nh,
+                                                       ros::Duration(10.0));
+
+    ROS_INFO("[LIOInterface] Waiting for first pointcloud message on %s...",
+             cloud_topic.c_str());
+    sensor_msgs::PointCloud2::ConstPtr first_cloud =
+        ros::topic::waitForMessage<sensor_msgs::PointCloud2>(
+            cloud_topic, nh, ros::Duration(10.0));
+
+    if (first_odom && first_cloud) {
+      std::string map_frame = first_odom->header.frame_id;
+      std::string body_frame = first_odom->child_frame_id;
+      std::string cloud_frame = first_cloud->header.frame_id;
+
+      ROS_INFO("[LIOInterface] Detected frames - Map: %s, Body: %s, Cloud: %s",
+               map_frame.c_str(), body_frame.c_str(), cloud_frame.c_str());
+
+      initializeTransform(map_frame, body_frame, cloud_frame);
+    } else {
+      ROS_WARN("[LIOInterface] Failed to receive initial messages, transform "
+               "initialization skipped");
+      needs_transform_ = false;
+    }
+  } else {
+    ROS_FATAL("[LIOInterface] Invalid lidar_perception/cloud_frame_mode='%s'. "
+              "Expected one of: auto, world, sensor.",
+              frame_mode.c_str());
+    ros::shutdown();
+    exit(1);
   }
 
   // update_trigger_puber_ =

@@ -93,14 +93,11 @@
     <param name="quadrotor_name" value="quad0"/>
     <param name="drone_id" value="0"/>
     <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae"/>
+    <param name="frame_id" value="odom"/>
   </node>
 
-  <!-- 5) rviz — on/off 는 real.yaml 의 rviz/enable (rviz/enable=false 면 래퍼가
-       뜨자마자 스스로 종료). 설정 파일은 rviz/config (빈 값 = real.rviz 자동).
-       real.rviz 는 시뮬 traj.rviz 복사본(색/크기/형태 동일), Fixed Frame=world.
-       실기 적응: buffered_cloud 토픽 /cloud_registered, 드론 mesh 는 위
-       quad0_odom_visualization 노드가 publish. occ/frt 복셀이 world 프레임에서
-       보이려면 camera_init->world static TF (4_tf_odom_relay.sh) 가 떠 있어야 한다. -->
+  <!-- 5) rviz. rviz_on_param.py reads rviz/enable and rviz/config from real.yaml.
+       real.rviz uses Fixed Frame=odom for the LIO-SAM + ML-X flight stack. -->
   <node pkg="epic_planner" name="rviz_on_param" type="rviz_on_param.py"
         output="screen"/>
 

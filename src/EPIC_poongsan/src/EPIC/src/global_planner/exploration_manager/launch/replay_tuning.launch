@@ -61,9 +61,10 @@
     <param name="quadrotor_name" value="quad0"/>
     <param name="drone_id" value="0"/>
     <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae"/>
+    <param name="frame_id" value="odom"/>
   </node>
 
-  <!-- 4) rviz (real.rviz, Fixed Frame=world) -->
+  <!-- 4) rviz (real.rviz, Fixed Frame=odom) -->
   <group if="$(arg rviz)">
     <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log"
           args="-d $(find epic_planner)/config/real.rviz"/>

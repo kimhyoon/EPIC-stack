@@ -84,7 +84,7 @@ void load_waypoints(ros::NodeHandle& nh, const ros::Time& time_base) {
 }
 
 void publish_waypoints() {
-  waypoints.header.frame_id = std::string("world");
+  waypoints.header.frame_id = odom.header.frame_id;
   waypoints.header.stamp = ros::Time::now();
   pub1.publish(waypoints);
   geometry_msgs::PoseStamped init_pose;
@@ -98,7 +98,7 @@ void publish_waypoints() {
 void publish_waypoints_vis() {
   nav_msgs::Path wp_vis = waypoints;
   geometry_msgs::PoseArray poseArray;
-  poseArray.header.frame_id = std::string("world");
+  poseArray.header.frame_id = odom.header.frame_id;
   poseArray.header.stamp = ros::Time::now();
 
   {
@@ -148,6 +148,25 @@ void goal_callback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
           ROS_ERROR("[waypoint_generator] No odom!");
           return;
       }*/
+
+  static geometry_msgs::Pose last_goal;
+  static bool has_last_goal = false;
+  const geometry_msgs::Pose& p = msg->pose;
+  if (has_last_goal &&
+      p.position.x == last_goal.position.x &&
+      p.position.y == last_goal.position.y &&
+      p.position.z == last_goal.position.z &&
+      p.orientation.x == last_goal.orientation.x &&
+      p.orientation.y == last_goal.orientation.y &&
+      p.orientation.z == last_goal.orientation.z &&
+      p.orientation.w == last_goal.orientation.w) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[waypoint_generator] identical goal repeated - ignoring "
+                      "streamed trigger");
+    return;
+  }
+  last_goal = p;
+  has_last_goal = true;
 
   trigged_time = ros::Time::now();  // odom.header.stamp;
   // ROS_ASSERT(trigged_time > ros::Time(0));
@@ -245,8 +264,8 @@ int main(int argc, char** argv) {
   ros::init(argc, argv, "waypoint_generator");
   ros::NodeHandle n("~");
   n.param("waypoint_type", waypoint_type, string("manual"));
-  // odom 토픽은 config yaml 의 odometry_topic (exploration_node ns) 이 유일한
-  // 소스다 (구 ~odom remap 방식 폐지). 폴백 금지 — 없으면 시작 거부.
+  // The odometry topic is sourced only from the exploration_node config yaml.
+  // Refuse to start if the parameter is missing.
   std::string odom_topic;
   if (!ros::param::get("/exploration_node/odometry_topic", odom_topic) ||
       odom_topic.empty()) {

@@ -1,10 +1,9 @@
 # ══════════════════════════════════════════════════════════════════
-# ★ 토픽 + on/off 스위치 모음 — 실비행 설정 변경은 전부 이 블록에서만.
+# Real-flight topics and on/off switches.
+# Keep flight-side topic changes in this block.
 # ══════════════════════════════════════════════════════════════════
-#topic param:
-# 실비행용. FAST-LIO 출력에 맞춰 시뮬 토픽에서 변경.
-odometry_topic: /mavros/odometry/in          # FAST-LIO odom  (시뮬: /quad_0/lidar_slam/odom)
-cloud_topic: /ml_/pointcloud    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
+odometry_topic: /mavros/odometry/in
+cloud_topic: /lio_sam/mapping/cloud_registered_raw
 
 # Reactive local avoidance 마스터 스위치 (단일 소스: 이 값 하나로 on/off).
 # true  = 회피 노드가 /FSM_flag_avoidance, /target_avoidance 발행 + 브리지 MUX 동작
@@ -70,6 +69,10 @@ lidar_perception/fov_viewpoint_horizontal: 100.0
 # odom 이 기체(body) 프레임(예: PX4 EKF, extrinsic 보정된 LIO)일 때만 장착값 입력.
 lidar_perception/lidar_pitch: 0.0
 lidar_perception/lidar_yaw: 0.0
+lidar_perception/cloud_frame_mode: world
+lidar_perception/sensor_mount_pitch_deg: 0.0
+lidar_perception/sensor_mount_yaw_deg: 0.0
+lidar_perception/sensor_mount_offset: [0.0, 0.0, 0.0]
 lidar_perception/fov_viewpoint_up: 48.0
 lidar_perception/fov_viewpoint_down: -5
 lidar_perception/max_ray_length: 10  #13

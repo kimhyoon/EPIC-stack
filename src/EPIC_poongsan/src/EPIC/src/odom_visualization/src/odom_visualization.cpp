@@ -124,7 +124,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
     // Pose
     poseROS.header = msg->header;
     poseROS.header.stamp = msg->header.stamp;
-    poseROS.header.frame_id = string("world");
+    poseROS.header.frame_id = _frame_id;
     poseROS.pose.position.x = pose(0);
     poseROS.pose.position.y = pose(1);
     poseROS.pose.position.z = pose(2);
@@ -145,7 +145,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
     yprVel(1) = -atan2(vel(2), norm(vel.rows(0, 1), 2));
     yprVel(2) = 0;
     q = R_to_quaternion(ypr_to_R(yprVel));
-    velROS.header.frame_id = string("world");
+    velROS.header.frame_id = _frame_id;
     velROS.header.stamp = msg->header.stamp;
     velROS.ns = string("velocity");
     velROS.id = 0;
@@ -180,7 +180,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
         pose_lidar.pose.position.y -= init_y;
         pose_lidar.pose.position.z -= init_z;
         pathROS.poses.push_back(pose_lidar);
-        pathROS.header.frame_id = quad_name + "world";
+        pathROS.header.frame_id = _frame_id;
         pathPub.publish(pathROS);
     }
 
@@ -216,7 +216,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
                 }
             }
         }
-        covROS.header.frame_id = string("world");
+        covROS.header.frame_id = _frame_id;
         covROS.header.stamp = msg->header.stamp;
         covROS.ns = string("covariance");
         covROS.id = 0;
@@ -261,7 +261,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
                 }
             }
         }
-        covVelROS.header.frame_id = string("world");
+        covVelROS.header.frame_id = _frame_id;
         covVelROS.header.stamp = msg->header.stamp;
         covVelROS.ns = string("covariance_velocity");
         covVelROS.id = 0;
@@ -290,7 +290,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
     static ros::Time pt = msg->header.stamp;
     ros::Time t = msg->header.stamp;
     if ((t - pt).toSec() > 0.5) {
-        trajROS.header.frame_id = string("world");
+        trajROS.header.frame_id = _frame_id;
         trajROS.header.stamp = ros::Time::now();
         trajROS.ns = string("trajectory");
         trajROS.type = visualization_msgs::Marker::LINE_LIST;
@@ -331,7 +331,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
     }
 
     // Sensor availability
-    sensorROS.header.frame_id = string("world");
+    sensorROS.header.frame_id = _frame_id;
     sensorROS.header.stamp = msg->header.stamp;
     sensorROS.ns = string("sensor");
     sensorROS.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
@@ -419,7 +419,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg) {
         transform90.setRotation(tf::Quaternion(q90(1), q90(2), q90(3), q90(0)));
 
         broadcaster->sendTransform(
-                tf::StampedTransform(transform, msg->header.stamp, string("world"), string("/base")));
+                tf::StampedTransform(transform, msg->header.stamp, _frame_id, string("/base")));
         broadcaster->sendTransform(
                 tf::StampedTransform(transform45, msg->header.stamp, string("/base"), string("/laser")));
         broadcaster->sendTransform(
@@ -542,9 +542,9 @@ int main(int argc, char **argv) {
     n.param("init_z", init_z, 0.0);
 
 
-    // odom 토픽은 config yaml 의 odometry_topic (exploration_node ns) 이 유일한
-    // 소스다 (구 ~odom remap 방식 폐지). 폴백 금지 — 없으면 시작 거부.
-    // (시각화 전용 노드지만, 조종자가 보는 화면이 엉뚱한 odom 을 그리는 것도 위험.)
+    // The odometry topic is sourced only from the exploration_node config yaml.
+    // Refuse to start if the parameter is missing; a visualization node using
+    // the wrong odometry topic is still a flight-debugging risk.
     std::string odom_topic;
     if (!ros::param::get("/exploration_node/odometry_topic", odom_topic) ||
         odom_topic.empty()) {

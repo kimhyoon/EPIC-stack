@@ -28,7 +28,7 @@ void LIOInterface::initializeTransform(const std::string& map_frame,
   body_frame_ = body_frame;
   cloud_frame_ = cloud_frame;
 
-  // Check if transform is needed
+  // Check if transform is needed.
   if (cloud_frame_ == map_frame_) {
     needs_transform_ = false;
     ROS_INFO("[LIOInterface] Cloud frame '%s' matches map frame '%s', no transform needed",
@@ -36,12 +36,12 @@ void LIOInterface::initializeTransform(const std::string& map_frame,
     return;
   }
 
-  // Lookup static transform: body_frame -> cloud_frame
+  // Lookup static transform: body_frame -> cloud_frame.
   try {
     geometry_msgs::TransformStamped transform_stamped =
         tf_buffer_->lookupTransform(body_frame_, cloud_frame_, ros::Time(0), ros::Duration(5.0));
 
-    // Convert to Eigen::Matrix4f
+    // Convert to Eigen::Matrix4f.
     Eigen::Isometry3d transform_eigen = tf2::transformToEigen(transform_stamped.transform);
     T_body_to_cloud_ = transform_eigen.matrix().cast<float>();
 
@@ -108,8 +108,8 @@ void LIOInterface::updateCloudMapOdometry(
   last_lidar_pose = lidar_pos_;
   ld_->lidar_pose_ = lidar_pos_;
   ld_->lidar_vel_ = lidar_vel_;
-  // 센서 장착 회전: body -> sensor = RotZ(lidar_yaw) * RotY(lidar_pitch).
-  // odom 이 곧 라이다 프레임(FAST-LIO)이면 둘 다 0 이어야 한다.
+  // Sensor mounting rotation for lidar_q_ visualization/FOV logic. If odometry
+  // is already in the lidar frame, both values should be zero.
   Eigen::AngleAxisf y_axis_angle(M_PI / 180.0 * lp_->lidar_pitch_,
                                  Eigen::Vector3f::UnitY());
   Eigen::AngleAxisf z_axis_angle(M_PI / 180.0 * lp_->lidar_yaw_,
@@ -146,12 +146,12 @@ void LIOInterface::updateCloudMapOdometry(
     return;
   }
 
-  // Apply frame transformation if needed (on filtered cloud for efficiency)
+  // Apply frame transformation if needed (on filtered cloud for efficiency).
   // ros::Time t_transform_start = ros::Time::now();
   if (needs_transform_) {
     // ROS_INFO_THROTTLE(5.0, "[LIOInterface] Applying frame transformation to %lu filtered points",
     //                   filtered_points->points.size());
-    // Build T_map_body from odometry
+    // Build T_map_body from odometry.
     Eigen::Matrix4f T_map_body = Eigen::Matrix4f::Identity();
     T_map_body.block<3, 1>(0, 3) = lidar_pos_;
     Eigen::Quaternionf q_map_body(odom_->pose.pose.orientation.w,
@@ -160,10 +160,10 @@ void LIOInterface::updateCloudMapOdometry(
                                    odom_->pose.pose.orientation.z);
     T_map_body.block<3, 3>(0, 0) = q_map_body.toRotationMatrix();
 
-    // Compute T_map_cloud = T_map_body * T_body_cloud
+    // Compute T_map_cloud = T_map_body * T_body_cloud.
     Eigen::Matrix4f T_map_cloud = T_map_body * T_body_to_cloud_;
 
-    // Transform pointcloud (in-place)
+    // Transform pointcloud.
     pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::transformPointCloud(*filtered_points, *transformed_cloud, T_map_cloud);
     filtered_points = transformed_cloud;
@@ -171,7 +171,7 @@ void LIOInterface::updateCloudMapOdometry(
     //                   (ros::Time::now() - t_transform_start).toSec() * 1000.0);
   }
 
-  // BUGFIX: Store the processed cloud in ld_->lidar_cloud_ (was missing in frame transform version)
+  // Store the processed cloud for downstream frontier/viewpoint updates.
   ld_->lidar_cloud_ = *filtered_points;
   PointVector pcl_map = filtered_points->points;
 

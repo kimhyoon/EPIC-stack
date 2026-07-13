@@ -9,6 +9,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <cmath>
 #include <math.h>
 #include <random>
 #include <ros/ros.h>
@@ -116,12 +117,20 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
 
 void FastPlannerManager::goalCallback(
     const geometry_msgs::PoseStampedConstPtr &msg) {
-  // 提取四元数
+  const auto &q = msg->pose.orientation;
+  const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (std::fabs(n2 - 1.0) > 0.01) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[FastPlannerManager] goal with invalid quaternion "
+                      "(|q|^2=%.3f) - ignoring yaw",
+                      n2);
+    return;
+  }
+
   double roll, pitch;
   tf::Quaternion quat;
   tf::quaternionMsgToTF(msg->pose.orientation, quat);
 
-  // 将四元数转换为Euler角
   tf::Matrix3x3(quat).getRPY(roll, pitch, local_data_.end_yaw_);
 }
 

@@ -19,7 +19,7 @@ void FastExplorationFSM::pubState() {
   state_marker.color.r = 1.0;
   state_marker.color.a = 1.0;
   state_marker.text = fd_->state_str_[int(state_)];
-  state_marker.header.frame_id = "world";
+  state_marker.header.frame_id = "odom";
   state_marker.header.stamp = ros::Time::now();
 
   state_pub_.publish(state_marker);

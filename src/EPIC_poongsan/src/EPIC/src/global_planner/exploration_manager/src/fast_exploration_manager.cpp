@@ -8,6 +8,7 @@
  */
 
 #include <boost/lexical_cast.hpp>
+#include <cmath>
 #include <epic_planner/expl_data.h>
 #include <epic_planner/fast_exploration_manager.h>
 #include <fstream>
@@ -76,12 +77,20 @@ void FastExplorationManager::initialize(
 
 void FastExplorationManager::goalCallback(
     const geometry_msgs::PoseStampedConstPtr &msg) {
-  // 提取四元数
+  const auto &q = msg->pose.orientation;
+  const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (std::fabs(n2 - 1.0) > 0.01) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[FastExplorationManager] goal with invalid quaternion "
+                      "(|q|^2=%.3f) - ignoring yaw",
+                      n2);
+    return;
+  }
+
   double roll, pitch;
   tf::Quaternion quat;
   tf::quaternionMsgToTF(msg->pose.orientation, quat);
 
-  // 将四元数转换为Euler角
   tf::Matrix3x3(quat).getRPY(roll, pitch, goal_yaw);
 }
 

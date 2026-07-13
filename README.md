@@ -18,9 +18,14 @@ Source ownership in this workspace:
 - `src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real.yaml`
   - Source repository: https://github.com/kimhyoon/psc_stack.git
   - Source commit: `efbd804ecba6642fe3ca26aec44688ff1ae01021`
-  - Validation note: this file is byte-identical to the onboard reference at
-    the source commit above.
-  - SHA256: `ee988f2223d21fcbd3cfe0cc8a328a84a2d373421ea7946668071e122bfc08a7`
+  - Base file: onboard reference `real.yaml` from the source commit above.
+  - Local change: updated for the 2026-07-10 LIO-SAM + SOSLAB ML-X real-flight
+    debug result. The flight config now uses `/mavros/odometry/in` for odometry,
+    `/lio_sam/mapping/cloud_registered_raw` for the registered cloud, and
+    `lidar_perception/cloud_frame_mode: world` so EPIC does not trust misleading
+    PointCloud2 frame_id strings.
+  - Reason: fixes the frame/cloud/yaw issues documented in
+    `/home/dh/Downloads/20260713_FRAME_CLOUD_YAW_FIXES.md`.
 - `src/ml_x_cropping`
   - Tracking repository: https://github.com/kimhyoon/EPIC-stack.git
   - Intended branch: `donghyuck`
@@ -530,7 +535,8 @@ Runtime-only simulation pieces live outside that package:
 
 Configuration policy:
 
-- `real.yaml`: real onboard flight configuration. Keep this aligned with the onboard reference.
+- `real.yaml`: real onboard flight configuration based on the onboard reference,
+  with the 2026-07-10 LIO-SAM + ML-X frame/cloud fix applied.
 - `garage.yaml`: MID360/MARSIM garage simulation configuration.
 
 The crop bridge is optional and is not built unless explicitly enabled:
