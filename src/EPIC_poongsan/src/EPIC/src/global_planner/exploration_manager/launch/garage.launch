@@ -54,6 +54,14 @@
     <arg name="config_file" value="$(arg config_file)" />
   </include>
 
+  <!-- ML-X FOV emulation for simulation:
+       MARSIM still publishes the full Mid-360 cloud, while this bridge crops
+       only the cloud consumed by EPIC according to garage.yaml cloud_crop/*.
+       This mirrors real_flight.launch and avoids changing MARSIM sensing. -->
+  <node pkg="epic_planner" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
+  </node>
+
   <!-- Trajectory server: MINCO 궤적/호버를 /position_cmd 로 발행.
        /position_cmd -> /planning/pos_cmd(cascadePID) 라우팅은 아래 enable_avoidance 그룹이 담당한다
        (회피 ON: avoid_mux MUX / OFF: 단순 relay). traj_server 자체엔 remap 하지 않는다. -->

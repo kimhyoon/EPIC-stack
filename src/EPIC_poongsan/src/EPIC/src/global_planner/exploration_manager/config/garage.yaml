@@ -2,6 +2,17 @@
 # [SIM 전용] real.yaml의 /Odometry, /cloud_registered 로 바꾸지 말 것 (MARSIM은 아래 토픽으로 발행)
 odometry_topic: /quad_0/lidar_slam/odom
 cloud_topic: /quad0_pcl_render_node/cloud
+# [SIM ML-X emulation] MARSIM keeps publishing the full Mid-360 cloud above.
+# cloud_crop_bridge crops only the EPIC planner input, matching the real-flight
+# setup where localization keeps the raw cloud and exploration sees ML-X FOV.
+cloud_crop/enable: true
+cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
+cloud_crop/fov_horizontal: 120.0
+cloud_crop/fov_up: 15.0
+cloud_crop/fov_down: -15.0
+cloud_crop/min_range: 0.0
+cloud_crop/max_range: 30.0
+cloud_crop/yaw_offset_deg: 0.0
 global_planning/w_vdir: 0.0          # [synced: real]  (속도방향 가중치 — 직선성에 영향 가능, 아래 주석 참고)
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
@@ -25,18 +36,18 @@ bubble_astar/safe_distance: 0.6
 max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
-lidar_perception/fov_up: 52.0
-lidar_perception/fov_down: -7.0
-lidar_perception/lidar_pitch: 40.0    # [SIM 유지] MARSIM 센서 장착각 40° — real=0.0 로 바꾸면 인지 기하 깨짐
-lidar_perception/fov_viewpoint_up: 48.0
-lidar_perception/fov_viewpoint_down: -5.0
+lidar_perception/fov_up: 15.0
+lidar_perception/fov_down: -15.0
+lidar_perception/lidar_pitch: 0.0     # [SIM ML-X emulation] crop_bridge FOV is body-forward.
+lidar_perception/fov_viewpoint_up: 15.0
+lidar_perception/fov_viewpoint_down: -15.0
 lidar_perception/max_ray_length: 18   # [SIM 유지] real=1.5 로 바꾸면 1.5m 밖을 못 봄
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
 # from growing its flight corridor into space a limited-FOV sensor has not seen.
 # 1) Describe the sensor FOV (only matters for a forward/cropped LiDAR):
-lidar_perception/is_360lidar: true    # false => run the data-driven yaw FOV-edge scan
-lidar_perception/yaw_fov: 360.0       # sensor horizontal FOV [deg] (e.g. 120 when cropped)
+lidar_perception/is_360lidar: false   # false => run the data-driven yaw FOV-edge scan
+lidar_perception/yaw_fov: 120.0       # sensor horizontal FOV [deg] for cropped EPIC input
 # 2) Enable the clipping (Method B) + the robot-body seed box P0:
 local_planning/clip_corridor_to_observed: true  # master switch
 local_planning/clip_cone_faces: true            # Method B: intersect polytopes with FOV cone
