@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR #1 — Observed FOV Corridor Clipping (Method B)</title>
+<style>
+  :root{
+    --ink:#1c2230;
+    --muted:#5a6273;
+    --line:#d9dde6;
+    --bg:#fffef9;              /* very light ivory */
+    --panel:#ffffff;
+    --code-bg:#f4f5f8;
+
+    /* semantic figure colors (each color = one meaning) */
+    --c-observed:#31b6d6;      /* observed / visible FOV : cyan */
+    --c-unknown:#b8bcc6;       /* unknown / unobserved   : light gray */
+    --c-face:#f08a24;          /* FOV boundary / active face : orange */
+    --c-raw:#d63a86;           /* raw FIRI corridor : magenta */
+    --c-clip:#1f9d6b;          /* clipped corridor  : teal/green */
+    --c-obst:#2b303a;          /* obstacle / DENSE cell : dark */
+    --c-drone:#2f6bd6;         /* drone / current pose : blue */
+    --c-traj:#12204a;          /* MINCO trajectory : navy */
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",Roboto,"Malgun Gothic",sans-serif;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:56px 28px 96px}
+  header.doc{
+    border-bottom:2px solid var(--ink);
+    padding-bottom:22px;margin-bottom:36px;
+  }
+  .kicker{
+    font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--c-face);font-weight:700;margin-bottom:10px;
+  }
+  h1{font-size:30px;line-height:1.3;margin:0 0 12px;letter-spacing:-.01em}
+  .subtitle{color:var(--muted);font-size:15.5px;margin:0}
+  .meta-row{margin-top:16px;font-size:12.5px;color:var(--muted);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .meta-row code{background:var(--code-bg);padding:2px 7px;border-radius:5px}
+
+  h2{
+    font-size:22px;margin:52px 0 14px;padding-top:8px;
+    letter-spacing:-.01em;
+  }
+  h2 .num{color:var(--c-face);font-variant-numeric:tabular-nums;margin-right:10px}
+  h3{font-size:17px;margin:30px 0 10px;color:var(--ink)}
+  p{margin:0 0 14px}
+  strong{font-weight:700}
+  .lead{font-size:16.5px;color:#2a3040}
+
+  .callout{
+    background:var(--panel);border:1px solid var(--line);
+    border-left:4px solid var(--c-face);
+    border-radius:10px;padding:16px 20px;margin:18px 0;
+  }
+  .callout.key{border-left-color:var(--c-clip)}
+  .callout.warn{border-left-color:var(--c-raw)}
+  .callout .t{font-weight:700;font-size:13px;letter-spacing:.04em;
+    text-transform:uppercase;margin-bottom:6px;color:var(--muted)}
+
+  pre.flow{
+    background:var(--code-bg);border:1px solid var(--line);
+    border-radius:10px;padding:16px 18px;overflow-x:auto;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;line-height:1.55;color:#2c3340;margin:16px 0;
+  }
+  code.inl{background:var(--code-bg);border:1px solid var(--line);
+    padding:1px 6px;border-radius:5px;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:.9em;color:#b03a72}
+
+  /* Figure block */
+  figure{
+    margin:34px 0;padding:0;border:1px solid var(--line);
+    border-radius:14px;overflow:hidden;background:var(--panel);
+    box-shadow:0 1px 2px rgba(20,30,60,.04),0 8px 28px rgba(20,30,60,.05);
+  }
+  .fig-head{
+    padding:14px 20px 12px;border-bottom:1px solid var(--line);
+    background:linear-gradient(#ffffff,#fbfbf7);
+  }
+  .fig-head .tag{font-size:12px;font-weight:800;letter-spacing:.1em;
+    color:var(--c-face);text-transform:uppercase}
+  .fig-head .ttl{font-size:15.5px;font-weight:700;margin-top:3px}
+  .fig-body{padding:8px 10px 4px;background:
+    radial-gradient(circle at 30% 0%,#ffffff, #fdfdf8)}
+  figure svg{display:block;width:100%;height:auto}
+  figcaption{
+    padding:14px 22px 20px;font-size:13.5px;color:#3a4150;
+    border-top:1px solid var(--line);background:#fbfbf7;
+  }
+  figcaption .en{color:var(--muted);font-style:italic;display:block;margin-top:8px;
+    font-size:12.5px;line-height:1.6}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:10px 20px;
+    padding:12px 20px 16px;border-top:1px dashed var(--line);
+    font-size:12.5px;color:#3a4150;background:#fbfbf7}
+  .legend .li{display:flex;align-items:center;gap:8px}
+  .sw{width:16px;height:12px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.12)}
+  .sw.line{height:0;border:0;border-top:3px solid;border-radius:0;width:20px}
+  .sw.dot{width:11px;height:11px;border-radius:50%}
+
+  .eq{
+    text-align:center;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:15px;color:var(--ink);background:var(--code-bg);
+    border:1px solid var(--line);border-radius:10px;padding:14px;margin:18px 0;
+  }
+  .eq b.raw{color:var(--c-raw)} .eq b.clip{color:var(--c-clip)} .eq b.face{color:var(--c-face)}
+
+  hr.soft{border:0;border-top:1px solid var(--line);margin:40px 0}
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:12.5px}
+
+  /* interactive hint on edge cells */
+  .hoverable{cursor:help}
+  .hoverable:hover{filter:brightness(1.15)}
+
+  @media (max-width:640px){
+    h1{font-size:24px}.wrap{padding:36px 16px 64px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <div class="kicker">local_planner · Method B</div>
+    <h1>PR&nbsp;#1 — Observed FOV Cone으로 Local SFC Corridor를 Clip하기</h1>
+    <p class="subtitle">전방 crop LiDAR에서 <strong>미지(unknown) 공간을 판단하는 기준</strong>과,
+      FIRI corridor가 그 방향으로 확장되지 못하게 <strong>기하학적으로 제한하는 방식</strong>에 대한 설명.</p>
+    <div class="meta-row">
+      PR: <code>local_planner: clip local SFC corridor to observed FOV cone (Method B)</code>
+      &nbsp;·&nbsp; commit <code>00a0fc2</code>
+    </div>
+  </header>
+
+  <!-- ============ 0. 핵심 요약 ============ -->
+  <h2><span class="num">0</span>핵심 요약</h2>
+  <p class="lead">PR&nbsp;#1의 핵심은 두 가지 질문에 답하는 것이다.</p>
+  <pre class="flow">1) 전방 crop LiDAR에서 <b>관측 불가능(unknown) 영역을 어떤 기준으로 판단하는가</b>
+2) FIRI가 만든 local corridor가 그 <b>unknown 방향으로 확장되지 않도록 어떻게 제한하는가</b></pre>
+
+  <!-- ============ 1. 미지 공간 판단 ============ -->
+  <h2><span class="num">1</span>미지의 공간을 판단하는 기준</h2>
+
+  <h3>1.1 Crop LiDAR에서 unknown 방향이 생기는 이유</h3>
+  <p>Poongsan garage simulation은 다음과 같은 crop LiDAR 조건을 쓴다. yaw가 360°가 아니므로 좌우 FOV 경계가 생기고,
+  그 경계 바깥은 현재 센서가 직접 보지 못하는 방향이 된다.</p>
+  <pre class="flow">lidar_perception/is_360lidar: false
+lidar_perception/yaw_fov:  120.0
+lidar_perception/fov_up:    15.0
+lidar_perception/fov_down: -15.0
+lidar_perception/lidar_pitch: 0.0</pre>
+
+  <div class="callout warn">
+    <div class="t">기존 FIRI의 위험</div>
+    FIRI corridor는 <strong>obstacle point가 없는 공간</strong>으로 polytope를 키운다. FOV 바깥쪽은 실제로는
+    unknown이지만 point obstacle도 없기 때문에, FIRI가 그 방향을 "장애물이 없는 공간"처럼 취급하여
+    corridor를 확장할 수 있다.
+  </div>
+
+  <h3>1.2 <code class="inl">DENSE</code> cell의 의미와 정의</h3>
+  <p>
+    이 문서에서 말하는 <code class="inl">DENSE</code> cell은 단순히 "장애물이 있는 cell"을 뜻하지 않는다.
+    PR&nbsp;#1의 gate에서 <code class="inl">DENSE</code>는 <strong>frontier_manager의 label map에서 이미 관측된 것으로
+    분류된 cell</strong>을 의미한다.
+  </p>
+  <p>
+    즉 <code class="inl">DENSE</code>는 local planner가 "이 방향에는 이미 센서 관측 정보가 이어지고 있다"고 볼 수 있는
+    근거로 사용된다. 그래서 FOV face 바깥쪽에 <code class="inl">DENSE</code>가 있으면, 그 face 바깥이 무조건 unknown이라고
+    단정하지 않는다.
+  </p>
+  <pre class="flow">frontier_manager label map 기준:
+
+DENSE cell
+  = 이미 충분히 관측된 cell
+  = gap / FOV edge가 아니고, 관측 거리·방향 조건을 만족한 cell
+  = 또는 가까운 거리에서 강하게 신뢰 가능한 관측 cell
+
+UNKNOWN과의 차이:
+  UNKNOWN = label map에서 아직 관측 상태가 확정되지 않은 cell
+  DENSE   = 이미 관측된 공간이 이어진다는 증거로 쓸 수 있는 cell</pre>
+
+  <div class="callout key">
+    <div class="t">왜 DENSE outside가 있으면 자르지 않는가</div>
+    <p>
+      FOV face 바깥쪽에 <code class="inl">DENSE</code> cell이 있다는 것은, 그 face 너머에도 이미 관측된 cell이 존재한다는
+      뜻이다. 이 경우 해당 face를 관측 경계로 확정하고 잘라버리면, 실제로는 관측되어 지나갈 수 있는 공간까지 막을 수 있다.
+    </p>
+    <p>
+      반대로 face 바깥쪽에 <code class="inl">DENSE</code> cell이 없으면, 그 바깥 방향에 관측이 이어진다는 증거가 없다.
+      그래서 PR&nbsp;#1은 그 face를 보수적으로 관측 경계로 보고 corridor clipping에 사용한다.
+    </p>
+  </div>
+
+  <h3>1.3 <code class="inl">fov_edge_cells_</code>의 의미</h3>
+  <p>
+    <code class="inl">fov_edge_cells_</code>는 unknown 공간 전체의 voxel map이 아니다. 이것은 현재 LiDAR depth image와
+    frontier classification을 통해 얻은 <strong>FOV 경계 위의 frontier cell 집합</strong>이다.
+  </p>
+  <p>
+    local planner는 이 cell들을 보고 "어떤 FOV face가 실제 관측 경계 후보인가"를 판단한다. 즉
+    <code class="inl">fov_edge_cells_</code>는 corridor를 자를 face를 고르는 근거이지, unknown 영역 전체를 표현하는 map이 아니다.
+  </p>
+  <pre class="flow">fov_edge_cells_
+  = cropped LiDAR FOV 경계에 놓인 frontier cell들
+  = active clipping face 후보를 찾기 위한 evidence
+  ≠ 전체 unknown voxel map</pre>
+
+  <h3>1.4 DENSE outside gate</h3>
+  <p>
+    PR&nbsp;#1은 <code class="inl">fov_edge_cells_</code>가 있는 face를 무조건 자르지 않는다. 해당 face 바깥쪽에
+    <code class="inl">DENSE</code> cell이 있는지 한 번 더 확인한다.
+  </p>
+  <pre class="flow">FOV edge frontier가 존재하고,
+그 face 바깥쪽에 이미 관측된 DENSE cell이 <b>없으면</b>,
+   → 그 face 바깥쪽을 <b>현재 관측 불가능 방향</b>으로 보고 corridor를 자른다.
+
+FOV edge frontier가 존재하더라도,
+그 face 바깥쪽에 DENSE cell이 <b>있으면</b>,
+   → 이미 관측이 이어지는 방향일 수 있으므로 <b>자르지 않는다.</b></pre>
+
+  <h3>1.5 가장 중요한 오해 방지</h3>
+  <p>
+    여기까지의 내용을 정리하면, PR&nbsp;#1은 unknown 공간을 처리하지만 그 방식은 voxel-level raycast 검증이 아니다.
+    PR&nbsp;#1은 <strong>FOV boundary 기반의 기하학적 corridor 제한</strong>이다.
+  </p>
+  <div class="callout key">
+    <div class="t">가장 중요한 오해 방지</div>
+    PR&nbsp;#1은 corridor 내부 모든 점을 raycast map으로 샘플링해서 unknown 여부를 검사하는 방식이
+    <strong>아니다</strong>. 대신 <strong>관측 가능한 FOV 경계를 corridor의 기하학적 절단면(half-plane)으로
+    사용</strong>한다.
+  </div>
+
+  <pre class="flow">LiDAR FOV 경계에서 생기는 frontier / FOV-edge cell을 <b>관측 경계</b>로 사용
+        │
+        ▼
+그 경계에 대응하는 FOV cone face를 <b>half-plane</b>으로 구성
+        │
+        ▼
+FIRI corridor hPolys에 해당 half-plane을 추가
+        │
+        ▼
+corridor가 관측 FOV 바깥 unknown 방향으로 커지지 못하게 제한</pre>
+
+  <pre class="flow">하지 않는 것:
+  corridor 내부 전체 voxel sample → raycast observed-free 검사 → unknown이면 제거
+
+하는 것:
+  FOV edge frontier + DENSE outside gate → active FOV face 선택 → hPoly에 half-plane 추가</pre>
+
+  <h3>1.6 Figure 1: Unknown 판단 기준 — FOV Edge Frontier와 DENSE Cell Gate</h3>
+  <p>
+    Figure&nbsp;1은 1.1~1.4에서 설명한 판단 기준을 한 장으로 요약한다. 특히 <code class="inl">DENSE</code>
+    cell이 왜 gate 역할을 하는지, 그리고 어떤 경우에 FOV face가 active clipping face가 되는지를 시각적으로 보여준다.
+  </p>
+  <div class="callout">
+    <div class="t">DENSE cell의 의미와 gate 직관</div>
+    <p>
+      Figure&nbsp;1에서 말하는 <code class="inl">DENSE</code> cell은 단순히 "장애물 cell"이라는 뜻이 아니다.
+      PR&nbsp;#1 문맥에서는 <code class="inl">frontier_manager</code>의 label map에서
+      <strong>이미 관측된 것으로 분류된 cell</strong>, 또는 해당 방향에 관측 정보가 이어지고 있다는 증거로 사용된다.
+    </p>
+    <p>
+      따라서 FOV face 위에 <code class="inl">fov_edge_cells_</code>가 있는데, 그 face 바깥쪽 이웃에
+      <code class="inl">DENSE</code> cell이 <strong>없다면</strong>, planner 입장에서는 그 바깥 방향에
+      "이미 관측된 공간이 계속된다"는 증거가 없다. 이때 PR&nbsp;#1은 그 face를 현재 센서의
+      <strong>관측 경계</strong>로 보고, corridor가 그 바깥 unknown 방향으로 커지지 못하게 자른다.
+    </p>
+    <p>
+      반대로 face 바깥쪽에 <code class="inl">DENSE</code> cell이 <strong>있다면</strong>, 그 방향은 이미
+      관측된 cell들이 이어져 있는 방향일 수 있다. 이 경우 face를 무조건 절단면으로 쓰면, 실제로 관측되어
+      지나갈 수 있는 통로까지 잘라버릴 수 있다. 그래서 PR&nbsp;#1은 그 face를 clipping face로 쓰지 않고
+      비활성화한다.
+    </p>
+    <pre class="flow">DENSE outside 없음
+  = face 바깥에 이미 관측된 공간이 이어진다는 증거가 없음
+  → 보수적으로 관측 경계로 보고 corridor를 자름
+
+DENSE outside 있음
+  = face 바깥에도 이미 관측된 cell이 존재함
+  → 관측이 이어지는 방향일 수 있으므로 corridor를 자르지 않음</pre>
+  </div>
+
+  <!-- ============ FIGURE 1 ============ -->
+  <figure id="fig1">
+    <div class="fig-head">
+      <div class="tag">Figure 1</div>
+      <div class="ttl">Unknown 판단 기준 — FOV Edge Frontier와 DENSE Cell Gate</div>
+    </div>
+    <div class="fig-body">
+      <svg viewBox="0 0 920 560" role="img" aria-label="Top-view of FOV-based unknown-direction judgement">
+        <defs>
+          <!-- hatch for unknown region -->
+          <pattern id="hatch" width="10" height="10" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="10" height="10" fill="#eef0f4"/>
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#c3c7d0" stroke-width="2"/>
+          </pattern>
+          <marker id="arrow1" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 Z" fill="#3a4150"/>
+          </marker>
+          <linearGradient id="fovfill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#31b6d6" stop-opacity="0.30"/>
+            <stop offset="1" stop-color="#31b6d6" stop-opacity="0.14"/>
+          </linearGradient>
+        </defs>
+
+        <!-- unknown background (whole upper band) -->
+        <rect x="40" y="30" width="840" height="470" fill="url(#hatch)" opacity="0.9"/>
+        <text x="460" y="58" text-anchor="middle" font-size="15" fill="#7b8091"
+              font-style="italic" font-family="sans-serif">unknown / unobserved direction</text>
+
+        <!-- FOV cone (fan) apex at drone bottom-center -->
+        <!-- apex (460,470); left edge to (150,90); right edge to (770,90) -->
+        <polygon points="460,470 150,90 770,90" fill="url(#fovfill)"
+                 stroke="none"/>
+
+        <!-- observed region label -->
+        <text x="460" y="330" text-anchor="middle" font-size="16" fill="#1f7d95"
+              font-weight="700" font-family="sans-serif">observed FOV region</text>
+        <text x="460" y="352" text-anchor="middle" font-size="12.5" fill="#2f8ea6"
+              font-family="sans-serif">(현재 LiDAR가 관측 가능한 영역)</text>
+
+        <!-- FOV faces (orange, thick) -->
+        <line x1="460" y1="470" x2="150" y2="90" stroke="#f08a24" stroke-width="3.5" stroke-linecap="round"/>
+        <line x1="460" y1="470" x2="770" y2="90" stroke="#f08a24" stroke-width="3.5" stroke-linecap="round"/>
+        <text x="243" y="245" font-size="12.5" fill="#c96f16" font-weight="700"
+              transform="rotate(-51 243 245)" font-family="sans-serif">FOV left face (active)</text>
+        <text x="640" y="245" font-size="12.5" fill="#c96f16" font-weight="700"
+              transform="rotate(51 640 245)" font-family="sans-serif">FOV right face</text>
+
+        <!-- 120 deg FOV arc + label -->
+        <path d="M 373,363 A 130 130 0 0 1 547,363" fill="none" stroke="#2f6bd6"
+              stroke-width="1.4" stroke-dasharray="4 3"/>
+        <text x="460" y="415" text-anchor="middle" font-size="12.5" fill="#2f6bd6"
+              font-family="sans-serif">120° horizontal FOV</text>
+
+        <!-- fov_edge_cells_ : orange dots along the LEFT face (active: no DENSE outside) -->
+        <g class="hoverable">
+          <title>candidate observation boundary — fov_edge_cells_</title>
+          <circle cx="366" cy="200" r="5.5" fill="#f08a24"/>
+          <circle cx="340" cy="232" r="5.5" fill="#f08a24"/>
+          <circle cx="314" cy="264" r="5.5" fill="#f08a24"/>
+          <circle cx="288" cy="296" r="5.5" fill="#f08a24"/>
+          <circle cx="262" cy="328" r="5.5" fill="#f08a24"/>
+        </g>
+        <text x="150" y="330" font-size="12.5" fill="#c96f16" font-weight="700" font-family="sans-serif">fov_edge_cells_</text>
+        <line x1="205" y1="326" x2="256" y2="330" stroke="#c96f16" stroke-width="1"/>
+
+        <!-- LEFT case: no DENSE outside -> ACTIVE clipping face -->
+        <g>
+          <rect x="150" y="120" width="150" height="60" rx="8" fill="#eafaf3" stroke="#1f9d6b" stroke-width="1.5"/>
+          <text x="225" y="143" text-anchor="middle" font-size="12" font-weight="700" fill="#137a52" font-family="sans-serif">no DENSE outside</text>
+          <text x="225" y="163" text-anchor="middle" font-size="12" fill="#1f9d6b" font-family="sans-serif">→ active clipping face</text>
+        </g>
+        <line x1="225" y1="180" x2="300" y2="255" stroke="#1f9d6b" stroke-width="1.4" stroke-dasharray="3 3" marker-end="url(#arrow1)"/>
+
+        <!-- RIGHT case: DENSE cells just outside the right face -> face NOT active -->
+        <g>
+          <!-- DENSE cells (dark squares) just outside right face -->
+          <rect x="640" y="176" width="12" height="12" fill="#2b303a"/>
+          <rect x="656" y="192" width="12" height="12" fill="#2b303a"/>
+          <rect x="672" y="208" width="12" height="12" fill="#2b303a"/>
+          <rect x="624" y="192" width="12" height="12" fill="#2b303a"/>
+          <text x="710" y="188" font-size="12" fill="#2b303a" font-weight="700" font-family="sans-serif">DENSE cells</text>
+        </g>
+        <g>
+          <rect x="620" y="120" width="200" height="60" rx="8" fill="#fdeef4" stroke="#d63a86" stroke-width="1.5"/>
+          <text x="720" y="143" text-anchor="middle" font-size="12" font-weight="700" fill="#b02c68" font-family="sans-serif">DENSE outside exists</text>
+          <text x="720" y="163" text-anchor="middle" font-size="12" fill="#d63a86" font-family="sans-serif">→ face NOT active (관측된 방향)</text>
+        </g>
+
+        <!-- drone -->
+        <g>
+          <circle cx="460" cy="470" r="13" fill="#2f6bd6" stroke="#fff" stroke-width="2.5"/>
+          <polygon points="460,455 452,472 468,472" fill="#fff"/>
+          <text x="460" y="502" text-anchor="middle" font-size="13" fill="#2f6bd6" font-weight="700" font-family="sans-serif">current pose (drone)</text>
+          <text x="460" y="520" text-anchor="middle" font-size="11.5" fill="#5a6273" font-family="sans-serif">position + yaw</text>
+        </g>
+
+        <!-- decision box (bottom-right) -->
+        <g transform="translate(600,415)">
+          <rect x="0" y="0" width="300" height="128" rx="10" fill="#ffffff" stroke="#d9dde6" stroke-width="1.4"/>
+          <text x="150" y="22" text-anchor="middle" font-size="12" font-weight="800" fill="#5a6273" letter-spacing="0.05em" font-family="sans-serif">DECISION GATE</text>
+          <text x="16" y="46" font-size="12" fill="#1c2230" font-family="monospace">FOV-edge frontier exists?</text>
+          <text x="30" y="68" font-size="12" fill="#1c2230" font-family="monospace">└ Outside neighbor DENSE?</text>
+          <text x="52" y="90" font-size="12" fill="#d63a86" font-family="monospace">├ yes → do not clip</text>
+          <text x="52" y="110" font-size="12" fill="#1f9d6b" font-family="monospace">└ no&nbsp;&nbsp;→ active clipping face</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="legend">
+      <div class="li"><span class="sw" style="background:rgba(49,182,214,.25)"></span> observed FOV region</div>
+      <div class="li"><span class="sw" style="background:url(#hatch);background-color:#eef0f4"></span> unknown direction</div>
+      <div class="li"><span class="sw line" style="border-color:var(--c-face)"></span> FOV face (active)</div>
+      <div class="li"><span class="sw dot" style="background:var(--c-face)"></span> fov_edge_cells_</div>
+      <div class="li"><span class="sw" style="background:var(--c-obst)"></span> DENSE cell</div>
+      <div class="li"><span class="sw dot" style="background:var(--c-drone)"></span> drone / current pose</div>
+    </div>
+
+    <figcaption>
+      <strong>Figure 1.</strong> PR&nbsp;#1은 모든 unknown voxel을 직접 판정하지 않는다. cropped LiDAR
+      depth image에서 <strong>FOV-edge frontier cell</strong>(<code class="inl">fov_edge_cells_</code>)을 찾고,
+      해당 face 바깥쪽에 <strong>DENSE cell이 없으면</strong> 그 face를 관측 경계로 판단하여 corridor
+      clipping에 사용한다. 바깥에 DENSE cell이 있으면(오른쪽) 이미 관측이 이어지는 방향으로 보고 자르지 않는다.
+      <span class="en">PR #1 does not build a full raycast unknown voxel map. It detects FOV-edge frontier cells
+      from the cropped LiDAR depth image. If a FOV face has edge frontier cells and no DENSE cells just outside
+      the face, that face is treated as an observation boundary and becomes active for corridor clipping.</span>
+    </figcaption>
+  </figure>
+
+  <div class="callout key">
+    <div class="t">Figure 1을 읽는 법</div>
+    <p>
+      이 그림에서 가장 중요한 점은 PR&nbsp;#1이 <strong>공간 전체를 voxel 단위로 raycast해서 unknown map을
+      완성하는 방식이 아니라는 것</strong>이다. 대신 현재 cropped LiDAR가 만든 depth image에서
+      <code class="inl">fov_edge_cells_</code>를 찾고, 그 cell들이 놓인 FOV face를 "관측 경계 후보"로 본다.
+    </p>
+    <p>
+      왼쪽 face처럼 <code class="inl">fov_edge_cells_</code>는 있는데 그 face 바깥쪽 이웃에
+      <code class="inl">DENSE</code> cell이 없으면, PR&nbsp;#1은 그 바깥을 아직 관측이 이어지지 않은 방향으로
+      해석한다. 따라서 이 face는 <strong>active clipping face</strong>가 되고, FIRI corridor가 그 바깥 unknown
+      방향으로 커지지 못하도록 half-plane constraint로 추가된다.
+    </p>
+    <p>
+      반대로 오른쪽 face처럼 face 바깥쪽에 <code class="inl">DENSE</code> cell이 있으면, 그 방향은 이미 관측된
+      공간이 이어지는 방향일 수 있다. 이때 face를 무조건 절단면으로 쓰면 실제로 지나갈 수 있는 통로까지
+      막아버릴 수 있으므로, PR&nbsp;#1은 그 face를 <strong>비활성화</strong>하고 corridor를 자르지 않는다.
+    </p>
+    <pre class="flow">FOV-edge frontier exists?
+        │
+        ├─ no
+        │    → 이 face는 관측 경계 후보가 아니므로 clipping에 사용하지 않음
+        │
+        └─ yes
+             │
+             ├─ outside neighbor has DENSE cell
+             │    → 이미 관측이 이어지는 방향일 수 있으므로 clipping하지 않음
+             │
+             └─ outside neighbor has no DENSE cell
+                  → 이 face 바깥을 관측 불가능 방향으로 보고 corridor clipping에 사용</pre>
+  </div>
+
+  <hr class="soft">
+
+  <!-- ============ 2. corridor 제한 ============ -->
+  <h2><span class="num">2</span>미지 공간으로 corridor가 들어가지 않게 하는 방법</h2>
+
+  <p>기존 local planner는 FIRI / convexCover로 guide path 주변에 convex safe corridor(<code class="inl">hPolys</code>)를
+  만든다. PR&nbsp;#1은 raw hPolys를 바로 MINCO에 넣지 않고, 관측 FOV cone으로 한 번 더 제한한다.</p>
+
+  <pre class="flow">guide path → FIRI/convexCover → raw hPolys
+                                     │
+                                     ▼  <b>observed FOV cone clipping</b>  ← PR #1
+                                clipped hPolys
+                                     │
+                                     ▼
+                               MINCO / GCOPTER</pre>
+
+  <!-- ============ FIGURE 2 ============ -->
+  <figure id="fig2">
+    <div class="fig-head">
+      <div class="tag">Figure 2</div>
+      <div class="ttl">Corridor 제한 — Raw hPoly를 Active FOV Half-Plane으로 Clip</div>
+    </div>
+    <div class="fig-body">
+      <svg viewBox="0 0 1120 560" role="img" aria-label="Before/After corridor clipping by FOV half-plane">
+        <defs>
+          <pattern id="hatch2" width="10" height="10" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+            <rect width="10" height="10" fill="#eef0f4"/>
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#c3c7d0" stroke-width="2"/>
+          </pattern>
+          <linearGradient id="fovfill2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#31b6d6" stop-opacity="0.28"/>
+            <stop offset="1" stop-color="#31b6d6" stop-opacity="0.12"/>
+          </linearGradient>
+          <marker id="tarrow" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#12204a"/>
+          </marker>
+        </defs>
+
+        <!-- =============== LEFT PANEL : BEFORE =============== -->
+        <g>
+          <text x="280" y="38" text-anchor="middle" font-size="15" font-weight="800"
+                fill="#b02c68" letter-spacing="0.04em" font-family="sans-serif">BEFORE PR #1</text>
+          <text x="280" y="57" text-anchor="middle" font-size="12" fill="#5a6273" font-family="sans-serif">raw FIRI hPoly extends outside FOV</text>
+
+          <!-- unknown bg -->
+          <rect x="40" y="72" width="480" height="410" fill="url(#hatch2)"/>
+          <text x="430" y="98" text-anchor="middle" font-size="12" fill="#7b8091" font-style="italic" font-family="sans-serif">unknown region</text>
+
+          <!-- FOV cone -->
+          <polygon points="150,450 40,120 470,120" fill="url(#fovfill2)"/>
+          <line x1="150" y1="450" x2="40" y2="120" stroke="#f08a24" stroke-width="2.5" opacity="0.55"/>
+          <line x1="150" y1="450" x2="470" y2="120" stroke="#f08a24" stroke-width="2.5" opacity="0.55"/>
+          <text x="250" y="300" font-size="12.5" fill="#1f7d95" font-weight="700" font-family="sans-serif">observed FOV</text>
+
+          <!-- raw corridor (magenta) spilling OUT of FOV to the right -->
+          <polygon points="150,410 150,300 300,250 470,250 500,330 360,400"
+                   fill="#d63a86" fill-opacity="0.24" stroke="#d63a86" stroke-width="2.2"/>
+          <text x="330" y="300" font-size="12.5" fill="#b02c68" font-weight="700" font-family="sans-serif">raw hPoly</text>
+          <!-- spill callout -->
+          <path d="M 470,250 Q 505,235 500,265" fill="none" stroke="#b02c68" stroke-width="1.2" stroke-dasharray="3 3"/>
+          <text x="512" y="228" font-size="11.5" fill="#b02c68" font-family="sans-serif">spills into</text>
+          <text x="512" y="243" font-size="11.5" fill="#b02c68" font-family="sans-serif">unknown ✗</text>
+
+          <!-- trajectory heading into unknown -->
+          <path d="M 150,410 C 260,360 380,320 480,300" fill="none"
+                stroke="#12204a" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#tarrow)"/>
+
+          <!-- P0 seed box + drone -->
+          <rect x="126" y="424" width="48" height="40" rx="4" fill="none" stroke="#2f6bd6" stroke-width="1.6" stroke-dasharray="4 3"/>
+          <text x="150" y="418" text-anchor="middle" font-size="10.5" fill="#2f6bd6" font-family="sans-serif">P0 seed box</text>
+          <circle cx="150" cy="450" r="11" fill="#2f6bd6" stroke="#fff" stroke-width="2.2"/>
+          <text x="150" y="500" text-anchor="middle" font-size="12" fill="#2f6bd6" font-weight="700" font-family="sans-serif">drone</text>
+        </g>
+
+        <!-- divider -->
+        <line x1="560" y1="80" x2="560" y2="500" stroke="#d9dde6" stroke-width="1.4" stroke-dasharray="5 5"/>
+
+        <!-- =============== RIGHT PANEL : AFTER =============== -->
+        <g>
+          <text x="840" y="38" text-anchor="middle" font-size="15" font-weight="800"
+                fill="#137a52" letter-spacing="0.04em" font-family="sans-serif">AFTER PR #1</text>
+          <text x="840" y="57" text-anchor="middle" font-size="12" fill="#5a6273" font-family="sans-serif">constrained by active FOV face</text>
+
+          <rect x="600" y="72" width="480" height="410" fill="url(#hatch2)"/>
+          <text x="990" y="98" text-anchor="middle" font-size="12" fill="#7b8091" font-style="italic" font-family="sans-serif">unknown region</text>
+
+          <!-- FOV cone -->
+          <polygon points="710,450 600,120 1030,120" fill="url(#fovfill2)"/>
+          <line x1="710" y1="450" x2="600" y2="120" stroke="#f08a24" stroke-width="2.5" opacity="0.55"/>
+          <text x="760" y="205" font-size="12.5" fill="#1f7d95" font-weight="700" font-family="sans-serif">observed FOV</text>
+
+          <!-- active FOV half-plane (right cone face). The clipped hPoly boundary
+               below is deliberately collinear with this face. -->
+          <line x1="710" y1="450" x2="1030" y2="120" stroke="#f08a24" stroke-width="2.4" stroke-linecap="round"/>
+          <line x1="836" y1="320" x2="1030" y2="120" stroke="#f08a24" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.75"/>
+          <rect x="940" y="205" width="122" height="40" rx="7" fill="#fffaf3" stroke="#f08a24" stroke-width="1"/>
+          <text x="1001" y="222" text-anchor="middle" font-size="10.5" fill="#c96f16" font-weight="700" font-family="sans-serif">active FOV</text>
+          <text x="1001" y="237" text-anchor="middle" font-size="10.5" fill="#c96f16" font-weight="700" font-family="sans-serif">half-plane boundary</text>
+
+          <!-- faint original raw hPoly outline, same geometry as the before panel -->
+          <polygon points="710,410 710,300 860,250 1030,250 1060,330 920,400"
+                   fill="none" stroke="#d63a86" stroke-width="1.3" stroke-dasharray="5 5" opacity="0.55"/>
+
+          <!-- clipped corridor (green): it is the inside part of the raw hPoly after
+               intersecting with the full active FOV half-plane. The right edge from
+               (904,250) to (751,408) lies on the orange half-plane boundary. -->
+          <polygon points="710,410 710,300 860,250 904,250 751,408"
+                   fill="#1f9d6b" fill-opacity="0.24" stroke="#1f9d6b" stroke-width="2.4"/>
+          <text x="756" y="334" font-size="12.5" fill="#137a52" font-weight="700" font-family="sans-serif">clipped hPoly</text>
+
+          <!-- ghost of removed part (faint magenta): this is the portion of the raw
+               corridor that would have extended beyond the active FOV face. -->
+          <polygon points="904,250 1030,250 1060,330 920,400 751,408"
+                   fill="#d63a86" fill-opacity="0.08" stroke="#d63a86" stroke-width="1.1" stroke-dasharray="4 4"/>
+          <text x="1002" y="315" text-anchor="middle" font-size="10.5" fill="#b02c68" font-family="sans-serif">removed</text>
+          <text x="1002" y="330" text-anchor="middle" font-size="10.5" fill="#b02c68" font-family="sans-serif">unknown-side volume</text>
+
+          <!-- highlight the actual new finite hPoly face created by clipping.
+               The full orange boundary is the half-plane; only this intersection
+               segment becomes a visible face of the clipped hPoly. -->
+          <line x1="904" y1="250" x2="751" y2="408" stroke="#f08a24" stroke-width="5.2" stroke-linecap="round"/>
+          <rect x="840" y="408" width="192" height="42" rx="7" fill="#fffaf3" stroke="#f08a24" stroke-width="1"/>
+          <text x="936" y="425" text-anchor="middle" font-size="10.5" fill="#c96f16" font-weight="700" font-family="sans-serif">orange segment becomes</text>
+          <text x="936" y="440" text-anchor="middle" font-size="10.5" fill="#c96f16" font-weight="700" font-family="sans-serif">the new hPoly face</text>
+          <line x1="840" y1="408" x2="827" y2="329" stroke="#c96f16" stroke-width="1.2" stroke-dasharray="3 3"/>
+
+          <!-- MINCO trajectory staying inside green -->
+          <path d="M 710,410 C 760,368 812,335 870,278" fill="none"
+                stroke="#12204a" stroke-width="2.2" stroke-dasharray="6 5" marker-end="url(#tarrow)"/>
+          <text x="735" y="365" font-size="11" fill="#12204a" font-family="sans-serif">MINCO uses clipped hPolys</text>
+
+          <!-- P0 seed box + drone -->
+          <rect x="686" y="424" width="48" height="40" rx="4" fill="none" stroke="#2f6bd6" stroke-width="1.6" stroke-dasharray="4 3"/>
+          <text x="710" y="418" text-anchor="middle" font-size="10.5" fill="#2f6bd6" font-family="sans-serif">P0 seed box</text>
+          <circle cx="710" cy="450" r="11" fill="#2f6bd6" stroke="#fff" stroke-width="2.2"/>
+          <text x="710" y="500" text-anchor="middle" font-size="12" fill="#2f6bd6" font-weight="700" font-family="sans-serif">drone</text>
+        </g>
+
+        <!-- center equation -->
+        <text x="560" y="536" text-anchor="middle" font-size="14" font-family="monospace" fill="#1c2230">
+          <tspan fill="#d63a86" font-weight="700">raw hPoly</tspan>
+          <tspan fill="#5a6273">&nbsp; ∩ &nbsp;</tspan>
+          <tspan fill="#c96f16" font-weight="700">active FOV half-planes</tspan>
+          <tspan fill="#5a6273">&nbsp; = &nbsp;</tspan>
+          <tspan fill="#137a52" font-weight="700">clipped hPoly</tspan>
+        </text>
+      </svg>
+    </div>
+
+    <div class="legend">
+      <div class="li"><span class="sw" style="background:rgba(49,182,214,.25)"></span> observed FOV</div>
+      <div class="li"><span class="sw" style="background:#eef0f4"></span> unknown region</div>
+      <div class="li"><span class="sw line" style="border-color:var(--c-face)"></span> active FOV half-plane</div>
+      <div class="li"><span class="sw" style="background:rgba(214,58,134,.28)"></span> raw FIRI corridor</div>
+      <div class="li"><span class="sw" style="background:rgba(31,157,107,.30)"></span> clipped corridor</div>
+      <div class="li"><span class="sw line" style="border-color:var(--c-traj);border-top-style:dashed"></span> MINCO trajectory</div>
+      <div class="li"><span class="sw" style="background:none;border:1.4px dashed var(--c-drone)"></span> P0 seed box</div>
+    </div>
+
+    <figcaption>
+      <strong>Figure 2.</strong> cropped FOV 바깥에는 obstacle point가 없기 때문에 기존 FIRI corridor는 unknown
+      방향으로 커질 수 있다(왼쪽). PR&nbsp;#1은 <strong>active FOV cone face를 half-plane constraint로 raw
+      hPolys에 추가</strong>하여 clipped hPolys를 만들고(오른쪽), MINCO/GCOPTER는 이 clipped corridor 안에서만
+      궤적을 최적화한다. <code class="inl">P0 seed box</code>는 현재 pose가 corridor 안에 남도록 예외로 유지된다.
+      <span class="en">FIRI can grow a raw corridor into unobserved space because no obstacle points exist outside
+      the cropped FOV. PR #1 adds active FOV cone faces as half-plane constraints to the raw hPolys. The resulting
+      clipped hPolys are used by MINCO/GCOPTER, preventing the optimizer from using corridor volume that extends
+      beyond the observed FOV boundary.</span>
+    </figcaption>
+  </figure>
+
+  <h3>2.1 FOV cone face 구성</h3>
+  <p>전방 LiDAR FOV는 현재 드론 위치를 꼭짓점으로 하는 cone이다. 3D에서는 대략 네 개의 face(left/right yaw,
+  upper/lower pitch)가 있고, 각 face는 half-plane으로 표현된다.</p>
+  <pre class="flow">n·x + d ≤ 0 : FOV cone <b>안쪽</b>
+n·x + d > 0 : FOV cone <b>바깥쪽</b></pre>
+
+  <h3>2.2 active face만 사용 (두 조건)</h3>
+  <p>모든 face를 무조건 추가하면 이미 관측된 공간까지 잘려 경로가 과도하게 보수적이 된다. 그래서 다음 두 조건을
+  만족하는 face만 hPoly에 추가한다.</p>
+  <pre class="flow">조건 1: 해당 face 위에 fov_edge_cells_가 있음
+조건 2: 해당 face 바깥쪽에 DENSE cell이 <b>없음</b>
+   → 이 face는 실제 관측 경계이고, 바깥은 관측되지 않은 방향</pre>
+
+  <h3>2.3 half-plane 추가 과정 & feasibility 보장</h3>
+  <p>FIRI가 만든 각 hPoly에 active FOV face를 추가하되, 첫 번째 <code class="inl">P0 seed box</code>는 예외로 둔다.
+  각 face 추가 후 corridor가 완전히 비지 않는지 확인한다.</p>
+  <pre class="flow">hPolys[0]     = P0 seed box, 유지 (시작점 안정성)
+hPolys[1..N]  = active FOV face를 추가해서 clip
+
+face 추가 후보 hPoly 생성
+   → findInterior()로 내부점 존재 확인
+   → 내부점 있으면 face 추가 / 없으면 해당 cut skip  (infeasible 방지)</pre>
+
+  <div class="eq">
+    <b class="raw">raw hPolys</b> &nbsp;∩&nbsp; <b class="face">active observed FOV cone half-planes</b> &nbsp;=&nbsp; <b class="clip">clipped hPolys</b>
+  </div>
+
+  <!-- ============ 3. 최종 정리 ============ -->
+  <h2><span class="num">3</span>최종 정리</h2>
+
+  <div class="callout key">
+    <div class="t">미지 공간 판단 기준</div>
+    개별 voxel의 unknown 여부를 raycast로 직접 판정하지 않는다. LiDAR FOV 설정 · 드론 pose/yaw · depth image
+    기반 FOV edge cell(<code class="inl">fov_edge_cells_</code>) · face 바깥쪽 DENSE cell 유무를 조합하여
+    "이 FOV face 바깥이 현재 관측 불가능 방향인가"를 판단한다.
+  </div>
+
+  <div class="callout key">
+    <div class="t">corridor 확장 방지</div>
+    FIRI가 만든 raw hPolys에 active FOV cone face를 half-plane으로 추가한다. 그 결과 MINCO/GCOPTER는 FOV edge
+    바깥 unknown 방향으로 확장된 corridor를 입력으로 받지 않는다.
+  </div>
+
+  <div class="callout warn">
+    <div class="t">피해야 할 표현</div>
+    "PR&nbsp;#1은 unknown voxel을 모두 찾아 corridor에서 제거한다" ✗ &nbsp;/&nbsp;
+    "corridor 내부를 샘플링해 각 sample이 raycast observed-free인지 검사한다" ✗ <br>
+    <span style="color:#137a52;font-weight:600">정확한 표현:</span> "PR&nbsp;#1은 FOV edge frontier를 관측
+    경계로 보고, 그 경계에 해당하는 FOV cone face를 half-plane으로 추가하여 FIRI corridor가 관측 불가능
+    방향으로 확장되지 못하게 한다." ✓
+  </div>
+
+  <footer>
+    근거 파일 ·
+    <code class="inl">pr1_original/PR1_COMMIT_00a0fc2.patch</code>,
+    <code class="inl">…_00a0fc2.diff</code>,
+    <code class="inl">…_COMMIT_MESSAGE.txt</code>,
+    <code class="inl">…_CHANGED_FILES.txt</code>
+    &nbsp;·&nbsp; local_planner — clip local SFC corridor to observed FOV cone (Method B)
+  </footer>
+
+</div>
+</body>
+</html>
