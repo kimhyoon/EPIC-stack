@@ -23,6 +23,12 @@
 #include <pointcloud_topo/parallel_bubble_astar.h>
 #include <tf/tf.h>
 
+// Defined in the frontier_manager package (global namespace). Forward-declared
+// here so this header does not force every includer to pull in the frontier
+// headers; the full definition is included only in planner_manager.cpp, which
+// queries observed-frontier cells to clip the local SFC corridor.
+class FrontierManager;
+
 namespace fast_planner {
 // Fast Planner Manager
 // Key algorithms of mapping and planning are called
@@ -140,6 +146,21 @@ public:
   double max_ray_length;
   double fov_up, fov_down;
   double lidar_pitch;
+
+  // ---- Local SFC corridor clipping to the observed FOV cone (forward-FOV) ----
+  // Handle to the frontier manager (wired in FastExplorationManager::initialize).
+  // When enabled, the local corridor is clipped so it cannot extend past what a
+  // limited-FOV sensor has actually observed.
+  shared_ptr<FrontierManager> frontier_manager_;
+  bool clip_corridor_to_observed_ = false; // master switch (default off = legacy)
+  bool clip_cone_faces_ = false;           // Method B: FOV cone half-plane clipping
+  double p0_len_x_ = 0.6; // robot free box P0: body-x (fwd/back) full length
+  double p0_len_y_ = 0.6; // P0: body-y (left/right) full length
+  double p0_up_ = 0.2;    // P0: extent above the flight controller
+  double p0_down_ = 0.2;  // P0: extent below the flight controller
+  double yaw_fov_ = 2.0 * M_PI; // horizontal FOV [rad] (lidar_perception/yaw_fov)
+  // Intersect each forward corridor polytope with the observed FOV cone faces.
+  void clipCorridorToObservedCone(std::vector<Eigen::MatrixX4d> &hPolys);
 
 private:
   /* main planning algorithms & modules */

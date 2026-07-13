@@ -20,6 +20,7 @@
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <plan_manage/planner_manager.h>
+#include <frontier_manager/frontier_manager.h>
 #include <std_msgs/Int32.h>
 #include <thread>
 #include <visualization_msgs/Marker.h>
@@ -58,6 +59,16 @@ void FastPlannerManager::initPlanModules(
   nh.getParam("lidar_perception/fov_up", fov_up);
   nh.getParam("lidar_perception/fov_down", fov_down);
   nh.getParam("lidar_perception/lidar_pitch", lidar_pitch);
+  // ---- Local SFC corridor clipping to the observed FOV cone (Method B) ----
+  nh.param("local_planning/clip_corridor_to_observed", clip_corridor_to_observed_, false);
+  nh.param("local_planning/clip_cone_faces", clip_cone_faces_, false);
+  nh.param("local_planning/p0_len_x", p0_len_x_, 0.6);
+  nh.param("local_planning/p0_len_y", p0_len_y_, 0.6);
+  nh.param("local_planning/p0_up", p0_up_, 0.2);
+  nh.param("local_planning/p0_down", p0_down_, 0.2);
+  double yaw_fov_deg = 360.0;
+  nh.param("lidar_perception/yaw_fov", yaw_fov_deg, 360.0);
+  yaw_fov_ = yaw_fov_deg * M_PI / 180.0;
 
   gcopter_viz_.reset(new Visualizer);
   gcopter_viz_->init(nh);
@@ -284,6 +295,35 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                        min_bd.cast<double>(), max_bd.cast<double>(), 7.0,
                        gcopter_config_->corridor_size, hPolys, 1e-6,
                        gcopter_config_->dilateRadiusSoft);
+
+  // --- Prepend P0: a robot-sized, yaw-aligned free box at the current pose. The
+  // space the robot physically occupies is free regardless of observation, so it
+  // guarantees the start pose lies inside some polytope even when forward-FOV
+  // frontier crowding degrades the first forward polytope (avoids the "current
+  // position not in corridor" -> flyToSafeRegion escape in tight spaces). Fixed
+  // to the robot's physical extent -- must NOT be grown into unobserved space.
+  if (clip_corridor_to_observed_) {
+    const Eigen::Vector3d p = local_data_.curr_pos_;
+    const double psi = local_data_.curr_yaw_; // live odom yaw
+    const double c = std::cos(psi), s = std::sin(psi);
+    const Eigen::Vector3d bx(c, s, 0.0);  // body +x (forward)
+    const Eigen::Vector3d by(-s, c, 0.0); // body +y (left)
+    const double hx = 0.5 * p0_len_x_, hy = 0.5 * p0_len_y_;
+    const double up = p0_up_, down = p0_down_;
+    Eigen::MatrixX4d P0(6, 4); // rows (nx,ny,nz,d); constraint n.x + d <= 0
+    P0.row(0) << bx.x(), bx.y(), 0.0, -(bx.dot(p) + hx);    // front
+    P0.row(1) << -bx.x(), -bx.y(), 0.0, -(-bx.dot(p) + hx); // back
+    P0.row(2) << by.x(), by.y(), 0.0, -(by.dot(p) + hy);    // left
+    P0.row(3) << -by.x(), -by.y(), 0.0, -(-by.dot(p) + hy); // right
+    P0.row(4) << 0.0, 0.0, 1.0, -(p.z() + up);              // up
+    P0.row(5) << 0.0, 0.0, -1.0, (p.z() - down);            // down
+    hPolys.insert(hPolys.begin(), P0);
+  }
+
+  // --- Method B: clip each forward polytope to the observed FOV cone (P0 kept).
+  if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_)
+    clipCorridorToObservedCone(hPolys);
+
   Eigen::Matrix<double, 3, 4> iniState;
   Eigen::Matrix<double, 3, 4> finState;
   double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
@@ -351,8 +391,25 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       break;
     }
   }
-  if (front != hPolys.size() - 2) {
-    ROS_ERROR("front != hPolys.size() - 2");
+  // Is the guide-path terminal actually inside the last corridor polytope? With
+  // observation clipping the corridor can close before the goal, leaving
+  // path_shorten.back() OUTSIDE it. An out-of-corridor terminal makes GCOPTER's
+  // line-search collapse (optimize fails -> stuck replanning). Treat it exactly
+  // like a broken chain and reuse the same fallback: retarget to an interior
+  // point of the connected corridor (go as far as the observed corridor allows,
+  // re-observe next replan). Gated on clipping so clip=false is unchanged.
+  bool goal_outside_corridor = false;
+  if (clip_corridor_to_observed_) {
+    Eigen::Vector4d gh(path_shorten.back().x(), path_shorten.back().y(),
+                       path_shorten.back().z(), 1.0);
+    goal_outside_corridor = ((hPolys.back() * gh).array() > 1.0e-6).any();
+  }
+  if (front != hPolys.size() - 2 || goal_outside_corridor) {
+    if (front != hPolys.size() - 2)
+      ROS_ERROR("front != hPolys.size() - 2");
+    else
+      ROS_WARN_THROTTLE(1.0, "guide-path goal outside clipped corridor; "
+                             "retargeting to corridor interior");
     Eigen::Vector3d inner;
     geo_utils::findInterior(hPolys[front], inner);
     finState << inner, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
@@ -469,6 +526,106 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = false;
   return true;
+}
+
+// [feature: cone-clip] Method B: intersect each forward corridor polytope with
+// the observed FOV cone's side half-planes so the corridor cannot extend past
+// what a limited-FOV sensor has actually seen. P0 (index 0, the robot-body seed
+// box) is always kept. A face only clips if it is a real observation boundary
+// (some FOV-edge frontier lies on it) and the observed surface does not continue
+// past it (no DENSE neighbour just outside).
+void FastPlannerManager::clipCorridorToObservedCone(
+    std::vector<Eigen::MatrixX4d> &hPolys) {
+  if (!frontier_manager_ || hPolys.size() < 2)
+    return;
+
+  const Eigen::Vector3d p = local_data_.curr_pos_;
+  const double psi = local_data_.curr_yaw_;
+  const double hy = 0.5 * yaw_fov_;        // half horizontal FOV [rad]
+  const double R = max_ray_length;         // far-plane range [m]
+  const Eigen::Vector3d fwd(std::cos(psi), std::sin(psi), 0.0);
+
+  // FOV cone faces (4 sides): constraint n.x + d <= 0 is INSIDE the cone. All
+  // pass through the apex p. (Far plane @ max_ray omitted -- it only gated on
+  // distance frontiers and was near-inert; range is still capped below by R.)
+  struct Face {
+    Eigen::Vector3d n;
+    double d;
+  };
+  const Eigen::Vector3d Z(0.0, 0.0, 1.0);
+  std::vector<Face> faces;
+  const double aL = psi + hy; // left FOV-edge azimuth
+  Eigen::Vector3d nL(-std::sin(aL), std::cos(aL), 0.0);  // outward-left
+  faces.push_back({nL, -nL.dot(p)});
+  const double aR = psi - hy; // right FOV-edge azimuth
+  Eigen::Vector3d nR(std::sin(aR), -std::cos(aR), 0.0);  // outward-right
+  faces.push_back({nR, -nR.dot(p)});
+  const double bU = (lidar_pitch + fov_up) * M_PI / 180.0;   // up-edge elevation
+  Eigen::Vector3d nU = -std::sin(bU) * fwd + std::cos(bU) * Z;  // outward-up
+  faces.push_back({nU, -nU.dot(p)});
+  const double bD = (lidar_pitch + fov_down) * M_PI / 180.0; // down-edge elevation
+  Eigen::Vector3d nD = std::sin(bD) * fwd - std::cos(bD) * Z;   // outward-down
+  faces.push_back({nD, -nD.dot(p)});
+
+  // Gate each face: ACTIVE only if some frontier lies on it AND no frontier on it
+  // has a DENSE (already-observed) neighbor just OUTSIDE it. Any DENSE outside =>
+  // the observed surface continues past this face => leave it (do not clip),
+  // which preserves mobility through already-seen space.
+  const double cs = frontier_manager_->getCellSize();
+  const double eps = 1.5 * cs;
+  std::vector<char> has_frontier(faces.size(), 0);
+  std::vector<char> observed_outside(faces.size(), 0);
+
+  // Iterate only this frame's FOV-edge frontier cells (already the cells lying on
+  // the cone faces) instead of scanning every cluster cell.
+  for (const auto &cc : frontier_manager_->fov_edge_cells_) {
+    const Eigen::Vector3d c(cc.x, cc.y, cc.z);
+    const Eigen::Vector3d rel = c - p;
+    if (fwd.dot(rel) <= 0.0 || rel.norm() > R) // in front & within range
+      continue;
+    for (size_t fi = 0; fi < faces.size(); ++fi) {
+      if (observed_outside[fi]) // face already decided (deactivate)
+        continue;
+      if (std::abs(faces[fi].n.dot(c) + faces[fi].d) > eps)
+        continue; // c not on this face plane
+      has_frontier[fi] = 1;
+      for (int dx = -1; dx <= 1 && !observed_outside[fi]; ++dx)
+        for (int dy = -1; dy <= 1 && !observed_outside[fi]; ++dy)
+          for (int dz = -1; dz <= 1 && !observed_outside[fi]; ++dz) {
+            if (!dx && !dy && !dz)
+              continue;
+            const Eigen::Vector3d nbr = c + cs * Eigen::Vector3d(dx, dy, dz);
+            if (faces[fi].n.dot(nbr) + faces[fi].d <= 0.0)
+              continue; // keep only OUTSIDE neighbors
+            if (frontier_manager_->getCellState(nbr.cast<float>()) == DENSE)
+              observed_outside[fi] = 1;
+          }
+    }
+  }
+
+  std::vector<int> active_idx;
+  for (size_t fi = 0; fi < faces.size(); ++fi)
+    if (has_frontier[fi] && !observed_outside[fi])
+      active_idx.push_back((int)fi);
+  if (active_idx.empty())
+    return;
+
+  // Append active faces to every polytope except P0 (index 0). Guard each append
+  // with a non-emptiness check so a cut that would empty a polytope is skipped
+  // (keeps the corridor feasible; goal-outside-corridor fallback handles the rest).
+  for (size_t hi = 1; hi < hPolys.size(); ++hi) {
+    Eigen::MatrixX4d hp = hPolys[hi];
+    for (int fi : active_idx) {
+      Eigen::MatrixX4d cand(hp.rows() + 1, 4);
+      cand.topRows(hp.rows()) = hp;
+      cand.row(hp.rows()) << faces[fi].n.x(), faces[fi].n.y(), faces[fi].n.z(),
+          faces[fi].d;
+      Eigen::Vector3d interior;
+      if (geo_utils::findInterior(cand, interior))
+        hp = cand;
+    }
+    hPolys[hi] = hp;
+  }
 }
 
 void FastPlannerManager::angleLimite(double &angle) {

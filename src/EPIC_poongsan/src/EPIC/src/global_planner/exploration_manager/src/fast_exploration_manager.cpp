@@ -38,6 +38,9 @@ void FastExplorationManager::initialize(
 
   frontier_manager_ptr_ = frt_manager;
   planner_manager_ = planner_manager;
+  // [feature: cone-clip] give the local planner a handle to the frontier manager
+  // so it can query observed-frontier cells and clip its SFC corridor.
+  planner_manager_->frontier_manager_ = frt_manager;
 
   ed_.reset(new ExplorationData);
   ep_.reset(new ExplorationParam);
