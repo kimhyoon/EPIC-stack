@@ -376,3 +376,34 @@ roslaunch epic_planner garage.launch
 
 The MARSIM launch is an internal include and is not the entry point for this
 workspace.
+
+## Build and LiDAR Crop Modes
+
+This branch keeps `src/EPIC_poongsan` aligned with the onboard `psc_stack` tree.
+Runtime-only simulation pieces live outside that package:
+
+- `src/MARSIM`: simulator packages and garage map runtime
+- `src/sim_bringup`: MARSIM + EPIC launch wrappers
+- `src/ml_x_cropping`: optional MID360-to-ML-X cloud crop bridge
+
+Configuration policy:
+
+- `real.yaml`: real onboard flight configuration. Keep this aligned with the onboard reference.
+- `garage.yaml`: MID360/MARSIM garage simulation configuration.
+
+The crop bridge is optional and is not built unless explicitly enabled:
+
+```bash
+catkin config --cmake-args -DBUILD_CLOUD_CROP_BRIDGE=ON
+catkin build
+```
+
+For onboard ML-X use, leave the bridge off and use the real sensor topics from `real.yaml`.
+For MID360/MARSIM ML-X emulation, build the bridge and launch simulation with:
+
+```bash
+roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true
+```
+
+If `use_cloud_crop_bridge:=false`, EPIC consumes the raw MARSIM cloud.
+If `use_cloud_crop_bridge:=true`, EPIC consumes `/quad0_pcl_render_node/cloud_cropped` while MARSIM still publishes the full cloud.

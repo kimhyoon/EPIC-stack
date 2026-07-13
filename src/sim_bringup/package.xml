@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>sim_bringup</name>
+  <version>0.0.0</version>
+  <description>Simulation bringup wrapper for EPIC with MARSIM.</description>
+  <maintainer email="dh@todo.todo">dh</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <exec_depend>epic_planner</exec_depend>
+  <exec_depend>ml_x_cropping</exec_depend>
+  <exec_depend>mars_drone_sim</exec_depend>
+  <exec_depend>map_generator</exec_depend>
+  <exec_depend>waypoint_generator</exec_depend>
+  <exec_depend>odom_visualization</exec_depend>
+  <exec_depend>plan_manage</exec_depend>
+  <exec_depend>local_avoidance</exec_depend>
+  <exec_depend>pcl_ros</exec_depend>
+  <exec_depend>rviz</exec_depend>
+  <exec_depend>tf</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+</package>

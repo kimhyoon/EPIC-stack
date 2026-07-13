@@ -1,0 +1,144 @@
+<launch>
+  <!-- Static transforms for frame compatibility -->
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_world"
+        args="0 0 0 0 0 0 odom world 100" />
+
+  <node pkg="tf" type="static_transform_publisher" name="odom_to_map"
+        args="0 0 0 0 0 0 odom map 100" />
+
+  <!-- Map configuration -->
+  <arg name="map_name" value="garage" />
+  <arg name="config_file" default="$(arg map_name).yaml" />
+
+  <!-- Sensor publish rate control -->
+  <arg name="odom_publish_rate" default="10.0" />
+  <arg name="sensing_rate" default="10.0" />
+
+  <!-- Odometry topic (configure based on your odometry source) -->
+  <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
+  <arg name="use_cloud_crop_bridge" default="false" />
+
+  <!-- Simulation-only reactive local avoidance. Real flight uses real_flight.launch. -->
+  <arg name="enable_avoidance" default="true" />
+
+  <!-- Evaluation parameters -->
+  <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
+  <arg name="eval_auto_shutdown" default="false" />
+
+  <!-- Trajectory/Waypoint server -->
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)" />
+    <remap from="~goal" to="/move_base_simple/goal" />
+    <remap from="~traj_start_trigger" to="/traj_start_trigger" />
+    <param name="waypoint_type" value="point" />
+  </node>
+
+  <!-- Odometry visualization -->
+  <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization" output="screen">
+    <remap from="~odom" to="$(arg odom_topic)" />
+    <param name="init_x" value="3.0" />
+    <param name="init_y" value="8.0" />
+    <param name="init_z" value="1.25" />
+    <param name="color/a" value="1.0" />
+    <param name="color/r" value="0.0" />
+    <param name="color/g" value="1.0" />
+    <param name="color/b" value="1.0" />
+    <param name="covariance_scale" value="100.0" />
+    <param name="robot_scale" value="1.0" />
+    <param name="quadrotor_name" value="quad0" />
+    <param name="drone_id" value="0" />
+    <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae" />
+  </node>
+
+  <!-- EPIC exploration algorithm.
+       The config keeps cloud_topic as the raw MARSIM cloud by default.
+       If use_cloud_crop_bridge is true, the override below makes EPIC consume
+       the cropped cloud while the crop bridge still reads the raw cloud from
+       the same garage.yaml. -->
+  <include file="$(find epic_planner)/launch/algorithm.xml">
+    <arg name="config_file" value="$(arg config_file)" />
+  </include>
+
+  <!-- ML-X FOV emulation for simulation:
+       MARSIM still publishes the full Mid-360 cloud, while this bridge crops
+       only the cloud consumed by EPIC according to garage.yaml cloud_crop/*.
+       This mirrors real_flight.launch and avoids changing MARSIM sensing. -->
+  <group if="$(arg use_cloud_crop_bridge)">
+    <param name="/exploration_node/cloud_topic" value="/quad0_pcl_render_node/cloud_cropped" />
+    <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+      <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
+    </node>
+  </group>
+
+  <!-- Trajectory server publishes MINCO trajectory and hover commands to /position_cmd.
+       The enable_avoidance groups route /position_cmd to /planning/pos_cmd.
+       Do not remap traj_server itself. -->
+  <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen" />
+
+  <!-- ===== Simulation-only reactive local avoidance, controlled by enable_avoidance. =====
+       Real flight uses px4_ctrl_bridge plus the real /livox/lidar path. -->
+  <group if="$(arg enable_avoidance)">
+    <!-- 1) LiDAR bridge: MARSIM world PointCloud2 -> Livox CustomMsg. -->
+    <node pkg="local_avoidance" type="pc2_to_livox.py" name="pc2_to_livox" output="screen">
+      <param name="cloud_topic" value="/quad0_pcl_render_node/cloud" />
+      <param name="odom_topic"  value="$(arg odom_topic)" />
+      <param name="livox_topic" value="/livox/lidar" />
+      <param name="max_range"   value="20.0" />
+      <param name="max_points"  value="4000" />
+    </node>
+
+    <!-- 2) Reactive local avoidance node. Publishes /target_avoidance and /FSM_flag_avoidance. -->
+    <include file="$(find local_avoidance)/launch/local_avoidance.launch">
+      <arg name="lidar_topic" value="/livox/lidar" />
+      <arg name="odom_topic"  value="$(arg odom_topic)" />
+    </include>
+
+    <!-- 3) MUX: flag=1 selects avoidance; otherwise EPIC command passes through. -->
+    <node pkg="local_avoidance" type="avoid_mux.py" name="avoid_mux" output="screen">
+      <param name="enable_avoidance"  value="true" />
+      <param name="epic_topic"        value="/position_cmd" />
+      <param name="out_topic"         value="/planning/pos_cmd" />
+      <param name="flag_timeout"      value="0.5" />
+      <param name="avoid_cmd_timeout" value="0.3" />
+    </node>
+  </group>
+
+  <group unless="$(arg enable_avoidance)">
+    <!-- Avoidance OFF: relay EPIC /position_cmd directly to cascadePID. -->
+    <node pkg="topic_tools" type="relay" name="epic_cmd_relay"
+          args="/position_cmd /planning/pos_cmd" output="screen" />
+  </group>
+
+  <!-- Exploration evaluation metrics -->
+  <node pkg="epic_planner" name="exploration_evaluator" type="evaluate_exploration.py" output="screen">
+    <param name="odom_topic" value="$(arg odom_topic)" />
+    <param name="position_cmd_topic" value="/planning/pos_cmd" />
+    <param name="pcd_path" value="$(find map_generator)/resource/garage.pcd" />
+    <param name="cell_size" value="0.4" />
+    <param name="map_min_x" value="-10.0" />
+    <param name="map_min_y" value="-6.0" />
+    <param name="map_min_z" value="-0.2" />
+    <param name="map_max_x" value="182.0" />
+    <param name="map_max_y" value="150.2" />
+    <param name="map_max_z" value="3.8" />
+    <param name="output_dir" value="$(arg eval_output_dir)" />
+    <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
+  </node>
+
+  <!-- RViz-only full PCD map overlay.
+       This does not feed MARSIM or EPIC; it only publishes garage.pcd on a
+       debug topic so the static map remains visible in RViz. -->
+  <node pkg="pcl_ros" name="generated_pcd_map_publisher" type="pcd_to_pointcloud"
+        args="$(find map_generator)/resource/garage.pcd 5.0 _frame_id:=world cloud_pcd:=/debug/generated_pcd_map"
+        output="screen" />
+
+  <!-- Simulation environment (garage map with drone) -->
+  <include file="$(find mars_drone_sim)/launch/garage.launch">
+    <arg name="sensing_horizon" value="60.0" />
+    <!-- The MARSIM launch chain does not consume odom_publish_rate/sensing_rate
+         as args. Passing them here causes roslaunch "unused args" errors. -->
+  </include>
+
+  <!-- RViz visualization -->
+  <include file="$(find epic_planner)/launch/rviz.launch" />
+</launch>

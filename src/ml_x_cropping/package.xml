@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>ml_x_cropping</name>
+  <version>0.0.0</version>
+  <description>MID360-to-ML-X point cloud crop bridge for EPIC input adaptation.</description>
+  <maintainer email="dh@todo.todo">dh</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>nav_msgs</build_depend>
+  <build_depend>message_filters</build_depend>
+
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>message_filters</exec_depend>
+</package>

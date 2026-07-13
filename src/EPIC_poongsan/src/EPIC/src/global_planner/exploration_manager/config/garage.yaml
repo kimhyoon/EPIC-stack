@@ -1,12 +1,24 @@
 #topic param:
-# [SIM 전용] real.yaml의 /Odometry, /cloud_registered 로 바꾸지 말 것 (MARSIM은 아래 토픽으로 발행)
+# [SIM only] Do not switch this to real.yaml topics (/Odometry, /cloud_registered);
+# MARSIM publishes the simulation odometry/cloud topics below.
 odometry_topic: /quad_0/lidar_slam/odom
 cloud_topic: /quad0_pcl_render_node/cloud
-global_planning/w_vdir: 0.0          # [synced: real]  (속도방향 가중치 — 직선성에 영향 가능, 아래 주석 참고)
+# [SIM ML-X emulation] MARSIM keeps publishing the full Mid-360 cloud above.
+# cloud_crop_bridge crops only the EPIC planner input, matching the real-flight
+# setup where localization keeps the raw cloud and exploration sees ML-X FOV.
+cloud_crop/enable: true
+cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
+cloud_crop/fov_horizontal: 120.0
+cloud_crop/fov_up: 15.0
+cloud_crop/fov_down: -15.0
+cloud_crop/min_range: 0.0
+cloud_crop/max_range: 30.0
+cloud_crop/yaw_offset_deg: 0.0
+global_planning/w_vdir: 0.0          # [synced: real] velocity-direction weight; may affect straightness.
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 #viz
-# [SIM 유지] real=true 는 무거운 viz (RViz 부하 원인) → false 유지
+# [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
 view_graph: true
 FrontierManager/view_cluster: true
 FrontierManager/view_frt: true
@@ -25,21 +37,21 @@ bubble_astar/safe_distance: 0.6
 max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
-lidar_perception/fov_up: 52.0
-lidar_perception/fov_down: -7.0
-lidar_perception/lidar_pitch: 40.0    # [SIM 유지] MARSIM 센서 장착각 40° — real=0.0 로 바꾸면 인지 기하 깨짐
-lidar_perception/fov_viewpoint_up: 48.0
-lidar_perception/fov_viewpoint_down: -5.0
-lidar_perception/max_ray_length: 18   # [SIM 유지] real=1.5 로 바꾸면 1.5m 밖을 못 봄
+lidar_perception/fov_up: 15.0
+lidar_perception/fov_down: -15.0
+lidar_perception/lidar_pitch: 0.0     # [SIM ML-X emulation] crop_bridge FOV is body-forward.
+lidar_perception/fov_viewpoint_up: 15.0
+lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
 # from growing its flight corridor into space a limited-FOV sensor has not seen.
 # 1) Describe the sensor FOV (only matters for a forward/cropped LiDAR):
-lidar_perception/is_360lidar: true    # false => run the data-driven yaw FOV-edge scan
-lidar_perception/yaw_fov: 360.0       # sensor horizontal FOV [deg] (e.g. 120 when cropped)
+lidar_perception/is_360lidar: false   # false => run the data-driven yaw FOV-edge scan
+lidar_perception/yaw_fov: 120.0       # sensor horizontal FOV [deg] for cropped EPIC input
 # 2) Enable the clipping (Method B) + the robot-body seed box P0:
-local_planning/clip_corridor_to_observed: false  # master switch
-local_planning/clip_cone_faces: false            # Method B: intersect polytopes with FOV cone
+local_planning/clip_corridor_to_observed: true  # master switch
+local_planning/clip_cone_faces: true            # Method B: intersect polytopes with FOV cone
 local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
@@ -51,15 +63,15 @@ FrontierManager/noise_cell_range: 1
 FrontierManager/good_observation_direction_score: 0.6   # [synced: real]
 FrontierManager/good_observation_force_trust_length: 4.5 # [synced: real]
 FrontierManager/good_observation_trust_length: 12.0
-FrontierManager/update_length: 15.0 # 比trust_length长一点就行，多了没用
+FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
 FrontierManager/cluster_max_size: 8.0                    # [synced: real]
 FrontierManager/cluster_min_size: 2.0
-FrontierManager/cluster_min_radius: 1.8 # [synced: real] DBSCAN 判断邻居的阈值
+FrontierManager/cluster_min_radius: 1.8 # [synced: real] DBSCAN neighbor radius threshold.
 FrontierManager/cluster_direction_radius: 0.0 # [synced: real] cos(theta) > cluster_direction_radius
 FrontierManager/cluster_minmum_point_num: 10            # [synced: real]
-# 柱形采样
-ViewpointManager/sample_pillar_min_height: 1.0   # [SIM 유지] 환경 수직범위 결합 — real=-2 미적용
-ViewpointManager/sample_pillar_max_height: 3.5   # [SIM 유지] 환경 수직범위 결합 — real=2.5 미적용
+# Cylindrical viewpoint sampling.
+ViewpointManager/sample_pillar_min_height: 1.0   # [SIM keep] coupled to garage vertical bounds; do not use real=-2 here.
+ViewpointManager/sample_pillar_max_height: 3.5   # [SIM keep] coupled to garage vertical bounds; do not use real=2.5 here.
 ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
 ViewpointManager/sample_pillar_min_radius: 1.0          # [synced: real]
 ViewpointManager/sample_pillar_max_radius: 4.0
@@ -67,26 +79,26 @@ ViewpointManager/sample_pillar_radius_layer_num: 8      # [synced: real]
 ViewpointManager/sample_pillar_circle_sample_num: 4     # [synced: real]
 ViewpointManager/local_tsp_size: 10                     # [synced: real]
 # area
-# [SIM 유지] garage 맵 영역(182x150) — real의 30m 박스로 바꾸면 맵 대부분 탐사 못 함
+# [SIM keep] garage map extent is about 182 x 150 m; real 30 m bounds would hide most of the map.
 box_num: 1
-box_0/down: [-10.0, -6.0, -0.2]
-box_0/up: [182.0, 150.2, 3.8]
+box_0/down: [-10.0, -6.0, 0.55]
+box_0/up: [182.0, 150.2, 2.0]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
 DilateRadiusSoft: 0.6 # minco threshold
 DilateRadiusHard: 0.45 # [synced: real] collision check threshold
 MaxCorridorSize: 4.0   # [synced: real]
-MaxVelMag: 2.5         # [synced: real]  (4.0→2.5: sim 비행속도가 느려짐 — 의도 맞는지 확인)
+MaxVelMag: 2.5         # [synced: real] 4.0 -> 2.5 slows simulated flight; verify this is intended.
 maxBdrMag: 10000.0
-MaxTiltAngle: 0.8 # [synced: real] 最大飞行姿态角度 60°:1.0472 45°:0.7854 30°:0.5236 10°:0.1745
+MaxTiltAngle: 0.8 # [synced: real] max attitude angle: 60deg=1.0472, 45deg=0.7854, 30deg=0.5236, 10deg=0.1745.
 MinThrust: 15.0
 MaxThrust: 22.0
 VehicleMass: 1.9
 GravAcc: 9.8
-HorizDrag: 0.70   # [SIM 유지] MINCO flatness 동역학 결합 — real=0.0 미적용 (sim 동역학에 맞춤)
-VertDrag: 0.80    # [SIM 유지] real=0.0 미적용
-ParasDrag: 0.01   # [SIM 유지] real=0.0 미적용
+HorizDrag: 0.70   # [SIM keep] matched to simulation dynamics; do not use real=0.0 here.
+VertDrag: 0.80    # [SIM keep] do not use real=0.0 here.
+ParasDrag: 0.01   # [SIM keep] do not use real=0.0 here.
 SpeedEps: 0.0001
 WeightT: 700.0    # [synced: real]
 WeightSafeT: 200.0 # [synced: real]
@@ -96,7 +108,7 @@ SmoothingEps: 0.015
 IntegralIntervs: 32
 RelCostTol: 1.1e-6  # [synced: real]
 #param for yaw opt
-yaw_max_vel: 1.0    # [synced: real]  (4.0→1.0: yaw 회전이 느려짐 — 의도 맞는지 확인)
+yaw_max_vel: 1.0    # [synced: real] 4.0 -> 1.0 slows yaw rotation; verify this is intended.
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 2.5   # [synced: real]
 # FSM param
@@ -104,15 +116,18 @@ fsm/goal_tolerance: 0.2
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz). Lower to simulate slow planning.
 
-# Emergency control-error replan: 추종 궤적에서 이 거리[m] 이상 벗어나면 현재 위치 기준 강제 replan
-# (static replan = 속도0 재출발 -> 가다 서다 유발). <= 0 이면 비활성. (코드 기본값 1.5)
+# Emergency control-error replan: force a replan from the current pose when the
+# vehicle deviates from the tracked trajectory by more than this distance [m].
+# Static replan restarts at zero velocity and can cause stop-and-go behavior.
+# Set <= 0 to disable. Code default is 1.5.
 fsm/emergency_replan_control_error: 3.0
 
-# Takeoff & hover-before-explore: 트리거(2D Nav Goal) -> 제자리에서 이 고도로 상승/호버 ->
-# odom상 고도 도달+안정되면 -> 그때부터 탐색 시작. <= 0 이면 비활성(트리거 즉시 z=0에서 계획 = LBFGS 실패).
-# z=0 스폰에서 바닥(점유공간) 위로 먼저 올라가 자유공간에서 첫 궤적을 계획하게 함.
-fsm/takeoff_height: 1.25          # 목표 호버 고도 [m] (odom z; 원점=이륙지점). box_0/up z(3.8) 안이어야 함
-fsm/takeoff_reach_tol: 0.15       # |z - target| < 이 값이면 고도 도달
-fsm/takeoff_settle_vel: 0.4       # odom 속도 < 이 값이면 안정(정밀 정지 불요)
-fsm/takeoff_settle_time: 0.3      # 도달+안정 상태를 이 시간[s] 유지하면 탐색 시작
-fsm/takeoff_timeout: 20.0         # 타임아웃[s]: 고도 근처면 탐색 진행, 아니면 호버 유지(경고)
+# Takeoff and hover-before-explore:
+# trigger (2D Nav Goal) -> climb/hover at this height -> start exploration after
+# odom height is reached and settled. Set <= 0 to disable.
+# This lets a z=0 spawn climb above occupied floor points before the first plan.
+fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain below box_0/up z.
+fsm/takeoff_reach_tol: 0.15       # height is reached when |z - target| is below this value.
+fsm/takeoff_settle_vel: 0.4       # considered settled when odom velocity is below this value.
+fsm/takeoff_settle_time: 0.3      # start exploration after this many seconds in the reached+settled state.
+fsm/takeoff_timeout: 20.0         # timeout [s]: explore if near height; otherwise keep hover and warn.
