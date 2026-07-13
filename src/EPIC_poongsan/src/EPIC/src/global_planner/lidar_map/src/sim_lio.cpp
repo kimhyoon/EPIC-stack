@@ -108,14 +108,19 @@ void LIOInterface::updateCloudMapOdometry(
   last_lidar_pose = lidar_pos_;
   ld_->lidar_pose_ = lidar_pos_;
   ld_->lidar_vel_ = lidar_vel_;
+  // 센서 장착 회전: body -> sensor = RotZ(lidar_yaw) * RotY(lidar_pitch).
+  // odom 이 곧 라이다 프레임(FAST-LIO)이면 둘 다 0 이어야 한다.
   Eigen::AngleAxisf y_axis_angle(M_PI / 180.0 * lp_->lidar_pitch_,
                                  Eigen::Vector3f::UnitY());
+  Eigen::AngleAxisf z_axis_angle(M_PI / 180.0 * lp_->lidar_yaw_,
+                                 Eigen::Vector3f::UnitZ());
   Eigen::Quaternionf q_y(y_axis_angle);
+  Eigen::Quaternionf q_z(z_axis_angle);
   ld_->lidar_q_ = Eigen::Quaternionf(odom_->pose.pose.orientation.w,
                                      odom_->pose.pose.orientation.x,
                                      odom_->pose.pose.orientation.y,
                                      odom_->pose.pose.orientation.z) *
-                  q_y;
+                  q_z * q_y;
 
   pcl::PointCloud<pcl::PointXYZ> cloud_input;
   pcl::fromROSMsg(*msg, cloud_input);

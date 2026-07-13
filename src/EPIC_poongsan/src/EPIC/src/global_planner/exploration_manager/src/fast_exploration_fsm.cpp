@@ -661,6 +661,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // exploration debug HUD (rviz text marker) + machine-readable string (bag/log)
   diag_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/expl_diag", 10);
   diag_str_pub_ = nh.advertise<std_msgs::String>("/planning/expl_diag_str", 10);
+  // key=value 진단 (record_on_goal.py 가 파싱해 epic.log 세로 블록으로 기록)
+  diag_kv_pub_ = nh.advertise<std_msgs::String>("/planning/expl_diag_kv", 10);
   // Hover setpoint stream during TAKEOFF_HOVER. Absolute topic name = traj_server's
   // /position_cmd; the two never publish at the same time (traj_server is silent until
   // a trajectory exists, and we only publish here before exploration starts).
@@ -691,24 +693,6 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     ros::shutdown();
     exit(1);
   }
-  // ML-X FOV 에뮬레이션: cloud_crop/enable=true 면 crop 브릿지(cloud_crop_bridge)
-  // 출력을 대신 구독. real.yaml 의 enable 하나로 브릿지 기동/구독 토픽이 함께
-  // 전환된다 (시뮬 yaml 엔 키가 없음 -> false = 기존 동작).
-  bool cloud_crop_enable = false;
-  nh.param("cloud_crop/enable", cloud_crop_enable, false);
-  if (cloud_crop_enable) {
-    string cropped_topic;
-    if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
-        cropped_topic.empty()) {
-      ROS_FATAL("[FSM] cloud_crop/enable=true but cloud_crop/output_topic not "
-                "set in config yaml. REFUSING TO START - no fallback.");
-      ros::shutdown();
-      exit(1);
-    }
-    ROS_WARN("[FSM] cloud_crop ON: subscribing %s (raw: %s)",
-             cropped_topic.c_str(), cloud_topic.c_str());
-    cloud_topic = cropped_topic;
-  }
   cloud_sub_.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(
       nh, cloud_topic, 1));
   odom_sub_.reset(
@@ -738,11 +722,6 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     std::string odom_t, cloud_t;
     nh.param("odometry_topic", odom_t, std::string("?"));
     nh.param("cloud_topic", cloud_t, std::string("?"));
-    // 이벤트 로그엔 실제 구독 중인(=crop 반영된) 토픽을 남긴다
-    bool crop_on = false;
-    nh.param("cloud_crop/enable", crop_on, false);
-    if (crop_on)
-      nh.param("cloud_crop/output_topic", cloud_t, cloud_t);
 
     char l[288];
     param_lines_.clear();
@@ -800,8 +779,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              avoidance_enabled_ ? 1 : 0);
     param_lines_.push_back(l);
 
-    snprintf(l, sizeof(l), "topics | odom=%s cloud=%s%s", odom_t.c_str(),
-             cloud_t.c_str(), crop_on ? " (cropped)" : "");
+    snprintf(l, sizeof(l), "topics | odom=%s cloud=%s", odom_t.c_str(),
+             cloud_t.c_str());
     param_lines_.push_back(l);
   }
   logParamsEvents(false);
@@ -1053,6 +1032,50 @@ void FastExplorationFSM::publishExplDiag() {
   std_msgs::String smsg;
   smsg.data = txt;
   diag_str_pub_.publish(smsg);
+
+  // 3) 기계 파싱용 key=value 진단 -> /planning/expl_diag_kv
+  //    record_on_goal.py 가 파싱해 epic.log 세로 블록으로 기록한다.
+  //    포맷 계약: "key=value" 를 ';' 로 연결한 한 줄. 자유 텍스트(global/local
+  //    사유)는 ';' 를 ',' 로 치환해 구분자 충돌을 막는다.
+  {
+    auto sanitize = [](std::string s) {
+      for (auto &c : s)
+        if (c == ';' || c == '\n') c = ',';
+      return s;
+    };
+    const auto &ps = expl_manager_->frontier_manager_ptr_->vp_stats_;
+    std::ostringstream kv;
+    kv << std::fixed << std::setprecision(2)
+       << "t=" << ros::Time::now().toSec()
+       << ";state=" << fd_->state_str_[state_]
+       << ";mode=" << sanitize(px4_seen_ ? px4_state_.mode : std::string("?"))
+       << ";armed=" << ((px4_seen_ && px4_state_.armed) ? 1 : 0)
+       << ";plan_ms=" << std::setprecision(1) << last_plan_ms_
+       << std::setprecision(2)
+       << ";clusters=" << ed->diag_num_clusters_
+       << ";clusters_reach=" << ed->diag_num_clusters_reachable_
+       << ";vp=" << ed->diag_num_viewpoints_
+       << ";vp_reach=" << ed->diag_num_reachable_vp_
+       << ";pipe_total=" << ps.total
+       << ";pipe_dormant=" << ps.dormant
+       << ";pipe_unreachable_pre=" << ps.unreachable_pre
+       << ";pipe_considered=" << ps.considered
+       << ";pipe_no_candidates=" << ps.no_candidates
+       << ";pipe_topo_unreachable=" << ps.topo_unreachable
+       << ";pipe_no_visibility=" << ps.no_visibility
+       << ";pipe_ok=" << ps.ok
+       << ";frt_cells=" << expl_manager_->frontier_manager_ptr_->frontierCellCount()
+       << ";tsp_nodes=" << tour_nodes
+       << ";tour_len=" << std::setprecision(1) << tour_len
+       << std::setprecision(2)
+       << ";goal=" << goalp.x() << "," << goalp.y() << "," << goalp.z()
+       << ";goal_dist=" << goal_dist
+       << ";global=" << sanitize(ed->diag_result_)
+       << ";local=" << sanitize(local_reason_.empty() ? "OK" : local_reason_);
+    std_msgs::String kmsg;
+    kmsg.data = kv.str();
+    diag_kv_pub_.publish(kmsg);
+  }
 
   // 2) rviz HUD: 드론 위에 떠다니는 텍스트 마커 (frontier 마커와 같은 "odom" 프레임)
   visualization_msgs::Marker m;

@@ -1,3 +1,13 @@
+# Poongsan EPIC Stack
+
+## Upstream provenance
+
+This branch vendors EPIC_poongsan from kimhyoon/psc_stack.
+
+- Upstream repository: https://github.com/kimhyoon/psc_stack.git
+- Upstream commit: efbd804ecba6642fe3ca26aec44688ff1ae01021
+- Import policy: src/EPIC_poongsan keeps the onboard tree shape; simulation-only MARSIM/garage/RViz wiring must live outside EPIC_poongsan.
+
 # EPIC-stack Poongsan Garage Simulation
 
 This branch contains the Poongsan garage simulation setup based on

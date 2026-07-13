@@ -70,15 +70,6 @@ target_link_libraries(exploration_node
   epic_planner
 )
 
-# ML-X FOV 에뮬레이션 crop 브릿지 (real.yaml cloud_crop/* 로 제어)
-add_executable(cloud_crop_bridge
-  src/cloud_crop_bridge.cpp
-)
-add_dependencies(cloud_crop_bridge ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(cloud_crop_bridge
-  ${catkin_LIBRARIES}
-)
-
 add_library(epic_planner
   src/fast_exploration_manager.cpp
 )

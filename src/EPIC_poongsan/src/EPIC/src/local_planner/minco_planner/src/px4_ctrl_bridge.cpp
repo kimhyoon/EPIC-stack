@@ -135,8 +135,17 @@ int main(int argc, char** argv) {
   ros::init(argc, argv, "px4_ctrl_bridge");
   ros::NodeHandle nh("~");
 
-  std::string odom_topic = "/mavros/local_position/odom";
-  nh.param("odom_topic",   odom_topic, odom_topic);
+  // odom 토픽은 real.yaml 의 odometry_topic (exploration_node ns 로 로드) 이
+  // 유일한 소스다. 폴백 절대 금지 — 실비행에서 다른 토픽(다른 좌표계)을
+  // 조용히 구독하면 추락하므로, 파라미터가 없으면 시작 자체를 거부한다.
+  std::string odom_topic;
+  if (!ros::param::get("/exploration_node/odometry_topic", odom_topic) ||
+      odom_topic.empty()) {
+    ROS_FATAL("[px4_bridge] /exploration_node/odometry_topic not set "
+              "(real.yaml not loaded?). REFUSING TO START - no fallback.");
+    return 1;
+  }
+  ROS_INFO("[px4_bridge] odom topic: %s", odom_topic.c_str());
   nh.param("auto_arm",     auto_arm_,    auto_arm_);
   nh.param("cmd_timeout",  cmd_timeout_, cmd_timeout_);
   nh.param("use_accel_ff", use_accel_ff_, use_accel_ff_);

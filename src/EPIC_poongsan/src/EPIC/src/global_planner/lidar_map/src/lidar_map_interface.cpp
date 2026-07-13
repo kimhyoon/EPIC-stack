@@ -23,28 +23,10 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     ros::shutdown();
     exit(1);
   }
-  // ML-X FOV 에뮬레이션: cloud_crop/enable=true 면 crop 브릿지(cloud_crop_bridge)
-  // 출력을 대신 사용 — FSM 의 구독 전환과 동일 로직 (fast_exploration_fsm.cpp 참조).
-  {
-    bool cloud_crop_enable = false;
-    nh.param("cloud_crop/enable", cloud_crop_enable, false);
-    if (cloud_crop_enable) {
-      string cropped_topic;
-      if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
-          cropped_topic.empty()) {
-        ROS_FATAL("[LIOInterface] cloud_crop/enable=true but "
-                  "cloud_crop/output_topic not set in config yaml. "
-                  "REFUSING TO START - no fallback.");
-        ros::shutdown();
-        exit(1);
-      }
-      ROS_WARN("[LIOInterface] cloud_crop ON: using %s (raw: %s)",
-               cropped_topic.c_str(), cloud_topic.c_str());
-      cloud_topic = cropped_topic;
-    }
-  }
   nh.getParam("box_num", lp_->box_num_);
   nh.getParam("lidar_perception/lidar_pitch", lp_->lidar_pitch_);
+  // 구 config(yaw 키 없음)와의 호환을 위해 기본값 0 (= 기존 동작 그대로).
+  nh.param("lidar_perception/lidar_yaw", lp_->lidar_yaw_, 0.0);
   for (int i = 0; i < lp_->box_num_; i++) {
     std::vector<double> tmp;
     nh.getParam("box_" + to_string(i) + "/down", tmp);
@@ -111,6 +93,7 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   cout << "min boundary: " << lp_->global_map_min_boundary_ << endl;
   nh.param("lidar_perception/fov_up", lp_->fov_up, -0.1);
   nh.param("lidar_perception/fov_down", lp_->fov_down, -0.1);
+  nh.param("lidar_perception/fov_horizontal", lp_->fov_horizontal, 360.0);
   nh.param("lidar_perception/fov_viewpoint_up", lp_->fov_vp_up, -0.1);
   nh.param("lidar_perception/fov_viewpoint_down", lp_->fov_vp_down, -0.1);
   nh.getParam("lidar_perception/max_ray_length", lp_->max_ray_length_);

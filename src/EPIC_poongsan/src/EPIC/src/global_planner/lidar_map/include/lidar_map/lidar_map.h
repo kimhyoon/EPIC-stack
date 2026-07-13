@@ -104,10 +104,14 @@ struct LIOInterfaceParam {
   vector<Eigen::Vector3f> global_box_max_boundary_vec_;
   vector<Eigen::Vector3f> dead_area_min_boundary_vec_;
   vector<Eigen::Vector3f> dead_area_max_boundary_vec_;
+  // 센서 장착 회전 [deg] — odometry 프레임 대비. FAST-LIO 처럼 odom 이 곧
+  // 라이다 프레임이면 둘 다 0. odom 이 기체(body) 프레임일 때만 장착값 입력.
   double lidar_pitch_;
+  double lidar_yaw_;
 
   double max_ray_length_;
   double fov_up, fov_down;
+  double fov_horizontal; // 물리 수평 FOV [deg] (360=전방위)
   double fov_vp_up, fov_vp_down;
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW

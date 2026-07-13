@@ -38,10 +38,6 @@ struct FrontierParam {
   int cluster_minmum_point_num_;
   float cell_size_;
   float inv_cell_size_;
-  // [feature: cone-clip] limited-FOV LiDAR boundary model. is_360_lidar_ false
-  // => the data-driven yaw FOV-edge scan runs; yaw_fov_ stored in radians.
-  bool is_360_lidar_ = true;
-  float yaw_fov_ = 2.0f * M_PI;
   float occ_min_dis_;
   float good_observation_direction_score_;
   float good_observation_trust_length_;
@@ -66,6 +62,9 @@ struct ViewpointParam {
       sample_pillar_min_radius_, sample_pillar_max_radius_,
       view_direction_range_;
   float fov_up_, fov_down_, lidar_pitch_;
+  // 수평 FOV 절반각 [rad] (fov_viewpoint_horizontal/2, 미설정 시 180deg=전방위)
+  // + 센서 장착 yaw [deg] (lidar_pitch_ 와 같은 의미: odom 프레임 대비 장착 회전)
+  float fov_h_half_, lidar_yaw_;
   // 뷰포인트가 장애물(벽)에서 최소 떨어져야 하는 거리[m].
   // 이보다 가까운 후보 뷰포인트는 탈락 -> 폭이 2*이 값보다 좁은 복도는
   // 유효 뷰포인트가 없어 "도달 불가"로 낙인되어 탐사 제외됨.
@@ -302,14 +301,8 @@ public:
   // unordered_map<int, ClusterInfo::Ptr> new_clusters_;
   std::list<ClusterInfo::Ptr> cluster_list_;
   VpPipelineStats vp_stats_; // 마지막 generateTSPViewpoints 단계별 통계
-  // [feature: cone-clip] this frame's FOV-edge frontier cells (rebuilt every
-  // updateFrontierClusters); consumed by the local planner to clip its SFC
-  // corridor to the observed FOV cone.
-  PointVector fov_edge_cells_;
-  // Observation/occupancy state at a world point and the frontier grid size;
-  // used by the local planner's cone clipping.
-  CELL_STATE getCellState(const Eigen::Vector3f &p);
-  float getCellSize() const { return frtp_.cell_size_; }
+  // 현재 프론티어 셀 개수 (epic.log 진단용 — frt_map_ 은 private 라 getter 제공)
+  size_t frontierCellCount() const { return frtd_.frt_map_.size(); }
   void printMemoryCost();
 
   void viz_pocc();

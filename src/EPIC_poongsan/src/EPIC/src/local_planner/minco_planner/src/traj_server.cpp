@@ -536,8 +536,17 @@ int main(int argc, char **argv) {
   ros::NodeHandle nh("~");
   // ros::Subscriber emergency_sub =
   //     nh.subscribe("/planning/emergency_stop", 10, emergencyStopCb);
+  // odom 토픽은 config yaml 의 odometry_topic (exploration_node ns) 이 유일한
+  // 소스다. 폴백 절대 금지 — 잘못된 토픽 구독은 실비행 추락으로 이어지므로
+  // 파라미터가 없으면 시작을 거부한다.
   std::string odom_topic;
-  nh.getParam("odometry_topic", odom_topic);
+  if (!ros::param::get("/exploration_node/odometry_topic", odom_topic) ||
+      odom_topic.empty()) {
+    ROS_FATAL("[Traj server] /exploration_node/odometry_topic not set "
+              "(config yaml not loaded?). REFUSING TO START - no fallback.");
+    return 1;
+  }
+  ROS_INFO("[Traj server]: odom topic: %s", odom_topic.c_str());
 
   ros::Subscriber poly_traj_sub = nh.subscribe("/planning/trajectory", 10, polyTrajCallback);
   ros::Subscriber poly_yaw_traj_sub =

@@ -1,0 +1,173 @@
+# ROS param snapshot for epic_2026-07-03-15-04-35.bag
+# dumped at 2026-07-03-15-04-35
+exploration_node:
+  ChiVec:
+  - 110000.0
+  - 15000.0
+  - 11000.0
+  - 110000.0
+  - 1100000.0
+  DilateRadiusHard: 0.45
+  DilateRadiusSoft: 0.6
+  FrontierManager:
+    cell_size: 0.4
+    cluster_direction_radius: -1.0
+    cluster_max_size: 5.0
+    cluster_min_radius: 1.8
+    cluster_min_size: 1.0
+    cluster_minmum_point_num: 5
+    good_observation_direction_score: 0.6
+    good_observation_force_trust_length: 4.5
+    good_observation_trust_length: 12.0
+    noise_cell_range: 1
+    update_length: 15.0
+    view_cluster: true
+    view_frt: true
+  GravAcc: 9.8
+  HorizDrag: 0.0
+  IntegralIntervs: 32
+  MaxCorridorSize: 4.0
+  MaxThrust: 22.0
+  MaxTiltAngle: 0.8
+  MaxVelMag: 1.0
+  MinThrust: 15.0
+  ParasDrag: 0.0
+  RelCostTol: 1.1e-06
+  SmoothingEps: 0.015
+  SpeedEps: 0.0001
+  VehicleMass: 1.9
+  VertDrag: 0.0
+  ViewpointManager:
+    local_tsp_size: 12
+    min_obstacle_clearance: 0.5
+    sample_pillar_circle_sample_num: 4
+    sample_pillar_height_layer_num: 5
+    sample_pillar_max_height: 1.0
+    sample_pillar_max_radius: 2.0
+    sample_pillar_min_height: -1.0
+    sample_pillar_min_radius: 0.5
+    sample_pillar_radius_layer_num: 8
+  WeightSafeT: 200.0
+  WeightT: 700.0
+  box_0:
+    down:
+    - -150.0
+    - -150.0
+    - 0.5
+    up:
+    - 150
+    - 150
+    - 2.5
+  box_num: 1
+  bubble_astar:
+    allocate_num: 1000000
+    debug: false
+    lambda_heu: 100.0
+    resolution_astar: 0.2
+    safe_distance: 0.6
+  bubble_topo:
+    bubble_min_radius: 0.61
+    cube_discrete_size: 0.3
+    init_region_size_x: 3.3
+    init_region_size_y: 3.3
+    init_region_size_z: 2.0
+    min_x: 1.11
+    min_y: 1.11
+    min_z: 0.51
+    odom_node_distance: 3.0
+  cloud_topic: /ml_/pointcloud
+  dead_area_num: 0
+  exploration:
+    tsp_dir: /home/hmcl/stack_psc/src/EPIC_poongsan/src/EPIC/src/global_planner/utils/lkh_tsp_solver/resource
+  frontier:
+    candidate_dphi: 0.26
+    candidate_znum: 3
+  fsm:
+    auto_rth_land: true
+    debug_planner: false
+    emergency_replan_control_error: 3.0
+    finish_hover_duration: 1.0
+    goal_tolerance: 0.1
+    local_planning_max_hz: 30.0
+    max_segment_length: 99.0
+    replan_time: 0.2
+    rth_land_xy_tol: 0.2
+    takeoff_height: 1.25
+    takeoff_reach_tol: 0.15
+    takeoff_settle_time: 0.3
+    takeoff_settle_vel: 0.4
+    takeoff_timeout: 20.0
+    thresh_replan: 0.5
+  global_planning:
+    w_firstnode: 0.2
+    w_vdir: 0.0
+    w_yawdir: 0.0
+  lidar_perception:
+    fov_down: -7
+    fov_horizontal: 120.0
+    fov_up: 52.0
+    fov_viewpoint_down: -5
+    fov_viewpoint_horizontal: 100.0
+    fov_viewpoint_up: 48.0
+    lidar_pitch: 0.0
+    lidar_yaw: 0.0
+    max_ray_length: 10
+  local_avoidance:
+    enable: false
+  maxBdrMag: 10000.0
+  max_traj_len: 10.0
+  max_update_region_num: 99999999
+  odometry_topic: /mavros/odometry/in
+  parallel_astar:
+    insert_node_timeout: 0.002
+    update_connection_timeout: 0.002
+  record:
+    args: -a
+    bag: false
+    dir: ''
+    enable: true
+    events: true
+    log: true
+    params: true
+  rviz:
+    config: ''
+    enable: false
+  view_graph: true
+  yaw_max_vel: 1.0
+  yaw_rho_vis: 10000.0
+  yaw_time_fwd: 2.5
+px4_ctrl_bridge:
+  auto_arm: false
+  avoid_cmd_timeout: 0.3
+  cmd_timeout: 0.5
+  enable_avoidance: false
+  flag_timeout: 0.5
+  replan_on_release: true
+  use_accel_ff: false
+  use_yawrate: true
+quad0_odom_visualization:
+  color:
+    a: 1.0
+    b: 1.0
+    g: 1.0
+    r: 0.0
+  covariance_scale: 100.0
+  drone_id: 0
+  mesh_resource: package://odom_visualization/meshes/yunque.dae
+  quadrotor_name: quad0
+  robot_scale: 1.0
+record_on_goal:
+  name_prefix: epic
+  once: true
+rosdistro: 'noetic
+
+  '
+roslaunch:
+  uris:
+    host_127_0_0_1__43455: http://127.0.0.1:43455/
+rosversion: '1.17.4
+
+  '
+run_id: 04026c10-76a5-11f1-9bae-e8bfe14deb71
+waypoint_generator:
+  waypoint_type: point

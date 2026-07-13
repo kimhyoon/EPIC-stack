@@ -74,7 +74,8 @@ private:
   ros::Publisher stop_pub_, new_pub_, replan_pub_, poly_traj_pub_, heartbeat_pub_, time_cost_pub_, poly_yaw_traj_pub_, static_pub_, state_pub_,
   land_pub_, rth_metrics_pub_, hover_cmd_pub_;
   // exploration debug HUD: text marker (rviz) + string (logging/bag)
-  ros::Publisher diag_pub_, diag_str_pub_;
+  // + 기계 파싱용 key=value 진단 (record_on_goal 이 epic.log 로 기록)
+  ros::Publisher diag_pub_, diag_str_pub_, diag_kv_pub_;
   double last_plan_ms_ = 0.0;  // 마지막 global plan 총 소요시간 [ms] (HUD 표시용)
   void publishExplDiag();  // 클러스터/뷰포인트 수 + 실패 사유를 rviz/로그로 발행
 

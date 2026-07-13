@@ -16,48 +16,33 @@
        OFFBOARD 진입/arm 은 기본적으로 사람이 RC/QGC로 (auto_arm:=false).
        =================================================================== -->
 
+  <!-- ★ 토픽은 real.yaml 의 odometry_topic / cloud_topic 두 개가 유일한 소스다
+       (폴백/오버라이드/remap 없음). 소비 노드: exploration_node, traj_server,
+       px4_ctrl_bridge, waypoint_generator, odom_visualization, local_avoidance
+       (회피 노드는 cloud 를 body 프레임으로 내부 역변환; livox 직결 빌드일 때만
+       local_avoidance/lidar_topic 별도 필요). 각 노드가 파라미터를 직접 읽고,
+       없으면 시작을 거부한다(FATAL). 라이다/odom 을 바꿀 땐 real.yaml 만 수정. -->
+  <!-- rviz / record 의 on/off·세부 설정도 launch 인자가 아니라 real.yaml 의
+       rviz/* , record/* 스위치다 — 노드는 항상 뜨고 yaml 값으로 스스로 판단. -->
   <arg name="config_file" default="real.yaml"/>
-  <arg name="odom_topic"  default="/Odometry"/>          <!-- FAST-LIO odom -->
   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
-  <arg name="rviz"        default="true"/>
   <!-- 회피 on/off 마스터 스위치는 real.yaml 의 local_avoidance/enable 이다 (true/false).
        이 launch 인자는 "노드를 아예 띄울지"만 결정하는 하드 스위치 (기본 true 유지 권장:
        real.yaml 값만 바꾸면 됨. 노드가 떠 있어도 yaml=false 면 완전 비활성). -->
-  <arg name="enable_avoidance" default="true"/>
-  <arg name="record"      default="true"/>  <!-- 기록 전체 마스터 스위치 (노드 자체 on/off) -->
-  <!-- 저장 폴더: 빈 값(기본) = epic_planner 패키지 경로를 동적 감지해 <pkg>/records 사용 -->
-  <arg name="record_dir"  default=""/>
-  <arg name="record_args" default="-a"/>    <!-- rosbag record 인자 (예: 토픽만 추리려면 변경) -->
-  <!-- 산출물별 개별 on/off -->
-  <arg name="record_bag"    default="true"/>  <!-- .bag (rosbag record) -->
-  <arg name="record_log"    default="true"/>  <!-- .log (/rosout 콘솔 로그) -->
-  <arg name="record_params" default="true"/>  <!-- .params.yaml (rosparam dump 메타데이터) -->
-  <arg name="record_events" default="true"/>  <!-- .events.log (구조화 이벤트) -->
-  <!-- 회피 노드용 odom: PX4 EKF local 프레임이어야 함(=setpoint_raw/local 프레임). EPIC의 /Odometry 와 다름. -->
-  <arg name="avoid_odom_topic" default="/mavros/local_position/odom"/>
+  <arg name="enable_avoidance" default="false"/>
 
   <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real.yaml 로) -->
   <include file="$(find epic_planner)/launch/algorithm.xml">
     <arg name="config_file" value="$(arg config_file)"/>
   </include>
 
-  <!-- 1.5) ML-X FOV 에뮬레이션 crop 브릿지 — on/off 는 real.yaml 의 cloud_crop/enable
-       하나로 제어 (launch 수정 불필요). enable=true 면 cloud_topic 을 crop 해
-       cloud_crop/output_topic 으로 재발행하고 exploration_node 가 그걸 구독,
-       false 면 이 노드는 곧바로 자진 종료(clean exit)하고 EPIC 은 raw 를 구독. -->
-  <node pkg="epic_planner" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
-    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
-  </node>
-
   <!-- 2) traj_server : 시뮬과 달리 /position_cmd remap 하지 않음
-       (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다) -->
-  <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen">
-    <param name="odometry_topic" value="$(arg odom_topic)"/>
-  </node>
+       (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다)
+       odom 은 real.yaml 의 odometry_topic 을 자동으로 따름 (param 안 넘김). -->
+  <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen"/>
 
-  <!-- 3) PX4 OFFBOARD 브리지 -->
+  <!-- 3) PX4 OFFBOARD 브리지 — odom 은 real.yaml 의 odometry_topic 만 읽음 (폴백 없음). -->
   <node pkg="plan_manage" name="px4_ctrl_bridge" type="px4_ctrl_bridge" output="screen">
-    <param name="odom_topic"   value="$(arg odom_topic)"/>
     <param name="auto_arm"     value="$(arg auto_arm)"/>
     <param name="cmd_timeout"  value="0.5"/>
     <param name="use_accel_ff" value="false"/>
@@ -70,16 +55,14 @@
   </node>
 
   <!-- 3.5) 반사 국소회피 노드 (LiDAR 포텐셜필드). /target_avoidance + /FSM_flag_avoidance 발행.
-       enable_avoidance:=false 면 노드 자체를 띄우지 않음(브리지 MUX도 EPIC만 통과). -->
-  <include file="$(find local_avoidance)/launch/local_avoidance.launch" if="$(arg enable_avoidance)">
-    <arg name="lidar_topic" value="/livox/lidar"/>
-    <arg name="odom_topic"  value="$(arg avoid_odom_topic)"/>
-  </include>
+       enable_avoidance:=false 면 노드 자체를 띄우지 않음(브리지 MUX도 EPIC만 통과).
+       입력은 real.yaml 의 odometry_topic + cloud_topic (EPIC 과 동일). -->
+  <include file="$(find local_avoidance)/launch/local_avoidance.launch" if="$(arg enable_avoidance)"/>
 
-  <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal) -->
+  <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal)
+       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
         output="screen">
-    <remap from="~odom" to="$(arg odom_topic)"/>
     <remap from="~goal" to="/move_base_simple/goal"/>
     <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
     <param name="waypoint_type" value="point"/>
@@ -87,29 +70,20 @@
 
   <!-- 4.2) 녹화: EPIC FSM 기동(/planning/state 첫 발행 = INIT)을 감지하면 즉시
        rosbag record 시작, FSM 이 LANDED(착지+disarm) 가 되면 정상 마감.
-       bag + rosparam 덤프(.params.yaml) + .log + .events.log 저장.
-       record:=false 로 끌 수 있음. -->
+       on/off·산출물 선택(bag/log/params/events)·저장폴더는 전부 real.yaml 의
+       record/* 스위치 — record/enable=false 면 이 노드는 뜨자마자 스스로 종료. -->
   <node pkg="epic_planner" name="record_on_goal" type="record_on_goal.py"
-        output="screen" if="$(arg record)">
-    <param name="record_dir"  value="$(arg record_dir)"/>
-    <param name="record_args" value="$(arg record_args)"/>
+        output="screen">
     <param name="name_prefix" value="epic"/>
     <param name="once"        value="true"/>
-    <param name="save_bag"    value="$(arg record_bag)"/>
-    <param name="save_log"    value="$(arg record_log)"/>
-    <param name="save_params" value="$(arg record_params)"/>
-    <param name="save_events" value="$(arg record_events)"/>
   </node>
 
   <!-- 4.5) 드론 mesh 시각화 (시뮬의 quad0_odom_visualization 과 동일).
        /quad0_odom_visualization/robot 으로 yunque.dae 메시를 publish -> rviz 가 그대로 구독.
-       순수 시각화 노드라 비행 제어에는 영향 없음. -->
+       순수 시각화 노드라 비행 제어에는 영향 없음.
+       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
   <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization"
         output="screen">
-    <remap from="~odom" to="$(arg odom_topic)"/>
-    <!-- real.yaml 공유 로드: lidar_perception/lidar_pitch 를 메시 장착각 보상에 사용
-         (라이다를 기울여 달면 /Odometry 자세=센서 자세라 메시가 숙여 보이는 것 방지) -->
-    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
     <param name="color/a" value="1.0"/>
     <param name="color/r" value="0.0"/>
     <param name="color/g" value="1.0"/>
@@ -121,13 +95,13 @@
     <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae"/>
   </node>
 
-  <!-- 5) rviz (선택) — real.rviz 는 이제 시뮬 traj.rviz 복사본(색/크기/형태 동일).
-       Fixed Frame=world. 실기 적응: buffered_cloud 토픽 /cloud_registered, 드론 mesh 는
-       위 quad0_odom_visualization 노드가 publish. occ/frt 복셀이 world 프레임에서 보이려면
-       camera_init->world static TF (4_tf_odom_relay.sh) 가 떠 있어야 한다. -->
-  <group if="$(arg rviz)">
-    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log"
-          args="-d $(find epic_planner)/config/real.rviz" />
-  </group>
+  <!-- 5) rviz — on/off 는 real.yaml 의 rviz/enable (rviz/enable=false 면 래퍼가
+       뜨자마자 스스로 종료). 설정 파일은 rviz/config (빈 값 = real.rviz 자동).
+       real.rviz 는 시뮬 traj.rviz 복사본(색/크기/형태 동일), Fixed Frame=world.
+       실기 적응: buffered_cloud 토픽 /cloud_registered, 드론 mesh 는 위
+       quad0_odom_visualization 노드가 publish. occ/frt 복셀이 world 프레임에서
+       보이려면 camera_init->world static TF (4_tf_odom_relay.sh) 가 떠 있어야 한다. -->
+  <node pkg="epic_planner" name="rviz_on_param" type="rviz_on_param.py"
+        output="screen"/>
 
 </launch>
