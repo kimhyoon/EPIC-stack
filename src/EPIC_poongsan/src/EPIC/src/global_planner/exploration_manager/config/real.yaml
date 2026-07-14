@@ -55,8 +55,8 @@ max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 
-lidar_perception/fov_up: 52.0
-lidar_perception/fov_down: -7
+lidar_perception/fov_up: 15.0
+lidar_perception/fov_down: -15.0
 # 수평 FOV [deg]. 360=전방위(Mid360), 제한 FOV 라이다(예: 전방 120도)는 실값 입력.
 #  fov_horizontal          : 물리값 (기록/시뮬용)
 #  fov_viewpoint_horizontal: 계획용 보수값 — 뷰포인트 yaw 선택 시 이 각 안의
@@ -73,8 +73,10 @@ lidar_perception/cloud_frame_mode: world
 lidar_perception/sensor_mount_pitch_deg: 0.0
 lidar_perception/sensor_mount_yaw_deg: 0.0
 lidar_perception/sensor_mount_offset: [0.0, 0.0, 0.0]
-lidar_perception/fov_viewpoint_up: 48.0
-lidar_perception/fov_viewpoint_down: -5
+lidar_perception/fov_viewpoint_up: 15.0
+lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/yaw_fov: 120.0
+lidar_perception/is_360lidar: false
 lidar_perception/max_ray_length: 10  #13
 # ====================================================================
 parallel_astar/update_connection_timeout: 0.002
@@ -111,6 +113,9 @@ dead_area_num: 0
 # ====================================================================
 # trajectory param
 max_traj_len: 10.0
+# Local SFC corridor clipping to the observed forward-FOV region.
+local_planning/clip_corridor_to_observed: true
+local_planning/clip_cone_faces: true
 DilateRadiusSoft: 0.6 # corrido
 DilateRadiusHard: 0.45 # collision check threshold
 MaxCorridorSize: 4.0
