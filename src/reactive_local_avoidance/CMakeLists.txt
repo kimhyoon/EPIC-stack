@@ -11,7 +11,7 @@ add_compile_options(-std=c++14)
 #  전환 방법:
 #    catkin build local_avoidance --cmake-args -DUSE_LIVOX_LIDAR=OFF
 #    (영구 설정: catkin config --cmake-args -DUSE_LIVOX_LIDAR=OFF)
-option(USE_LIVOX_LIDAR "Use livox_ros_driver2 CustomMsg as lidar input (OFF = sensor_msgs/PointCloud2)" ON)
+option(USE_LIVOX_LIDAR "Use livox_ros_driver2 CustomMsg as lidar input (OFF = sensor_msgs/PointCloud2)" OFF)
 
 set(LIDAR_DEP "")
 if(USE_LIVOX_LIDAR)
