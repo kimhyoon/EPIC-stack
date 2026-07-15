@@ -1,0 +1,156 @@
+#topic param:
+# 실비행용. FAST-LIO 출력에 맞춰 시뮬 토픽에서 변경.
+odometry_topic: /Odometry          # FAST-LIO odom  (시뮬: /quad_0/lidar_slam/odom)
+cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
+
+# ── ML-X FOV 에뮬레이션: 센서 crop 브릿지 (cloud_crop_bridge) ──────────────
+# Mid-360(수평 360°) 데이터를 ML-X(전방 120°x35°)처럼 잘라 EPIC 에 공급하는 스위치.
+# FAST-LIO 는 raw 센서를 그대로 쓰므로 localization 영향 없음 — EPIC 입력만 잘린다.
+# true  = 브릿지가 위 cloud_topic 을 스캔 시점 기체 자세 기준 FOV/거리로 crop 해
+#         cloud_crop/output_topic 으로 재발행하고, exploration_node 도 같은 키를
+#         읽어 자동으로 crop 토픽을 구독 (cloud_topic 은 raw 소스로 그대로 둔다).
+# false = 브릿지 자진 종료, EPIC 은 cloud_topic 을 그대로 구독 (기존 동작).
+cloud_crop/enable: true
+cloud_crop/output_topic: /cloud_registered_cropped
+# ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
+cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
+cloud_crop/fov_up: 37.5           # 수직 상한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+cloud_crop/fov_down: 0        # 수직 하한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+cloud_crop/min_range: 0.0         # [m]
+cloud_crop/max_range: 30.0        # [m], <= (0 = 무제한)
+cloud_crop/yaw_offset_deg: 0.0    # 센서 정면이 기체 +x 에서 벗어난 장착각 [deg, CCW]
+# ⚠ crop 켤 때 아래 lidar_perception/fov_up(52)/fov_down(-7)은 Mid-360 물리값이라
+#   crop 데이터(±17.5°)보다 넓다 — EPIC 이 FOV 밖을 '관측됨'으로 오인하지 않게
+#   17.5/-17.5 로(viewpoint 는 그보다 보수적으로) 함께 줄이는 것 권장.
+global_planning/w_vdir: 0.0
+global_planning/w_yawdir: 0.0
+global_planning/w_firstnode: 0.2
+# Visualization debugging has high overhead and is not recommended to be enabled.
+view_graph: true
+FrontierManager/view_cluster: true
+FrontierManager/view_frt: true
+# graph
+bubble_topo/min_x: 1.11
+bubble_topo/min_y: 1.11
+bubble_topo/min_z: 0.51
+bubble_topo/bubble_min_radius: 0.5  #0.61
+bubble_topo/init_region_size_x: 3.3
+bubble_topo/init_region_size_y: 3.3
+bubble_topo/init_region_size_z: 2.0
+bubble_topo/cube_discrete_size: 0.4
+bubble_topo/odom_node_distance: 3.0
+bubble_astar/safe_distance: 0.65 ####
+# map param
+max_update_region_num: 99999999
+frontier/candidate_dphi: 0.26
+frontier/candidate_znum: 3
+
+# Aligned with the ML-X planner FOV block in:
+# https://github.com/sanghun17/EPIC_poongsan/blob/29f3a8eabae77c85c80df18c066a84c7cfb3249b/src/EPIC/src/global_planner/exploration_manager/config/poongsan_garage_120fov.yaml#L34-L40
+lidar_perception/fov_up: 15.0
+lidar_perception/fov_down: -15.0
+lidar_perception/lidar_pitch: 0.0
+lidar_perception/fov_viewpoint_up: 15.0
+lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/max_ray_length: 10  #13
+
+# PR #1 observes this MID360 profile as a forward, non-360 LiDAR.
+lidar_perception/yaw_fov: 120.0
+lidar_perception/is_360lidar: false
+
+# Restrict FIRI corridor growth to active observed-FOV cone faces.
+local_planning/clip_corridor_to_observed: true
+local_planning/clip_cone_faces: true
+# ====================================================================
+parallel_astar/update_connection_timeout: 0.004
+parallel_astar/insert_node_timeout: 0.004
+FrontierManager/cell_size: 0.2
+FrontierManager/noise_cell_range: 1
+FrontierManager/good_observation_direction_score: 0.8
+FrontierManager/good_observation_force_trust_length: 4.5
+FrontierManager/good_observation_trust_length: 12.0
+FrontierManager/update_length: 25.0  #15
+FrontierManager/cluster_max_size: 7.0  #15
+FrontierManager/cluster_min_size: 0.5
+FrontierManager/cluster_min_radius: 1.8 # DBSCAN 判断邻居的阈值
+FrontierManager/cluster_direction_radius: -1.0 # cos(theta) > cluster_direction_radius [-1, 1]
+FrontierManager/cluster_minmum_point_num: 4
+# 柱形采样
+ViewpointManager/sample_pillar_min_height: -1.0
+ViewpointManager/sample_pillar_max_height: 1.0
+ViewpointManager/sample_pillar_height_layer_num: 5
+ViewpointManager/sample_pillar_min_radius: 0.5
+ViewpointManager/sample_pillar_max_radius: 2.0
+ViewpointManager/sample_pillar_radius_layer_num: 8
+ViewpointManager/sample_pillar_circle_sample_num: 8
+# 뷰포인트가 벽에서 최소 떨어질 거리[m] (구 하드코딩 0.9, frontier_manager.cpp:1191).
+# 폭 < 2*이값 복도는 유효 뷰포인트 없어 "도달불가"로 스킵됨.
+# 낮추면(예 0.5) 좁은 복도까지 탐사(벽 근접 주의), 높이면 보수적. safe_distance(0.7)와 함께 조절.
+ViewpointManager/min_obstacle_clearance: 0.65
+ViewpointManager/local_tsp_size: 10  #10
+# area
+box_num: 1
+box_0/down: [-150.0, -150.0, 0.4]    # 실공간 12x12x3m (camera_init=이륙지점 원점). 시뮬 cave: [-48,-206,-7]
+box_0/up:   [150, 150, 2.0]       #  182x150 은 cave 좌표 — 실비행 금지
+dead_area_num: 0
+# ====================================================================
+# trajectory param
+max_traj_len: 10.0
+DilateRadiusSoft: 0.6 # corrido
+DilateRadiusHard: 0.5 # collision check threshold
+MaxCorridorSize: 4.0
+MaxVelMag: 0.9 #4.0
+maxBdrMag: 10000.0
+MaxTiltAngle: 0.8 #1.0
+MinThrust: 15.0
+MaxThrust: 22.0
+VehicleMass: 1.9
+GravAcc: 9.8
+HorizDrag: 0.0
+VertDrag: 0.0
+ParasDrag: 0.0
+SpeedEps: 0.0001
+WeightT: 700.0
+WeightSafeT: 200.0
+ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
+#원본: 2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5
+#
+SmoothingEps: 0.015
+IntegralIntervs: 32
+RelCostTol: 1.0e-6
+#param for yaw opt
+yaw_max_vel: 1.0 # 角速度限制, 要大
+yaw_rho_vis: 10000.0
+yaw_time_fwd: 2.5
+# Reactive local avoidance 마스터 스위치 (단일 소스: 이 값 하나로 on/off).
+# true  = 회피 노드가 /FSM_flag_avoidance, /target_avoidance 발행 + 브리지 MUX 동작
+# false = 회피 노드 비활성(flag=0만 발행), 브리지 MUX 차단, FSM도 플래그 무시
+local_avoidance/enable: true
+
+# FSM param (poongsan 전용 — RTH/로컬플래닝 동작에 필요)
+fsm/goal_tolerance: 0.2
+fsm/max_segment_length: 99.0
+fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz)
+
+# Emergency control-error replan: 추종 중인 궤적에서 드론이 이 거리[m] 이상 벗어나면
+# (바람·제어기 포화·FAST-LIO 포즈 점프 등) 현재 위치 기준으로 강제 replan. <= 0 이면 비활성.
+# NOTE: HITL(MARSIM+실 PX4)에서 1.5m는 PX4 추종 지연만으로도 자주 걸려 static replan(속도0 재출발)
+#       -> 가다 서다를 유발. 3.0으로 완화해 "진짜 큰 이탈"에만 발동하도록 함.
+#       완전히 끄려면 -1.0 으로. (원래 값: 1.5)
+fsm/emergency_replan_control_error: 3.0
+
+# Takeoff & hover-before-explore: 트리거 인식 -> 설정 고도로 상승/호버 ->
+# odom상 고도가 목표 근처에 오면(정밀 안정화 불필요) -> 자동 탐색 시작.
+# fsm/takeoff_height <= 0 이면 비활성 (트리거 즉시 탐색 시작 = 기존 동작).
+fsm/takeoff_height: 1.2         # 목표 호버 고도 [m] (odom-frame z; 원점=이륙지점)
+fsm/takeoff_reach_tol: 0.15      # |z-target| < 이 값이면 도달 -> 수용 밴드 1.30~1.60 m
+fsm/takeoff_settle_vel: 0.4      # odom 속도 < 이 값이면 OK (정밀 정지 불요, 급상승만 차단)
+fsm/takeoff_settle_time: 0.5     # 도달 상태를 이 시간만 유지하면 탐색 시작 [s]
+fsm/takeoff_timeout: 20.0        # 타임아웃: 고도 근처면 탐색, 아니면 호버 유지(ERROR)
+
+# ── 탐사 완료 후 자동 원점복귀 + 착륙 (real flight) ──────────────────
+# 탐사 끝나면: 마지막 cmd 좌표에서 잠깐 호버(OFFBOARD 유지) → 이륙지점으로 RTH
+#  → 홈과의 xy 거리가 rth_land_xy_tol 안에 들면 PX4 AUTO.LAND(쓰로틀 다운/자동 disarm).
+fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 후 그 자리 hold)
+fsm/finish_hover_duration: 1.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
+fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]

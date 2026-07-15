@@ -1,0 +1,15 @@
+analysis_workspace=/workspace/EPIC-stack-onboard-pr1
+git_head=9a5193789ed2623ef9b1c2c8a169759466912988
+git_status=
+?? debug/
+
+source_files_sha256=
+9f6f9cd779b7d807c06cac98d6e252135f48947363f8932d9c82d13d23e2ac90  /workspace/EPIC-stack-onboard-pr1/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/mid360.yaml
+0b4aa4015e0d0853f39c17142e67f1ad34fe2be5a4ec8435e7b6a722d414ef09  /workspace/EPIC-stack-onboard-pr1/src/ml_x_cropping/src/cloud_crop_bridge.cpp
+38a83f9510e94ec1d2ce213fee92fb54352c81dcb55303fda30b6989a882741a  /workspace/EPIC-stack-onboard-pr1/src/EPIC_poongsan/src/EPIC/src/local_planner/minco_planner/src/planner_manager.cpp
+16fe18e693446a2b750f26259a287b9c625908c6bee87286143b50dbae30585c  /workspace/EPIC-stack-onboard-pr1/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
+
+relevant_code_locations=
+cloud_crop_bridge.cpp: world-to-body conversion and azimuth/elevation crop
+planner_manager.cpp: PR #1 FOV cone faces use lidar_pitch + fov_down/up
+frontier_manager.cpp: viewpoint FOV uses mount pitch plus fov_viewpoint_down/up
