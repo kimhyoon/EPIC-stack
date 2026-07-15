@@ -366,16 +366,18 @@ Clone only the packages needed for onboard EPIC plus MID360/LiDAR support and
 the optional crop bridge:
 
 ```bash
-git clone --filter=blob:none --sparse --branch donghyuck \
+git clone --filter=blob:none --branch=donghyuck --no-checkout \
   https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-mid360-mlx
 
 cd EPIC-stack-mid360-mlx
+git sparse-checkout init --cone
 git sparse-checkout set \
   src/EPIC_poongsan \
   src/FAST_LIO \
   src/livox_ros_driver2 \
   src/reactive_local_avoidance \
   src/ml_x_cropping
+
 ```
 
 Build with the crop bridge enabled:
