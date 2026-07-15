@@ -45,11 +45,13 @@ max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 
-lidar_perception/fov_up: 37.5  #라이다 수평일 때: 52.0 / 기울일 때는 보정하기
-lidar_perception/fov_down: 5  #라이다 수평일 때: -7 / 기울일 때는 보정하기
-lidar_perception/lidar_pitch: 25.0   #25도
-lidar_perception/fov_viewpoint_up: 48.0
-lidar_perception/fov_viewpoint_down: -5
+# Aligned with the ML-X planner FOV block in:
+# https://github.com/sanghun17/EPIC_poongsan/blob/29f3a8eabae77c85c80df18c066a84c7cfb3249b/src/EPIC/src/global_planner/exploration_manager/config/poongsan_garage_120fov.yaml#L34-L40
+lidar_perception/fov_up: 15.0
+lidar_perception/fov_down: -15.0
+lidar_perception/lidar_pitch: 0.0
+lidar_perception/fov_viewpoint_up: 15.0
+lidar_perception/fov_viewpoint_down: -15.0
 lidar_perception/max_ray_length: 10  #13
 
 # PR #1 observes this MID360 profile as a forward, non-360 LiDAR.
