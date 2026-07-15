@@ -693,6 +693,24 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     ros::shutdown();
     exit(1);
   }
+
+  // Keep FSM frontier updates on the same cropped stream used by the LIO
+  // interface whenever MID360-to-ML-X emulation is enabled.
+  bool cloud_crop_enable = false;
+  nh.param("cloud_crop/enable", cloud_crop_enable, false);
+  if (cloud_crop_enable) {
+    string cropped_topic;
+    if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
+        cropped_topic.empty()) {
+      ROS_FATAL("[FSM] cloud_crop/enable=true but "
+                "cloud_crop/output_topic is not configured.");
+      ros::shutdown();
+      exit(1);
+    }
+    ROS_WARN("[FSM] cloud crop enabled: subscribing %s (raw: %s)",
+             cropped_topic.c_str(), cloud_topic.c_str());
+    cloud_topic = cropped_topic;
+  }
   cloud_sub_.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(
       nh, cloud_topic, 1));
   odom_sub_.reset(

@@ -1,0 +1,136 @@
+# MID360 real-flight profile with ML-X FOV emulation.
+# This preserves the legacy FAST-LIO input topics and crop geometry, then adds
+# the PR #1 observed-FOV corridor clipping parameters.
+odometry_topic: /Odometry
+cloud_topic: /cloud_registered
+
+# The real-flight launcher reads these settings directly from the active profile.
+record/enable: true
+record/bag: true
+record/log: true
+record/epic: true
+record/epic_period: 1.0
+record/params: true
+record/events: true
+record/dir: ""
+record/args: "-a"
+rviz/enable: false
+rviz/config: ""
+
+# Crop the registered MID360 cloud in the odometry/body frame before EPIC uses it.
+cloud_crop/enable: true
+cloud_crop/output_topic: /cloud_registered_cropped
+cloud_crop/fov_horizontal: 120.0
+cloud_crop/fov_up: 37.5
+cloud_crop/fov_down: 0.0
+cloud_crop/min_range: 0.0
+cloud_crop/max_range: 30.0
+cloud_crop/yaw_offset_deg: 0.0
+global_planning/w_vdir: 0.0
+global_planning/w_yawdir: 0.0
+global_planning/w_firstnode: 0.2
+view_graph: true
+FrontierManager/view_cluster: true
+FrontierManager/view_frt: true
+bubble_topo/min_x: 1.11
+bubble_topo/min_y: 1.11
+bubble_topo/min_z: 0.51
+bubble_topo/bubble_min_radius: 0.5
+bubble_topo/init_region_size_x: 3.3
+bubble_topo/init_region_size_y: 3.3
+bubble_topo/init_region_size_z: 2.0
+bubble_topo/cube_discrete_size: 0.4
+bubble_topo/odom_node_distance: 3.0
+bubble_astar/safe_distance: 0.65
+max_update_region_num: 99999999
+frontier/candidate_dphi: 0.26
+frontier/candidate_znum: 3
+
+# Preserve the legacy MID360 mounting compensation. These values are in the
+# odometry/body convention and are not interchangeable with MARSIM's zero-pitch
+# 120 x 30 degree model.
+lidar_perception/fov_up: 37.5
+lidar_perception/fov_down: 5.0
+lidar_perception/lidar_pitch: 25.0
+lidar_perception/lidar_yaw: 0.0
+lidar_perception/cloud_frame_mode: world
+lidar_perception/sensor_mount_pitch_deg: 0.0
+lidar_perception/sensor_mount_yaw_deg: 0.0
+lidar_perception/sensor_mount_offset: [0.0, 0.0, 0.0]
+lidar_perception/fov_horizontal: 120.0
+lidar_perception/fov_viewpoint_horizontal: 100.0
+lidar_perception/fov_viewpoint_up: 48.0
+lidar_perception/fov_viewpoint_down: -5.0
+lidar_perception/yaw_fov: 120.0
+lidar_perception/is_360lidar: false
+lidar_perception/max_ray_length: 10
+parallel_astar/update_connection_timeout: 0.004
+parallel_astar/insert_node_timeout: 0.004
+FrontierManager/cell_size: 0.2
+FrontierManager/noise_cell_range: 1
+FrontierManager/good_observation_direction_score: 0.8
+FrontierManager/good_observation_force_trust_length: 4.5
+FrontierManager/good_observation_trust_length: 12.0
+FrontierManager/update_length: 25.0
+FrontierManager/cluster_max_size: 7.0
+FrontierManager/cluster_min_size: 0.5
+FrontierManager/cluster_min_radius: 1.8
+FrontierManager/cluster_direction_radius: -1.0
+FrontierManager/cluster_minmum_point_num: 4
+ViewpointManager/sample_pillar_min_height: -1.0
+ViewpointManager/sample_pillar_max_height: 1.0
+ViewpointManager/sample_pillar_height_layer_num: 5
+ViewpointManager/sample_pillar_min_radius: 0.5
+ViewpointManager/sample_pillar_max_radius: 2.0
+ViewpointManager/sample_pillar_radius_layer_num: 8
+ViewpointManager/sample_pillar_circle_sample_num: 8
+ViewpointManager/min_obstacle_clearance: 0.65
+ViewpointManager/local_tsp_size: 10
+box_num: 1
+box_0/down: [-150.0, -150.0, 0.4]
+box_0/up: [150.0, 150.0, 2.0]
+dead_area_num: 0
+max_traj_len: 10.0
+# PR #1: clip FIRI/SFC corridor polytopes to active observed FOV cone faces.
+local_planning/clip_corridor_to_observed: true
+local_planning/clip_cone_faces: true
+DilateRadiusSoft: 0.6
+DilateRadiusHard: 0.5
+MaxCorridorSize: 4.0
+MaxVelMag: 0.9
+maxBdrMag: 10000.0
+MaxTiltAngle: 0.8
+MinThrust: 15.0
+MaxThrust: 22.0
+VehicleMass: 1.9
+GravAcc: 9.8
+HorizDrag: 0.0
+VertDrag: 0.0
+ParasDrag: 0.0
+SpeedEps: 0.0001
+WeightT: 700.0
+WeightSafeT: 200.0
+ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6]
+SmoothingEps: 0.015
+IntegralIntervs: 32
+RelCostTol: 1.0e-6
+yaw_max_vel: 1.0
+yaw_rho_vis: 10000.0
+yaw_time_fwd: 2.5
+local_avoidance/enable: true
+
+fsm/goal_tolerance: 0.2
+fsm/max_segment_length: 99.0
+fsm/local_planning_max_hz: 30.0
+
+fsm/emergency_replan_control_error: 3.0
+
+fsm/takeoff_height: 1.2
+fsm/takeoff_reach_tol: 0.15
+fsm/takeoff_settle_vel: 0.4
+fsm/takeoff_settle_time: 0.5
+fsm/takeoff_timeout: 20.0
+
+fsm/auto_rth_land: true
+fsm/finish_hover_duration: 1.0
+fsm/rth_land_xy_tol: 0.2

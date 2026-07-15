@@ -24,6 +24,24 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     ros::shutdown();
     exit(1);
   }
+
+  // A crop bridge keeps localization on the raw cloud while EPIC plans from
+  // the configured ML-X-emulation output cloud.
+  bool cloud_crop_enable = false;
+  nh.param("cloud_crop/enable", cloud_crop_enable, false);
+  if (cloud_crop_enable) {
+    string cropped_topic;
+    if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
+        cropped_topic.empty()) {
+      ROS_FATAL("[LIOInterface] cloud_crop/enable=true but "
+                "cloud_crop/output_topic is not configured.");
+      ros::shutdown();
+      exit(1);
+    }
+    ROS_WARN("[LIOInterface] cloud crop enabled: EPIC uses %s (raw: %s)",
+             cropped_topic.c_str(), cloud_topic.c_str());
+    cloud_topic = cropped_topic;
+  }
   nh.getParam("box_num", lp_->box_num_);
   nh.getParam("lidar_perception/lidar_pitch", lp_->lidar_pitch_);
   // Keep old configs valid when the yaw key is absent.

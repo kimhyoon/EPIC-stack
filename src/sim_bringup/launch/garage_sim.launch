@@ -50,21 +50,21 @@
     <param name="mesh_resource" value="package://odom_visualization/meshes/yunque.dae" />
   </node>
 
-  <!-- EPIC exploration algorithm.
-       The config keeps cloud_topic as the raw MARSIM cloud by default.
-       If use_cloud_crop_bridge is true, the override below makes EPIC consume
-       the cropped cloud while the crop bridge still reads the raw cloud from
-       the same garage.yaml. -->
+  <!-- EPIC exploration algorithm. When cloud_crop/enable is true, EPIC's
+       LIO/FSM subscribers select cloud_crop/output_topic themselves. -->
   <include file="$(find epic_planner)/launch/algorithm.xml">
     <arg name="config_file" value="$(arg config_file)" />
   </include>
+  <!-- Keep the default raw-cloud simulation path when the optional bridge is
+       not launched. The bridge mode enables the cropped planner input. -->
+  <param name="/exploration_node/cloud_crop/enable"
+         value="$(arg use_cloud_crop_bridge)" />
 
   <!-- ML-X FOV emulation for simulation:
        MARSIM still publishes the full Mid-360 cloud, while this bridge crops
        only the cloud consumed by EPIC according to garage.yaml cloud_crop/*.
        This mirrors real_flight.launch and avoids changing MARSIM sensing. -->
   <group if="$(arg use_cloud_crop_bridge)">
-    <param name="/exploration_node/cloud_topic" value="/quad0_pcl_render_node/cloud_cropped" />
     <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
       <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
     </node>

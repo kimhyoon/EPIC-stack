@@ -32,6 +32,11 @@ Source ownership in this workspace:
   - Purpose: optional MID360-to-ML-X cloud crop bridge for lab and MARSIM
     validation. This package is not part of the onboard `psc_stack`
     `EPIC_poongsan` reference.
+- `src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/mid360.yaml`
+  - Purpose: real MID360 flight profile that emulates the ML-X input FOV.
+  - Baseline: the previously validated FAST-LIO MID360 profile, extended with
+    the PR #1 observed-FOV corridor parameters.
+  - Do not use this profile for a vehicle carrying a real ML-X sensor.
 
 # EPIC-stack Poongsan Garage Simulation
 
@@ -294,10 +299,8 @@ Key launch addition in `sim_bringup/launch/garage_sim.launch`:
 <arg name="use_cloud_crop_bridge" default="false" />
 
 <group if="$(arg use_cloud_crop_bridge)">
-  <param name="/exploration_node/cloud_topic" value="/quad0_pcl_render_node/cloud_cropped" />
   <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
     <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load" />
-    <param name="cloud_topic" value="/quad0_pcl_render_node/cloud" />
   </node>
 </group>
 ```
@@ -307,7 +310,7 @@ The intended behavior is:
 - `/quad0_pcl_render_node/cloud` remains the raw MARSIM output.
 - `cloud_crop_bridge` subscribes to the raw cloud.
 - `cloud_crop_bridge` publishes `/quad0_pcl_render_node/cloud_cropped`.
-- `exploration_node` uses the cropped topic when `use_cloud_crop_bridge:=true`.
+- `exploration_node` uses the cropped topic when `cloud_crop/enable: true`.
 
 ## What Was Not Changed
 
@@ -394,8 +397,27 @@ EPIC cloud topic = cropped cloud topic
 crop input topic = MID360/Fast-LIO cloud topic
 ```
 
+`use_cloud_crop_bridge` is the runtime master switch. It defaults to `false`,
+so omitting the argument leaves EPIC on the raw `cloud_topic`. The selected
+profile must still provide the bridge input/output values when the switch is
+enabled.
+
 Do not set `use_cloud_crop_bridge=true` if the workspace was built with
 `BUILD_CLOUD_CROP_BRIDGE=OFF`.
+
+Run the real MID360 profile explicitly:
+
+```bash
+roslaunch epic_planner real_flight.launch \
+  config_file:=mid360.yaml \
+  use_cloud_crop_bridge:=true \
+  enable_avoidance:=true
+```
+
+`mid360.yaml` keeps the previously validated FAST-LIO topics `/Odometry` and
+`/cloud_registered`. The bridge republishes the cropped input on
+`/cloud_registered_cropped`; both the EPIC LIO interface and FSM select that
+topic when `cloud_crop/enable: true` is set in the active profile.
 
 ### C. MARSIM Garage Simulation
 
@@ -427,11 +449,8 @@ Run the garage simulation through `sim_bringup`:
 roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true
 ```
 
-The validated container build result for this mode was:
-
-```text
-All 29 packages succeeded.
-```
+The validated container build completed successfully with the crop bridge
+enabled.
 
 Do not launch the internal MARSIM file directly for normal use:
 
@@ -443,6 +462,45 @@ That file is included by `sim_bringup` and expects parent launch arguments such
 as `sensing_horizon`.
 
 ## Validation Commands
+
+### MID360 Real-Flight Profile
+
+Inspect the launch graph before connecting a vehicle:
+
+```bash
+roslaunch --nodes epic_planner real_flight.launch \
+  config_file:=mid360.yaml \
+  use_cloud_crop_bridge:=true | \
+  grep -E "cloud_crop_bridge|exploration_node|traj_server|px4_ctrl_bridge"
+```
+
+After the MID360 and FAST-LIO stack are publishing, confirm that EPIC and the
+bridge agree on the cloud path:
+
+```bash
+rosparam get /exploration_node/cloud_topic
+rosparam get /cloud_crop_bridge/cloud_topic
+rosparam get /cloud_crop_bridge/cloud_crop/output_topic
+rostopic info /cloud_registered_cropped
+```
+
+Expected configuration values are:
+
+```text
+/exploration_node/cloud_topic: /cloud_registered
+/cloud_crop_bridge/cloud_topic: /cloud_registered
+/cloud_crop_bridge/cloud_crop/output_topic: /cloud_registered_cropped
+```
+
+The planner reports the effective cropped subscription at startup as
+`[LIOInterface] cloud crop enabled: EPIC uses /cloud_registered_cropped`.
+
+With the default launch argument omitted, the same profile runs without the
+bridge and EPIC remains on its raw `cloud_topic`:
+
+```bash
+roslaunch epic_planner real_flight.launch config_file:=mid360.yaml
+```
 
 Check that the expected simulation nodes are present in the launch graph:
 
@@ -536,8 +594,13 @@ Runtime-only simulation pieces live outside that package:
 Configuration policy:
 
 - `real.yaml`: real onboard flight configuration based on the onboard reference,
-  with the 2026-07-10 LIO-SAM + ML-X frame/cloud fix applied.
-- `garage.yaml`: MID360/MARSIM garage simulation configuration.
+  with the 2026-07-10 LIO-SAM + ML-X frame/cloud fix applied. It uses the real
+  ML-X cloud directly and must run with `use_cloud_crop_bridge:=false`.
+- `mid360.yaml`: real MID360 profile that crops `/cloud_registered` to an
+  ML-X-style EPIC input. It requires `BUILD_CLOUD_CROP_BRIDGE=ON` and
+  `use_cloud_crop_bridge:=true`.
+- `garage.yaml`: MARSIM-only configuration. It keeps MARSIM topics, map bounds,
+  and simulation-specific dynamics; it is not a real-flight configuration.
 
 The crop bridge is optional and is not built unless explicitly enabled:
 
@@ -546,8 +609,9 @@ catkin config --cmake-args -DBUILD_CLOUD_CROP_BRIDGE=ON
 catkin build
 ```
 
-For onboard ML-X use, leave the bridge off and use the real sensor topics from `real.yaml`.
-For MID360/MARSIM ML-X emulation, build the bridge and launch simulation with:
+For onboard ML-X use, leave the bridge off and use the real sensor topics from
+`real.yaml`. For MID360 ML-X emulation, use `mid360.yaml` with the real-flight
+launch command above. For MARSIM ML-X emulation, build the bridge and launch:
 
 ```bash
 roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true
