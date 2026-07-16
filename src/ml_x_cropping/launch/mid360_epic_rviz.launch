@@ -1,0 +1,7 @@
+<launch>
+  <!-- MID360-to-ML-X inspection RViz. It is independent of real_flight.launch. -->
+  <arg name="config" default="$(find ml_x_cropping)/config/mid360_epic.rviz"/>
+
+  <node pkg="rviz" type="rviz" name="mid360_epic_rviz" output="screen"
+        args="-d $(arg config)"/>
+</launch>
