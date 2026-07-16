@@ -419,7 +419,34 @@ roslaunch epic_planner real_flight.launch \
 `mid360.yaml` keeps the previously validated FAST-LIO topics `/Odometry` and
 `/cloud_registered`. The bridge republishes the cropped input on
 `/cloud_registered_cropped`; both the EPIC LIO interface and FSM select that
-topic when `cloud_crop/enable: true` is set in the active profile.
+topic when both `cloud_crop/enable: true` and
+`use_cloud_crop_bridge:=true` are selected.
+
+Run MID360 without ML-X cropping:
+
+```bash
+# MID360 raw mode: do not emulate ML-X cropping.
+# Optional but recommended when switching from a previous ON build:
+catkin clean --yes ml_x_cropping
+
+catkin config --cmake-args \
+  -DROS_EDITION=ROS1 \
+  -DBUILD_CLOUD_CROP_BRIDGE=OFF
+catkin build
+source devel/setup.bash
+
+# BUILD_CLOUD_CROP_BRIDGE=OFF requires this argument to remain false.
+roslaunch epic_planner real_flight.launch \
+  config_file:=mid360.yaml \
+  use_cloud_crop_bridge:=false \
+  enable_avoidance:=true
+```
+
+`BUILD_CLOUD_CROP_BRIDGE=OFF` removes the bridge executable at build time.
+The `use_cloud_crop_bridge:=false` launch argument is the runtime guard: it
+does not start the bridge and forces EPIC to subscribe to raw
+`/cloud_registered`. Do not use `use_cloud_crop_bridge:=true` in this build
+mode.
 
 ### C. MARSIM Garage Simulation
 
