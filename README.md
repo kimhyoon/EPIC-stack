@@ -33,10 +33,14 @@ Source ownership in this workspace:
     validation. This package is not part of the onboard `psc_stack`
     `EPIC_poongsan` reference.
 - `src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/mid360.yaml`
-  - Purpose: real MID360 flight profile that emulates the ML-X input FOV.
+  - Purpose: raw MID360 A/B debug profile. It keeps the MID360 planner/FOV
+    model but does not start the cloud crop bridge.
   - Baseline: the previously validated FAST-LIO MID360 profile, extended with
     the PR #1 observed-FOV corridor parameters.
   - Do not use this profile for a vehicle carrying a real ML-X sensor.
+- `src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/mid360_mlx.yaml`
+  - Purpose: MID360-to-ML-X emulation profile. It enables one crop bridge pass
+    from `/cloud_registered` to `/cloud_registered_cropped` for EPIC.
 
 # EPIC-stack Poongsan Garage Simulation
 
@@ -372,6 +376,7 @@ git clone --filter=blob:none --branch=donghyuck --no-checkout \
 cd EPIC-stack-mid360-mlx
 git sparse-checkout init --cone
 git sparse-checkout set \
+  execution \
   src/EPIC_poongsan \
   src/FAST_LIO \
   src/livox_ros_driver2 \
@@ -407,20 +412,41 @@ enabled.
 Do not set `use_cloud_crop_bridge=true` if the workspace was built with
 `BUILD_CLOUD_CROP_BRIDGE=OFF`.
 
-Run the real MID360 profile explicitly:
+Run the MID360-to-ML-X crop profile explicitly:
 
 ```bash
 roslaunch epic_planner real_flight.launch \
-  config_file:=mid360.yaml \
+  config_file:=mid360_mlx.yaml \
   use_cloud_crop_bridge:=true \
   enable_avoidance:=true
 ```
 
-`mid360.yaml` keeps the previously validated FAST-LIO topics `/Odometry` and
+`mid360_mlx.yaml` keeps the previously validated FAST-LIO topics `/Odometry` and
 `/cloud_registered`. The bridge republishes the cropped input on
 `/cloud_registered_cropped`; both the EPIC LIO interface and FSM select that
 topic when both `cloud_crop/enable: true` and
 `use_cloud_crop_bridge:=true` are selected.
+
+For Git-distributed MID360 operation, use the wrapper profiles instead of the
+machine-specific legacy `execution/5_epic.sh`:
+
+```bash
+# Raw MID360 A/B debug baseline: no bridge node, EPIC uses /cloud_registered.
+./execution/5_epic_mid360.sh
+
+# ML-X emulation: exactly one bridge pass, then EPIC uses
+# /cloud_registered_cropped.
+./execution/5_epic_mid360.sh --mlx-crop
+```
+
+`5_epic_mid360.sh` derives its workspace path from its own location, so it is
+safe after a sparse clone under a different directory name. It intentionally
+does not pass the obsolete `rviz:=...` launch argument. Start the inspection
+RViz separately when needed:
+
+```bash
+roslaunch ml_x_cropping mid360_epic_rviz.launch
+```
 
 Run MID360 without ML-X cropping:
 
@@ -498,7 +524,7 @@ Inspect the launch graph before connecting a vehicle:
 
 ```bash
 roslaunch --nodes epic_planner real_flight.launch \
-  config_file:=mid360.yaml \
+  config_file:=mid360_mlx.yaml \
   use_cloud_crop_bridge:=true | \
   grep -E "cloud_crop_bridge|exploration_node|traj_server|px4_ctrl_bridge"
 ```
@@ -524,11 +550,11 @@ Expected configuration values are:
 The planner reports the effective cropped subscription at startup as
 `[LIOInterface] cloud crop enabled: EPIC uses /cloud_registered_cropped`.
 
-With the default launch argument omitted, the same profile runs without the
-bridge and EPIC remains on its raw `cloud_topic`:
+For raw MID360 A/B debugging, select the raw profile and explicitly leave the
+bridge disabled:
 
 ```bash
-roslaunch epic_planner real_flight.launch config_file:=mid360.yaml
+./execution/5_epic_mid360.sh
 ```
 
 Check that the expected simulation nodes are present in the launch graph:
@@ -625,9 +651,10 @@ Configuration policy:
 - `real.yaml`: real onboard flight configuration based on the onboard reference,
   with the 2026-07-10 LIO-SAM + ML-X frame/cloud fix applied. It uses the real
   ML-X cloud directly and must run with `use_cloud_crop_bridge:=false`.
-- `mid360.yaml`: real MID360 profile that crops `/cloud_registered` to an
-  ML-X-style EPIC input. It requires `BUILD_CLOUD_CROP_BRIDGE=ON` and
-  `use_cloud_crop_bridge:=true`.
+- `mid360.yaml`: raw MID360 A/B debug profile. It keeps the bridge disabled and
+  EPIC consumes `/cloud_registered` directly.
+- `mid360_mlx.yaml`: MID360-to-ML-X emulation profile. It requires
+  `BUILD_CLOUD_CROP_BRIDGE=ON` and `use_cloud_crop_bridge:=true`.
 - `garage.yaml`: MARSIM-only configuration. It keeps MARSIM topics, map bounds,
   and simulation-specific dynamics; it is not a real-flight configuration.
 
@@ -639,8 +666,9 @@ catkin build
 ```
 
 For onboard ML-X use, leave the bridge off and use the real sensor topics from
-`real.yaml`. For MID360 ML-X emulation, use `mid360.yaml` with the real-flight
-launch command above. For MARSIM ML-X emulation, build the bridge and launch:
+`real.yaml`. For MID360 ML-X emulation, use `mid360_mlx.yaml` with the
+real-flight launch command above. For MARSIM ML-X emulation, build the bridge
+and launch:
 
 ```bash
 roslaunch sim_bringup garage_sim.launch use_cloud_crop_bridge:=true

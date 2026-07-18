@@ -1,10 +1,11 @@
+# MID360-to-ML-X crop profile. Use this file only with
+# use_cloud_crop_bridge:=true. It preserves the raw MID360 profile below but
+# enables exactly one bridge pass from /cloud_registered to the cropped topic.
 #topic param:
 # 실비행용. FAST-LIO 출력에 맞춰 시뮬 토픽에서 변경.
 odometry_topic: /Odometry          # FAST-LIO odom  (시뮬: /quad_0/lidar_slam/odom)
 cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
 
-# Raw MID360 debug profile. Keep the bridge disabled here so this profile
-# remains a stable A/B baseline for inspecting the unmodified FAST-LIO cloud.
 # ── ML-X FOV 에뮬레이션: 센서 crop 브릿지 (cloud_crop_bridge) ──────────────
 # Mid-360(수평 360°) 데이터를 ML-X(전방 120°x35°)처럼 잘라 EPIC 에 공급하는 스위치.
 # FAST-LIO 는 raw 센서를 그대로 쓰므로 localization 영향 없음 — EPIC 입력만 잘린다.
@@ -12,7 +13,7 @@ cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_p
 #         cloud_crop/output_topic 으로 재발행하고, exploration_node 도 같은 키를
 #         읽어 자동으로 crop 토픽을 구독 (cloud_topic 은 raw 소스로 그대로 둔다).
 # false = 브릿지 자진 종료, EPIC 은 cloud_topic 을 그대로 구독 (기존 동작).
-cloud_crop/enable: false
+cloud_crop/enable: true
 cloud_crop/output_topic: /cloud_registered_cropped
 # ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
 cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
