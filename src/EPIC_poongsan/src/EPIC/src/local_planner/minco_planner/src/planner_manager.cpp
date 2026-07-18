@@ -569,10 +569,10 @@ void FastPlannerManager::clipCorridorToObservedCone(
   const double aR = psi - hy; // right FOV-edge azimuth
   Eigen::Vector3d nR(std::sin(aR), -std::cos(aR), 0.0);  // outward-right
   faces.push_back({nR, -nR.dot(p)});
-  const double bU = (lidar_pitch + fov_up) * M_PI / 180.0;   // up-edge elevation
+  const double bU = (fov_up - lidar_pitch) * M_PI / 180.0;   // up-edge elevation
   Eigen::Vector3d nU = -std::sin(bU) * fwd + std::cos(bU) * Z;  // outward-up
   faces.push_back({nU, -nU.dot(p)});
-  const double bD = (lidar_pitch + fov_down) * M_PI / 180.0; // down-edge elevation
+  const double bD = (fov_down - lidar_pitch) * M_PI / 180.0; // down-edge elevation
   Eigen::Vector3d nD = std::sin(bD) * fwd - std::cos(bD) * Z;   // outward-down
   faces.push_back({nD, -nD.dot(p)});
 
