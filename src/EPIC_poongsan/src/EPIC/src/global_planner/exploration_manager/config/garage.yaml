@@ -28,15 +28,15 @@ view_graph: true
 FrontierManager/view_cluster: true
 FrontierManager/view_frt: true
 # graph
-bubble_topo/min_x: 1.11               # [synced: real]
-bubble_topo/min_y: 1.11               # [synced: real]
-bubble_topo/min_z: 0.51               # [synced: real]
+bubble_topo/min_x: 0.6                # Desktop 120-degree comparison value.
+bubble_topo/min_y: 0.6                # Desktop 120-degree comparison value.
+bubble_topo/min_z: 0.3                # Desktop 120-degree comparison value.
 bubble_topo/bubble_min_radius: 0.61
 bubble_topo/init_region_size_x: 3.3   # [synced: real]
 bubble_topo/init_region_size_y: 3.3   # [synced: real]
 bubble_topo/init_region_size_z: 2.0
-bubble_topo/cube_discrete_size: 0.4   # [synced: real]
-bubble_topo/odom_node_distance: 3.0
+bubble_topo/cube_discrete_size: 0.25  # Desktop 120-degree comparison value.
+bubble_topo/odom_node_distance: 1.0   # Desktop 120-degree comparison value.
 bubble_astar/safe_distance: 0.6
 # map param
 max_update_region_num: 99999999
@@ -51,6 +51,7 @@ lidar_perception/fov_down: -15.0
 lidar_perception/lidar_pitch: 0.0
 lidar_perception/fov_viewpoint_up: 15.0
 lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/fov_viewpoint_horizontal: 120.0
 lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
@@ -67,26 +68,26 @@ local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
 local_planning/p0_down: 0.2    # P0 extent below the flight controller [m]
 parallel_astar/update_connection_timeout: 0.002
 parallel_astar/insert_node_timeout: 0.002
-FrontierManager/cell_size: 0.4
+FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.6   # [synced: real]
+FrontierManager/good_observation_direction_score: 0.8   # Desktop 120-degree comparison value.
 FrontierManager/good_observation_force_trust_length: 4.5 # [synced: real]
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
-FrontierManager/cluster_max_size: 8.0                    # [synced: real]
-FrontierManager/cluster_min_size: 2.0
-FrontierManager/cluster_min_radius: 1.8 # [synced: real] DBSCAN neighbor radius threshold.
-FrontierManager/cluster_direction_radius: 0.0 # [synced: real] cos(theta) > cluster_direction_radius
-FrontierManager/cluster_minmum_point_num: 10            # [synced: real]
+FrontierManager/cluster_max_size: 3.0
+FrontierManager/cluster_min_size: 1.0
+FrontierManager/cluster_min_radius: 1.0 # Desktop 120-degree comparison value.
+FrontierManager/cluster_direction_radius: 0.75 # Desktop 120-degree comparison value.
+FrontierManager/cluster_minmum_point_num: 3
 # Cylindrical viewpoint sampling.
-ViewpointManager/sample_pillar_min_height: 1.0   # [SIM keep] coupled to garage vertical bounds; do not use real=-2 here.
-ViewpointManager/sample_pillar_max_height: 3.5   # [SIM keep] coupled to garage vertical bounds; do not use real=2.5 here.
+ViewpointManager/sample_pillar_min_height: -1.5  # Desktop 120-degree comparison value.
+ViewpointManager/sample_pillar_max_height: 1.5   # Desktop 120-degree comparison value.
 ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
-ViewpointManager/sample_pillar_min_radius: 1.0          # [synced: real]
-ViewpointManager/sample_pillar_max_radius: 4.0
-ViewpointManager/sample_pillar_radius_layer_num: 8      # [synced: real]
-ViewpointManager/sample_pillar_circle_sample_num: 4     # [synced: real]
-ViewpointManager/local_tsp_size: 10                     # [synced: real]
+ViewpointManager/sample_pillar_min_radius: 0.3
+ViewpointManager/sample_pillar_max_radius: 1.2
+ViewpointManager/sample_pillar_radius_layer_num: 5
+ViewpointManager/sample_pillar_circle_sample_num: 12
+ViewpointManager/local_tsp_size: 20
 # area
 # [SIM keep] garage map extent is about 182 x 150 m; real 30 m bounds would hide most of the map.
 box_num: 1
@@ -97,10 +98,10 @@ box_0/up: [182.0, 150.2, 2.5]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
-DilateRadiusSoft: 0.6 # minco threshold
-DilateRadiusHard: 0.45 # [synced: real] collision check threshold
+DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
+DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
 MaxCorridorSize: 4.0   # [synced: real]
-MaxVelMag: 2.5         # [synced: real] 4.0 -> 2.5 slows simulated flight; verify this is intended.
+MaxVelMag: 1.0         # Desktop 120-degree comparison value.
 maxBdrMag: 10000.0
 MaxTiltAngle: 0.8 # [synced: real] max attitude angle: 60deg=1.0472, 45deg=0.7854, 30deg=0.5236, 10deg=0.1745.
 MinThrust: 15.0
@@ -119,7 +120,7 @@ SmoothingEps: 0.015
 IntegralIntervs: 32
 RelCostTol: 1.1e-6  # [synced: real]
 #param for yaw opt
-yaw_max_vel: 1.0    # [synced: real] 4.0 -> 1.0 slows yaw rotation; verify this is intended.
+yaw_max_vel: 2.0    # Desktop 120-degree comparison value.
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 2.5   # [synced: real]
 # FSM param
