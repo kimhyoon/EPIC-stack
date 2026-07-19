@@ -14,6 +14,9 @@ cloud_crop/fov_down: -15.0
 cloud_crop/min_range: 0.0
 cloud_crop/max_range: 30.0
 cloud_crop/yaw_offset_deg: 0.0
+# Latched LINE_LIST marker of the actual body-frame crop frustum for RViz.
+cloud_crop/visualization_topic: /debug/cloud_crop/fov
+cloud_crop/visualization_range: 30.0
 global_planning/w_vdir: 0.0          # [synced: real] velocity-direction weight; may affect straightness.
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
@@ -39,7 +42,11 @@ frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 lidar_perception/fov_up: 15.0
 lidar_perception/fov_down: -15.0
-lidar_perception/lidar_pitch: 0.0     # [SIM ML-X emulation] crop_bridge FOV is body-forward.
+# The crop bridge tests elevation after transforming each cloud point into the
+# odometry body frame. These bounds are therefore already body-frame bounds.
+# Keep this at zero so PR #1 uses the same effective cone as the crop bridge.
+# This is not the physical MARSIM sensor mount pitch; see MARSIM garage.launch.
+lidar_perception/lidar_pitch: 0.0
 lidar_perception/fov_viewpoint_up: 15.0
 lidar_perception/fov_viewpoint_down: -15.0
 lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.

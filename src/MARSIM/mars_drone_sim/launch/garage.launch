@@ -10,8 +10,11 @@
         <arg name="init_y_" default="0.0" />
         <arg name="init_z_" default="2.0" />
         <arg name="init_yaw" default="0.0" />
-        <!-- <arg name="lidar_pitch" value="0.0"/> -->
-        <arg name="lidar_pitch" value="40.0" />
+        <!-- Simulated sensor-frame pitch in the MARSIM body frame [deg].
+             MARSIM is Z-up: positive values rotate sensor-frame +X toward -Z (down),
+             while negative values rotate it toward +Z (up). Do not copy a
+             mounting angle from an NED/FRD drawing without converting frames. -->
+        <arg name="lidar_pitch" default="25.0" />
 
         <arg name="frame_id" value="world" />
         <arg name="global_cloud_topic" value="/map_generator/global_cloud" />

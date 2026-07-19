@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   nav_msgs
   message_filters
+  visualization_msgs
 )
 
 catkin_package()
