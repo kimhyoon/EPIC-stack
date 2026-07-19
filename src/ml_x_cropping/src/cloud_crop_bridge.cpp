@@ -21,7 +21,6 @@
  */
 #include <Eigen/Dense>
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstring>
 #include <message_filters/subscriber.h>
@@ -41,6 +40,8 @@ struct CropConfig {
   double min_range2;    // Squared minimum range.
   double max_range2;    // Squared maximum range; <= 0 means unlimited.
   double visualization_range;
+  int visualization_azimuth_samples;
+  int visualization_elevation_samples;
   double yaw_offset_rad;
 };
 
@@ -82,6 +83,16 @@ private:
     marker.points.push_back(toPoint(to));
   }
 
+  static Eigen::Vector3f worldFovPoint(const Eigen::Vector3f &origin,
+                                        const Eigen::Matrix3f &R_wb,
+                                        double range, double azimuth,
+                                        double elevation) {
+    const Eigen::Vector3f unit_body(
+        std::cos(elevation) * std::cos(azimuth),
+        std::cos(elevation) * std::sin(azimuth), std::sin(elevation));
+    return origin + R_wb * (range * unit_body);
+  }
+
   void publishCropFov(const std_msgs::Header &header,
                        const Eigen::Vector3f &origin,
                        const Eigen::Matrix3f &R_wb) {
@@ -104,28 +115,47 @@ private:
         cfg_.yaw_offset_rad + cfg_.half_h_rad};
     const double elevations[2] = {cfg_.fov_down_rad, cfg_.fov_up_rad};
 
-    std::array<Eigen::Vector3f, 4> near_corners;
-    std::array<Eigen::Vector3f, 4> far_corners;
-    int index = 0;
-    for (const double elevation : elevations) {
-      for (const double azimuth : azimuths) {
-        const Eigen::Vector3f unit_body(
-            std::cos(elevation) * std::cos(azimuth),
-            std::cos(elevation) * std::sin(azimuth), std::sin(elevation));
-        near_corners[index] = origin + R_wb * (near_range * unit_body);
-        far_corners[index] = origin + R_wb * (far_range * unit_body);
-        ++index;
+    // Draw the range boundary as a sampled spherical cap. Connecting only the
+    // four corners would falsely imply that crop range has a planar end face.
+    const int azimuth_samples = cfg_.visualization_azimuth_samples;
+    const int elevation_samples = cfg_.visualization_elevation_samples;
+    for (int elevation_index = 0; elevation_index <= elevation_samples;
+         ++elevation_index) {
+      const double elevation = elevations[0] +
+          (elevations[1] - elevations[0]) * elevation_index / elevation_samples;
+      Eigen::Vector3f previous = worldFovPoint(origin, R_wb, far_range,
+                                                azimuths[0], elevation);
+      for (int azimuth_index = 1; azimuth_index <= azimuth_samples;
+           ++azimuth_index) {
+        const double azimuth = azimuths[0] +
+            (azimuths[1] - azimuths[0]) * azimuth_index / azimuth_samples;
+        const Eigen::Vector3f current = worldFovPoint(origin, R_wb, far_range,
+                                                        azimuth, elevation);
+        appendLine(marker, previous, current);
+        previous = current;
       }
     }
-
-    for (size_t i = 0; i < far_corners.size(); ++i) {
-      appendLine(marker, near_corners[i], far_corners[i]);
+    for (int azimuth_index = 0; azimuth_index <= azimuth_samples;
+         ++azimuth_index) {
+      const double azimuth = azimuths[0] +
+          (azimuths[1] - azimuths[0]) * azimuth_index / azimuth_samples;
+      Eigen::Vector3f previous = worldFovPoint(origin, R_wb, far_range,
+                                                azimuth, elevations[0]);
+      for (int elevation_index = 1; elevation_index <= elevation_samples;
+           ++elevation_index) {
+        const double elevation = elevations[0] +
+            (elevations[1] - elevations[0]) * elevation_index / elevation_samples;
+        const Eigen::Vector3f current = worldFovPoint(origin, R_wb, far_range,
+                                                        azimuth, elevation);
+        appendLine(marker, previous, current);
+        previous = current;
+      }
     }
-    const int face_edges[4][2] = {{0, 1}, {1, 3}, {3, 2}, {2, 0}};
-    for (const auto &edge : face_edges) {
-      appendLine(marker, far_corners[edge[0]], far_corners[edge[1]]);
-      if (near_range > 0.0) {
-        appendLine(marker, near_corners[edge[0]], near_corners[edge[1]]);
+    for (const double elevation : elevations) {
+      for (const double azimuth : azimuths) {
+        appendLine(marker,
+                   worldFovPoint(origin, R_wb, near_range, azimuth, elevation),
+                   worldFovPoint(origin, R_wb, far_range, azimuth, elevation));
       }
     }
 
@@ -267,6 +297,7 @@ int main(int argc, char **argv) {
   // ML-XC defaults: 120 deg x 35 deg FOV, 30 m max range.
   double fov_h, fov_up, fov_down, min_range, max_range, visualization_range,
       yaw_offset;
+  int visualization_azimuth_samples, visualization_elevation_samples;
   nh.param("cloud_crop/fov_horizontal", fov_h, 120.0);
   nh.param("cloud_crop/fov_up", fov_up, 17.5);
   nh.param("cloud_crop/fov_down", fov_down, -17.5);
@@ -274,6 +305,10 @@ int main(int argc, char **argv) {
   nh.param("cloud_crop/max_range", max_range, 30.0);
   nh.param("cloud_crop/visualization_range", visualization_range,
            max_range > 0.0 ? max_range : 10.0);
+  nh.param("cloud_crop/visualization_azimuth_samples",
+           visualization_azimuth_samples, 24);
+  nh.param("cloud_crop/visualization_elevation_samples",
+           visualization_elevation_samples, 8);
   nh.param("cloud_crop/yaw_offset_deg", yaw_offset, 0.0);
 
   const double D2R = M_PI / 180.0;
@@ -284,6 +319,8 @@ int main(int argc, char **argv) {
   cfg.min_range2 = min_range * min_range;
   cfg.max_range2 = max_range > 0.0 ? max_range * max_range : -1.0;
   cfg.visualization_range = std::max(visualization_range, min_range);
+  cfg.visualization_azimuth_samples = std::max(2, visualization_azimuth_samples);
+  cfg.visualization_elevation_samples = std::max(2, visualization_elevation_samples);
   cfg.yaw_offset_rad = yaw_offset * D2R;
 
   ROS_WARN("[CloudCrop] ON: %s -> %s | FOV h=%.1fdeg v=[%.1f, %.1f]deg "
