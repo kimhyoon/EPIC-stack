@@ -22,11 +22,11 @@
   <!-- Odometry topic (configure based on your odometry source) -->
   <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
 
-  <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. Defaults
-       match the upstream original-garage start and can be overridden at launch. -->
+  <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. The
+       original garage floor is z=0; keep 0.5 m body clearance before takeoff. -->
   <arg name="init_x_" default="0.0" />
   <arg name="init_y_" default="0.0" />
-  <arg name="init_z_" default="2.0" />
+  <arg name="init_z_" default="0.5" />
   <arg name="init_yaw" default="0.0" />
 
   <!-- garage.yaml enables ML-X FOV emulation by default. Set this argument

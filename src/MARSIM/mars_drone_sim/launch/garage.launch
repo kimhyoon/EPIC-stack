@@ -8,7 +8,8 @@
              this launch is run directly or included by sim_bringup. -->
         <arg name="init_x_" default="0.0" />
         <arg name="init_y_" default="0.0" />
-        <arg name="init_z_" default="2.0" />
+        <!-- Original garage floor plus 0.5 m body clearance before takeoff. -->
+        <arg name="init_z_" default="0.5" />
         <arg name="init_yaw" default="0.0" />
         <!-- Simulated sensor-frame pitch in the MARSIM body frame [deg].
              MARSIM is Z-up: positive values rotate sensor-frame +X toward -Z (down),

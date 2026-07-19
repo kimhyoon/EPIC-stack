@@ -89,11 +89,10 @@ ViewpointManager/sample_pillar_radius_layer_num: 5
 ViewpointManager/sample_pillar_circle_sample_num: 12
 ViewpointManager/local_tsp_size: 20
 # area
-# [SIM keep] garage map extent is about 182 x 150 m; real 30 m bounds would hide most of the map.
+# Keep the original-map vertical planning band. The FSM begins planning after
+# it climbs from the floor-relative spawn height.
 box_num: 1
 box_0/down: [-10.0, -6.0, 0.55]
-# Leave vertical headroom above the upstream garage spawn at z=2.0 while
-# retaining a low-altitude evaluation ROI.
 box_0/up: [182.0, 150.2, 2.5]
 dead_area_num: 0
 # trajectory param
