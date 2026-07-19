@@ -82,7 +82,9 @@ ViewpointManager/local_tsp_size: 10                     # [synced: real]
 # [SIM keep] garage map extent is about 182 x 150 m; real 30 m bounds would hide most of the map.
 box_num: 1
 box_0/down: [-10.0, -6.0, 0.55]
-box_0/up: [182.0, 150.2, 2.0]
+# Leave vertical headroom above the upstream garage spawn at z=2.0 while
+# retaining a low-altitude evaluation ROI.
+box_0/up: [182.0, 150.2, 2.5]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0

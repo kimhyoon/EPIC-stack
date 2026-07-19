@@ -9,6 +9,11 @@
   <!-- Map configuration -->
   <arg name="map_name" value="garage" />
   <arg name="config_file" default="$(arg map_name).yaml" />
+  <!-- The unmodified source map used by MARSIM rendering and evaluation. -->
+  <arg name="map_pcd" default="$(find map_generator)/resource/garage_original.pcd" />
+  <!-- A derived visual-only asset. Generate it from map_pcd with
+       pcd_voxel_downsample; it never feeds MARSIM, EPIC, or evaluation. -->
+  <arg name="rviz_map_pcd" default="$(find map_generator)/resource/garage_original_rviz_0p20m.pcd" />
 
   <!-- Sensor publish rate control -->
   <arg name="odom_publish_rate" default="10.0" />
@@ -16,7 +21,17 @@
 
   <!-- Odometry topic (configure based on your odometry source) -->
   <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
-  <arg name="use_cloud_crop_bridge" default="false" />
+
+  <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. Defaults
+       match the upstream original-garage start and can be overridden at launch. -->
+  <arg name="init_x_" default="0.0" />
+  <arg name="init_y_" default="0.0" />
+  <arg name="init_z_" default="2.0" />
+  <arg name="init_yaw" default="0.0" />
+
+  <!-- garage.yaml enables ML-X FOV emulation by default. Set this argument
+       false explicitly when validating the raw MARSIM cloud path. -->
+  <arg name="use_cloud_crop_bridge" default="true" />
 
   <!-- Simulation-only reactive local avoidance. Real flight uses real_flight.launch. -->
   <arg name="enable_avoidance" default="true" />
@@ -36,9 +51,10 @@
   <!-- Odometry visualization -->
   <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization" output="screen">
     <remap from="~odom" to="$(arg odom_topic)" />
-    <param name="init_x" value="3.0" />
-    <param name="init_y" value="8.0" />
-    <param name="init_z" value="1.25" />
+    <!-- Keep the visualization marker aligned with the actual MARSIM spawn. -->
+    <param name="init_x" value="$(arg init_x_)" />
+    <param name="init_y" value="$(arg init_y_)" />
+    <param name="init_z" value="$(arg init_z_)" />
     <param name="color/a" value="1.0" />
     <param name="color/r" value="0.0" />
     <param name="color/g" value="1.0" />
@@ -55,8 +71,8 @@
   <include file="$(find epic_planner)/launch/algorithm.xml">
     <arg name="config_file" value="$(arg config_file)" />
   </include>
-  <!-- Keep the default raw-cloud simulation path when the optional bridge is
-       not launched. The bridge mode enables the cropped planner input. -->
+  <!-- Keep EPIC and the bridge mode synchronized. The explicit launch
+       argument overrides garage.yaml for raw-cloud validation runs. -->
   <param name="/exploration_node/cloud_crop/enable"
          value="$(arg use_cloud_crop_bridge)" />
 
@@ -113,7 +129,7 @@
   <node pkg="epic_planner" name="exploration_evaluator" type="evaluate_exploration.py" output="screen">
     <param name="odom_topic" value="$(arg odom_topic)" />
     <param name="position_cmd_topic" value="/planning/pos_cmd" />
-    <param name="pcd_path" value="$(find map_generator)/resource/garage.pcd" />
+    <param name="pcd_path" value="$(arg map_pcd)" />
     <param name="cell_size" value="0.4" />
     <param name="map_min_x" value="-10.0" />
     <param name="map_min_y" value="-6.0" />
@@ -125,16 +141,24 @@
     <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
   </node>
 
-  <!-- RViz-only full PCD map overlay.
-       This does not feed MARSIM or EPIC; it only publishes garage.pcd on a
-       debug topic so the static map remains visible in RViz. -->
-  <node pkg="pcl_ros" name="generated_pcd_map_publisher" type="pcd_to_pointcloud"
-        args="$(find map_generator)/resource/garage.pcd 5.0 _frame_id:=world cloud_pcd:=/debug/generated_pcd_map"
-        output="screen" />
+  <!-- RViz-only downsampled map overlay. The latched publisher loads and sends
+       this asset once, then stays alive for later RViz subscriptions without
+       repeatedly serializing the cloud during planner timing measurements. -->
+  <node pkg="map_generator" name="generated_pcd_map_publisher"
+        type="static_pcd_publisher" output="screen">
+    <param name="file_name" value="$(arg rviz_map_pcd)" />
+    <param name="frame_id" value="world" />
+    <param name="topic_name" value="/debug/generated_pcd_map" />
+  </node>
 
   <!-- Simulation environment (garage map with drone) -->
   <include file="$(find mars_drone_sim)/launch/garage.launch">
+    <arg name="map_name" value="$(arg map_pcd)" />
     <arg name="sensing_horizon" value="60.0" />
+    <arg name="init_x_" value="$(arg init_x_)" />
+    <arg name="init_y_" value="$(arg init_y_)" />
+    <arg name="init_z_" value="$(arg init_z_)" />
+    <arg name="init_yaw" value="$(arg init_yaw)" />
     <!-- The MARSIM launch chain does not consume odom_publish_rate/sensing_rate
          as args. Passing them here causes roslaunch "unused args" errors. -->
   </include>
