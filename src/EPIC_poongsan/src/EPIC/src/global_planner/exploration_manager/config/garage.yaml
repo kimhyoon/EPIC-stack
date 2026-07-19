@@ -62,6 +62,7 @@ lidar_perception/yaw_fov: 120.0       # sensor horizontal FOV [deg] for cropped 
 # 2) Enable the clipping (Method B) + the robot-body seed box P0:
 local_planning/clip_corridor_to_observed: true  # master switch
 local_planning/clip_cone_faces: true            # Method B: intersect polytopes with FOV cone
+local_planning/viz_origin_corridor: true         # publish raw FIRI corridor in orange for comparison
 local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]

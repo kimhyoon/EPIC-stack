@@ -67,6 +67,7 @@ void FastPlannerManager::initPlanModules(
   nh.param("local_planning/p0_len_y", p0_len_y_, 0.6);
   nh.param("local_planning/p0_up", p0_up_, 0.2);
   nh.param("local_planning/p0_down", p0_down_, 0.2);
+  nh.param("local_planning/viz_origin_corridor", viz_origin_corridor_, false);
   double yaw_fov_deg = 360.0;
   nh.param("lidar_perception/yaw_fov", yaw_fov_deg, 360.0);
   yaw_fov_ = yaw_fov_deg * M_PI / 180.0;
@@ -305,6 +306,13 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                        gcopter_config_->corridor_size, hPolys, 1e-6,
                        gcopter_config_->dilateRadiusSoft);
 
+  // Preserve the raw FIRI corridor before the P0 seed box and observed-FOV
+  // clipping. Method B does not alter the obstacle set, so no second
+  // convexCover is needed for the comparison overlay.
+  std::vector<Eigen::MatrixX4d> raw_hPolys;
+  if (clip_corridor_to_observed_ && viz_origin_corridor_)
+    raw_hPolys = hPolys;
+
   // --- Prepend P0: a robot-sized, yaw-aligned free box at the current pose. The
   // space the robot physically occupies is free regardless of observation, so it
   // guarantees the start pose lies inside some polytope even when forward-FOV
@@ -424,13 +432,14 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     finState << inner, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
         Eigen::Vector3d::Zero();
     hPolys.resize(front + 1);
-    // gcopter_viz_->visualizePolytope(hPolys, true);  // 비주얼라이제이션 비활성화
+    gcopter_viz_->visualizePolytope(hPolys, true);
   } else {
     finState << path_shorten.back(), Eigen::Vector3d::Zero(),
         Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-    // gcopter_viz_->visualizePolytope(hPolys);  // 비주얼라이제이션 비활성화
+    gcopter_viz_->visualizePolytope(hPolys);
   }
-  // gcopter_viz_->visualizeRoute(path);  // 비주얼라이제이션 비활성화
+  if (!raw_hPolys.empty())
+    gcopter_viz_->visualizePolytopeOrigin(raw_hPolys);
 
   gcopter::GCOPTER_PolytopeSFC gcopter;
   Eigen::VectorXd magnitudeBounds(5);
@@ -921,7 +930,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
-  // gcopter_viz_->visualizePolytope(hPolys);  // 비주얼라이제이션 비활성화
+  gcopter_viz_->visualizePolytope(hPolys);
   gcopter::GCOPTER_PolytopeSFC gcopter;
   Eigen::VectorXd magnitudeBounds(5);
   Eigen::VectorXd penaltyWeights(5);

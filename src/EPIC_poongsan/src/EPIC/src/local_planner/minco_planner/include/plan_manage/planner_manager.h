@@ -158,6 +158,7 @@ public:
   double p0_len_y_ = 0.6; // P0: body-y (left/right) full length
   double p0_up_ = 0.2;    // P0: extent above the flight controller
   double p0_down_ = 0.2;  // P0: extent below the flight controller
+  bool viz_origin_corridor_ = false; // publish raw FIRI corridor for comparison
   double yaw_fov_ = 2.0 * M_PI; // horizontal FOV [rad] (lidar_perception/yaw_fov)
   // Intersect each forward corridor polytope with the observed FOV cone faces.
   void clipCorridorToObservedCone(std::vector<Eigen::MatrixX4d> &hPolys);

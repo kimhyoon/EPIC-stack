@@ -33,6 +33,8 @@ private:
   ros::Publisher trajectoryPub;
   ros::Publisher meshPub;
   ros::Publisher edgePub;
+  ros::Publisher meshPubOrig;
+  ros::Publisher edgePubOrig;
   ros::Publisher spherePub;
   ros::Publisher PolysGenerate_timecostPub;
   ros::Publisher trajOptimize_timecostPub;
@@ -66,8 +68,10 @@ public:
     routeIdPub = nh.advertise<visualization_msgs::MarkerArray>("/visualizer/routeid", 10);
     wayPointsPub = nh.advertise<visualization_msgs::Marker>("/visualizer/waypoints", 10);
     trajectoryPub = nh.advertise<visualization_msgs::Marker>("/visualizer/trajectory", 10);
-    meshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000);
-    edgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000);
+    meshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000, true);
+    edgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000, true);
+    meshPubOrig = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_origin", 1000, true);
+    edgePubOrig = nh.advertise<visualization_msgs::Marker>("/visualizer/edge_origin", 1000, true);
     spherePub = nh.advertise<visualization_msgs::Marker>("/visualizer/spheres", 1000);
     speedPub = nh.advertise<std_msgs::Float64>("/visualizer/speed", 1000);
     thrPub = nh.advertise<std_msgs::Float64>("/visualizer/total_thrust", 1000);
@@ -234,8 +238,10 @@ public:
     }
   }
 
-  // Visualize some polytopes in H-representation
-  inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys, bool red_edge = false) {
+  inline void renderPolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
+                             ros::Publisher &mesh_pub, ros::Publisher &edge_pub,
+                             double edge_r, double edge_g, double edge_b,
+                             double mesh_r, double mesh_g, double mesh_b) {
     // Due to the fact that H-representation cannot be directly visualized
     // We first conduct vertex enumeration of them, then apply quickhull
     // to obtain triangle meshs of polyhedra
@@ -269,9 +275,9 @@ public:
     meshMarker.action = visualization_msgs::Marker::ADD;
     meshMarker.type = visualization_msgs::Marker::TRIANGLE_LIST;
     meshMarker.ns = "mesh";
-    meshMarker.color.r = 0.00;
-    meshMarker.color.g = 0.00;
-    meshMarker.color.b = 1.00;
+    meshMarker.color.r = mesh_r;
+    meshMarker.color.g = mesh_g;
+    meshMarker.color.b = mesh_b;
     meshMarker.color.a = 0.07;
     meshMarker.scale.x = 1.0;
     meshMarker.scale.y = 1.0;
@@ -280,15 +286,9 @@ public:
     edgeMarker = meshMarker;
     edgeMarker.type = visualization_msgs::Marker::LINE_LIST;
     edgeMarker.ns = "edge";
-    if (red_edge) {
-      edgeMarker.color.r = 1.00;
-      edgeMarker.color.g = 0.00;
-    } else {
-      edgeMarker.color.r = 0.00;
-      edgeMarker.color.g = 1.00;
-    }
-
-    edgeMarker.color.b = 1.00;
+    edgeMarker.color.r = edge_r;
+    edgeMarker.color.g = edge_g;
+    edgeMarker.color.b = edge_b;
     edgeMarker.color.a = 0.20;
     edgeMarker.scale.x = 0.02;
 
@@ -316,10 +316,24 @@ public:
       }
     }
 
-    meshPub.publish(meshMarker);
-    edgePub.publish(edgeMarker);
+    mesh_pub.publish(meshMarker);
+    edge_pub.publish(edgeMarker);
 
     return;
+  }
+
+  inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys,
+                                bool red_edge = false) {
+    const double edge_r = red_edge ? 1.00 : 0.00;
+    const double edge_g = red_edge ? 0.00 : 1.00;
+    renderPolytope(hPolys, meshPub, edgePub, edge_r, edge_g, 1.00,
+                   0.00, 0.00, 1.00);
+  }
+
+  inline void visualizePolytopeOrigin(
+      const std::vector<Eigen::MatrixX4d> &hPolys) {
+    renderPolytope(hPolys, meshPubOrig, edgePubOrig, 1.00, 0.55, 0.00,
+                   1.00, 0.55, 0.00);
   }
 
   // Visualize all spheres with centers sphs and the same radius

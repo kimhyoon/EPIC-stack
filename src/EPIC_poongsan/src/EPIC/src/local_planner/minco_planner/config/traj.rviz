@@ -165,22 +165,6 @@ Visualization Manager:
             {}
           Queue Size: 105
           Value: true
-        - Class: rviz/Marker
-          Enabled: true
-          Marker Topic: /visualizer/edge
-          Name: Marker
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-        - Class: rviz/Marker
-          Enabled: true
-          Marker Topic: /visualizer/mesh
-          Name: Marker
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
       Enabled: true
       Name: local_planner
     - Class: rviz/Group
@@ -333,6 +317,42 @@ Visualization Manager:
               Value: true
           Enabled: true
           Name: label_map
+        - Class: rviz/Group
+          Displays:
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /visualizer/edge
+              Name: clipped_firi_corridor_edge
+              Namespaces:
+                {}
+              Queue Size: 100
+              Value: true
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /visualizer/mesh
+              Name: clipped_firi_corridor_mesh
+              Namespaces:
+                {}
+              Queue Size: 100
+              Value: true
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /visualizer/edge_origin
+              Name: raw_firi_corridor_edge
+              Namespaces:
+                {}
+              Queue Size: 100
+              Value: true
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /visualizer/mesh_origin
+              Name: raw_firi_corridor_mesh
+              Namespaces:
+                {}
+              Queue Size: 100
+              Value: true
+          Enabled: true
+          Name: corridor_compare
       Enabled: true
       Name: debug_info
     - Class: rviz/Group
