@@ -211,6 +211,9 @@ public:
   double init_region_size_x_, init_region_size_y_, init_region_size_z_; // 初始分区大小
   int x_len, y_len, z_len;                                              // 分区数量
   double max_radius, cube_discrete_size;
+  // Odom-trail node spacing [m]; previously hardcoded in
+  // updateHistoricalOdoms().
+  double odom_node_distance_;
   bool view_graph_;
   int getBoxId(const Eigen::Vector3f &pt);
   vector<Eigen::Vector3i> update_idx_vec_; //

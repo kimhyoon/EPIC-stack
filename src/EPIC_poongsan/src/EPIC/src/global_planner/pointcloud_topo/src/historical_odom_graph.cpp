@@ -169,7 +169,7 @@ void TopoGraph::updateHistoricalOdoms() {
   if (!insert) {
     for (int i = history_odom_nodes_.size() - 1; i >= 0; i--) {
       auto hodom = history_odom_nodes_[i];
-      if ((hodom->center_ - odom_node_->center_).norm() > 5.0)
+      if ((hodom->center_ - odom_node_->center_).norm() > odom_node_distance_)
         insert = true;
       else {
         insert = false;

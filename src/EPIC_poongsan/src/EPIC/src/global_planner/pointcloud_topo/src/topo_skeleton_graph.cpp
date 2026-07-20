@@ -35,6 +35,7 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   nh.param("bubble_topo/bubble_min_radius", bubble_min_radius_, 0.5);
   nh.param("bubble_topo/frontier_bubble_min_radius", frt_bubble_radius_, 0.5);
   nh.param("bubble_topo/cube_discrete_size", cube_discrete_size, 0.3);
+  nh.param("bubble_topo/odom_node_distance", odom_node_distance_, 5.0);
 
   nh.getParam("parallel_astar/update_connection_timeout", update_connection_timeout);
   nh.getParam("parallel_astar/insert_node_timeout", insert_node_timeout);

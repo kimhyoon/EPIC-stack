@@ -177,6 +177,10 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       finish_hover_pos_ = fd_->odom_pos_.cast<double>();
       finish_hover_yaw_ = fd_->odom_yaw_;
       stopTraj();
+      if (traj_server_owns_finish_cmd_) {
+        hover_cmd_pub_.shutdown();
+        ROS_INFO("[FINISH] /position_cmd ownership transferred to traj_server.");
+      }
       // 탐사 종료 요약. 클러스터가 남아있는데 끝났다면 "조기 종료 의심"을 명시
       // (INC1: clusters 17 / reach 0 로 FINISH -> 이게 이번 사고의 1번 원인이었음).
       auto ed = expl_manager_->ed_;
@@ -207,8 +211,12 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       if (auto_rth_land_ && explore_finished_ && fp_->takeoff_height_ <= 0.0)
         ROS_WARN_THROTTLE(5.0, "[FINISH] auto_rth_land on but takeoff disabled "
                                "(no home recorded) -> position hold.");
-      pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
-      ROS_WARN_THROTTLE(2.0, "Finished. holding position.");
+      if (traj_server_owns_finish_cmd_) {
+        ROS_WARN_THROTTLE(2.0, "Finished. traj_server owns /position_cmd hold.");
+      } else {
+        pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
+        ROS_WARN_THROTTLE(2.0, "Finished. holding position.");
+      }
       break;
     }
 
@@ -216,7 +224,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     // yaw-divergence risk), then return home and land.
     ROS_INFO_THROTTLE(2.0, "\033[32m[FINISH] exploration done -> hover %.1fs, then "
                            "return home & land\033[0m", finish_hover_duration_);
-    pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
+    if (!traj_server_owns_finish_cmd_)
+      pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
 
     if ((ros::Time::now() - finish_hover_start_).toSec() >= finish_hover_duration_) {
       goal_rth_ << takeoff_anchor_.x(), takeoff_anchor_.y(), takeoff_anchor_.z(),
@@ -585,6 +594,7 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/avoid_flag_timeout", avoid_flag_timeout_, 0.5);
   nh.param("fsm/explore_warmup_timeout", explore_warmup_timeout_, 5.0);
   nh.param("fsm/auto_rth_land", auto_rth_land_, true);
+  nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
@@ -790,11 +800,12 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              "fsm | takeoff_height=%.2f goal_tolerance=%.2f replan_time=%.2f "
              "emergency_replan_error=%.1f local_plan_max_hz=%.0f "
              "avoid_flag_timeout=%.1f auto_rth_land=%d rth_land_xy_tol=%.2f "
-             "avoidance_enabled=%d",
+             "avoidance_enabled=%d traj_server_owns_finish_cmd=%d",
              fp_->takeoff_height_, goal_tolerance_, fp_->replan_time_,
              fp_->emergency_replan_control_error, local_planning_max_hz_,
              avoid_flag_timeout_, auto_rth_land_ ? 1 : 0, rth_land_xy_tol_,
-             avoidance_enabled_ ? 1 : 0);
+             avoidance_enabled_ ? 1 : 0,
+             traj_server_owns_finish_cmd_ ? 1 : 0);
     param_lines_.push_back(l);
 
     snprintf(l, sizeof(l), "topics | odom=%s cloud=%s", odom_t.c_str(),

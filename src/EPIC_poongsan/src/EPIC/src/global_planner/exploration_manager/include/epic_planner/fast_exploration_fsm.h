@@ -162,6 +162,7 @@ private:
      FINISH -> hover briefly at the last cmd pose (stays OFFBOARD) -> RTH to the
      takeoff point -> when within xy tol of home, switch PX4 to AUTO.LAND. */
   bool   auto_rth_land_ = true;              // master enable
+  bool   traj_server_owns_finish_cmd_ = false;  // release /position_cmd to traj_server in FINISH
   double finish_hover_duration_ = 3.0;       // [s] hover at last cmd pose before returning
   double rth_land_xy_tol_ = 0.3;             // [m] xy proximity to home that triggers landing
   bool   explore_finished_ = false;          // latched only when EXPLORATION ends (not service-RTH)
