@@ -22,5 +22,7 @@
   <exec_depend>topic_tools</exec_depend>
   <exec_depend>rospy</exec_depend>
   <exec_depend>rospkg</exec_depend>
+  <exec_depend>rosbag</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>visualization_msgs</exec_depend>
 </package>

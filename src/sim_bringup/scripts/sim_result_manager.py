@@ -21,6 +21,7 @@ from pathlib import Path
 
 import rospy
 import rospkg
+from std_msgs.msg import String
 from visualization_msgs.msg import Marker
 
 
@@ -57,6 +58,7 @@ class SimResultManager:
         self.metrics_script = scripts_dir / "measure_planning_metrics.py"
         self.plot_evaluation_script = scripts_dir / "plot_experiment_results.py"
         self.plot_planning_script = scripts_dir / "plot_planning_time.py"
+        self.plot_session_script = scripts_dir / "plot_session.py"
         self._verify_source_scripts()
 
         self.result_root.mkdir(parents=True, exist_ok=True)
@@ -76,8 +78,19 @@ class SimResultManager:
         self.eval_dir = self.work_dir / "evaluation"
         self.eval_iter_dir = self.eval_dir / "iter_1"
         self.planning_dir = self.work_dir / "planning"
+        self.session_dir = self.work_dir / "epic_session"
         self.eval_iter_dir.mkdir(parents=True)
         self.planning_dir.mkdir(parents=True)
+        self.session_dir.mkdir(parents=True)
+
+        self.raw_tracking_bag = self.session_dir / (self.test_id + "_raw.bag")
+        self.tracking_bag = self.session_dir / (self.test_id + ".bag")
+        self.events_path = self.session_dir / (self.test_id + ".events.log")
+        self.bag_process = None
+        self.events_file = None
+        self.events_sub = None
+        self.session_info_sub = None
+        self.session_info_written = False
 
         self.children = []
         self.prev_state = ""
@@ -96,6 +109,7 @@ class SimResultManager:
             "/sim_result_manager/eval_state", Marker, queue_size=10, latch=True)
 
         self._start_collectors()
+        self._start_event_capture()
         self.state_sub = rospy.Subscriber(
             "/planning/state", Marker, self._state_callback, queue_size=10)
         rospy.on_shutdown(self._on_shutdown)
@@ -110,6 +124,7 @@ class SimResultManager:
             self.metrics_script,
             self.plot_evaluation_script,
             self.plot_planning_script,
+            self.plot_session_script,
         ]
         missing = [str(path) for path in scripts if not path.is_file()]
         if missing:
@@ -164,6 +179,51 @@ class SimResultManager:
             rospy.loginfo("[SimResult] started original EPIC %s collector (pid=%d)",
                           name, process.pid)
 
+    def _start_event_capture(self):
+        self.events_file = self.events_path.open("w", encoding="utf-8")
+        self.events_file.write(
+            "# EPIC structured flight events for %s\n" % self.tracking_bag.name)
+        self.events_file.write(
+            "# line format: [ros_epoch][+rel_s][FSM_STATE] "
+            "CATEGORY signature | detail\n")
+        self.events_file.flush()
+
+        self.session_info_sub = rospy.Subscriber(
+            "/epic/session_info", String, self._session_info_callback,
+            queue_size=2)
+        self.events_sub = rospy.Subscriber(
+            "/epic/events", String, self._event_callback, queue_size=200)
+
+    def _start_tracking_bag(self):
+        if self.bag_process is not None:
+            return
+        topics = list(dict.fromkeys([
+            self.odom_topic,
+            self.position_cmd_topic,
+            "/FSM_flag_avoidance",
+        ]))
+        command = [
+            "rosbag", "record", "-O", str(self.raw_tracking_bag),
+        ] + topics + ["__name:=sim_tracking_recorder"]
+        self.bag_process = subprocess.Popen(command, preexec_fn=os.setsid)
+        rospy.loginfo(
+            "[SimResult] recording tracking inputs: %s -> %s",
+            ", ".join(topics), self.raw_tracking_bag)
+
+    def _session_info_callback(self, msg):
+        if self.events_file is None or self.session_info_written:
+            return
+        self.session_info_written = True
+        for line in msg.data.rstrip("\n").split("\n"):
+            self.events_file.write("# " + line + "\n")
+        self.events_file.flush()
+
+    def _event_callback(self, msg):
+        if self.events_file is None:
+            return
+        self.events_file.write(msg.data + "\n")
+        self.events_file.flush()
+
     def _state_callback(self, msg):
         state = (msg.text or "").strip()
         if not state:
@@ -184,6 +244,7 @@ class SimResultManager:
         if (not self.test_active and self.wait_trigger_seen and
                 state == "PLAN_TRAJ_EXP"):
             self.test_active = True
+            self._start_tracking_bag()
             rospy.loginfo("[SimResult] test measurement started")
 
         if self.test_active and state == "FINISH" and not self.finish_seen:
@@ -224,6 +285,54 @@ class SimResultManager:
         for name, process in self.children:
             self._stop_process(name, process)
         self.children = []
+
+    def _stop_tracking_capture(self):
+        for sub_attr in ("events_sub", "session_info_sub"):
+            subscriber = getattr(self, sub_attr)
+            if subscriber is not None:
+                subscriber.unregister()
+                setattr(self, sub_attr, None)
+
+        events_file = self.events_file
+        self.events_file = None
+        if events_file is not None:
+            events_file.close()
+
+        if self.bag_process is not None:
+            self._stop_process("tracking rosbag", self.bag_process)
+            self.bag_process = None
+
+    def _normalize_tracking_bag(self):
+        if not self.raw_tracking_bag.is_file():
+            rospy.logwarn("[SimResult] tracking rosbag is missing: %s",
+                          self.raw_tracking_bag)
+            return {"odom": 0, "cmd": 0, "total": 0}
+
+        import rosbag
+
+        topic_map = {
+            self.odom_topic: "/Odometry",
+            self.position_cmd_topic: "/position_cmd",
+        }
+        counts = {"odom": 0, "cmd": 0, "total": 0}
+        with rosbag.Bag(str(self.raw_tracking_bag), "r") as source_bag:
+            with rosbag.Bag(str(self.tracking_bag), "w") as target_bag:
+                for topic, msg, stamp in source_bag.read_messages():
+                    output_topic = topic_map.get(topic, topic)
+                    target_bag.write(output_topic, msg, stamp)
+                    counts["total"] += 1
+                    if output_topic == "/Odometry":
+                        counts["odom"] += 1
+                    elif output_topic == "/position_cmd":
+                        counts["cmd"] += 1
+
+        if counts["odom"] and counts["cmd"]:
+            self.raw_tracking_bag.unlink()
+        else:
+            rospy.logwarn(
+                "[SimResult] tracking bag incomplete: odom=%d cmd=%d total=%d",
+                counts["odom"], counts["cmd"], counts["total"])
+        return counts
 
     def _run_plot(self, command, log_file):
         env = os.environ.copy()
@@ -267,6 +376,7 @@ class SimResultManager:
             self.metrics_script,
             self.plot_evaluation_script,
             self.plot_planning_script,
+            self.plot_session_script,
         ]
         with destination.open("w", encoding="ascii") as stream:
             for path in scripts:
@@ -279,11 +389,15 @@ class SimResultManager:
             self.finalizing = True
 
         evaluation_ready = False
+        tracking_counts = {"odom": 0, "cmd": 0, "total": 0}
         try:
+            # Freeze tracking exactly at FINISH before evaluator CSV flushing.
+            self._stop_tracking_capture()
             if status == "COMPLETE":
                 evaluation_ready = self._wait_for_evaluation()
 
             self._stop_collectors()
+            tracking_counts = self._normalize_tracking_bag()
             if not evaluation_ready:
                 evaluation_ready = (self.eval_iter_dir / "summary.csv").is_file()
 
@@ -306,10 +420,18 @@ class SimResultManager:
                 log_file,
             )
 
+            tracking_exit = self._run_plot(
+                [sys.executable, str(self.plot_session_script),
+                 str(self.session_dir)],
+                log_file,
+            ) if tracking_counts["odom"] and tracking_counts["cmd"] else -1
+
             csv_files = self._copy_artifacts(
                 self.work_dir, "*.csv", self.final_dir / "csv_file")
             png_files = self._copy_artifacts(
                 self.work_dir, "*.png", self.final_dir / "png")
+            shutil.copytree(
+                str(self.session_dir), str(self.final_dir / "epic_session"))
             self._write_source_manifest(self.final_dir / "source_scripts.sha256")
 
             with (self.final_dir / "status.txt").open("w", encoding="ascii") as stream:
@@ -319,6 +441,9 @@ class SimResultManager:
                     "present" if evaluation_ready else "missing"))
                 stream.write("evaluation_plot_exit=%d\n" % evaluation_exit)
                 stream.write("planning_plot_exit=%d\n" % planning_exit)
+                stream.write("tracking_plot_exit=%d\n" % tracking_exit)
+                stream.write("tracking_odom_samples=%d\n" % tracking_counts["odom"])
+                stream.write("tracking_cmd_samples=%d\n" % tracking_counts["cmd"])
                 stream.write("csv_count=%d\n" % len(csv_files))
                 stream.write("png_count=%d\n" % len(png_files))
 
@@ -340,6 +465,7 @@ class SimResultManager:
             self._finalize("PARTIAL")
         else:
             self._stop_collectors()
+            self._stop_tracking_capture()
             shutil.rmtree(str(self.work_dir), ignore_errors=True)
 
 
