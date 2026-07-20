@@ -6,21 +6,13 @@ Panels:
       Expanded:
         - /Global Options1
         - /Axes1
-        - /robot_state1
         - /global_planner1
         - /global_planner1/viewpoint_info1
-        - /global_planner1/viewpoint_info1/MarkerArray1
         - /global_planner1/viewpoint_info1/MarkerArray1/Namespaces1
-        - /global_planner1/viewpoint_info1/PointCloud21
         - /debug_info1
-        - /debug_info1/label_map1
-        - /debug_info1/label_map1/frontier1
-        - /debug_info1/label_map1/well_observed1
         - /explore_env1
-        - /explore_env1/buffered_cloud1
-        - /explore_env1/buffered_cloud1/Autocompute Value Bounds1
-        - /topo_graph1
         - /topo_graph1/Namespaces1
+        - /Local_Avoidance1
       Splitter Ratio: 0.4589178264141083
     Tree Height: 619
   - Class: rviz/Tool Properties
@@ -38,7 +30,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: buffered_cloud
+    SyncSource: well_observed
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -88,7 +80,7 @@ Visualization Manager:
           Marker Topic: /planning/position_cmd_vis
           Name: position_cmd_all
           Namespaces:
-            {}
+            "": true
           Queue Size: 100
           Value: true
         - Class: rviz/Marker
@@ -97,6 +89,14 @@ Visualization Manager:
           Name: state
           Namespaces:
             "": true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /debug/cloud_crop/fov
+          Name: EPIC_FOV
+          Namespaces:
+            cloud_crop: true
           Queue Size: 100
           Value: true
       Enabled: true
@@ -108,7 +108,9 @@ Visualization Manager:
           Marker Topic: /planning/travel_traj
           Name: history_traj
           Namespaces:
-            {}
+            traj_exp: true
+            traj_real: true
+            traj_rth: true
           Queue Size: 100
           Value: true
         - Class: rviz/MarkerArray
@@ -116,7 +118,10 @@ Visualization Manager:
           Marker Topic: /global_tour
           Name: global_tour
           Namespaces:
-            {}
+            global_path: true
+            global_path_order: true
+            goal_path: true
+            goal_path_order: true
           Queue Size: 100
           Value: true
         - Class: rviz/Group
@@ -127,7 +132,9 @@ Visualization Manager:
               Name: MarkerArray
               Namespaces:
                 aabb: true
+                best_viewpoint: true
                 viewpoint_number: true
+                vp_frt_connecter: true
               Queue Size: 100
               Value: true
             - Alpha: 1
@@ -139,7 +146,7 @@ Visualization Manager:
               Axis: Z
               Channel Name: intensity
               Class: rviz/PointCloud2
-              Color: 255; 0; 0
+              Color: 0; 255; 0
               Color Transformer: FlatColor
               Decay Time: 0
               Enabled: true
@@ -151,7 +158,7 @@ Visualization Manager:
               Queue Size: 10
               Selectable: true
               Size (Pixels): 3
-              Size (m): 0.5
+              Size (m): 0.20000000298023224
               Style: Flat Squares
               Topic: /exploration_node/viewpoint_centers
               Unreliable: false
@@ -169,7 +176,7 @@ Visualization Manager:
           Marker Topic: /visualizer/trajectory
           Name: Marker
           Namespaces:
-            {}
+            trajectory: true
           Queue Size: 105
           Value: true
         - Class: rviz/Marker
@@ -177,7 +184,7 @@ Visualization Manager:
           Marker Topic: /visualizer/edge
           Name: Marker
           Namespaces:
-            {}
+            edge: true
           Queue Size: 100
           Value: true
         - Class: rviz/Marker
@@ -185,7 +192,7 @@ Visualization Manager:
           Marker Topic: /visualizer/mesh
           Name: Marker
           Namespaces:
-            {}
+            mesh: true
           Queue Size: 100
           Value: true
       Enabled: true
@@ -344,7 +351,7 @@ Visualization Manager:
       Name: debug_info
     - Class: rviz/Group
       Displays:
-        - Alpha: 0.10000000149011612
+        - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
             Max Value: 4.937349796295166
@@ -355,8 +362,8 @@ Visualization Manager:
           Class: rviz/PointCloud2
           Color: 238; 238; 236
           Color Transformer: AxisColor
-          Decay Time: 1
-          Enabled: true
+          Decay Time: 0
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -364,14 +371,14 @@ Visualization Manager:
           Position Transformer: XYZ
           Queue Size: 10
           Selectable: true
-          Size (Pixels): 1
+          Size (Pixels): 3
           Size (m): 0.009999999776482582
           Style: Points
           Topic: /cloud_registered
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Alpha: 0.800000011920929
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -383,8 +390,8 @@ Visualization Manager:
           Class: rviz/PointCloud2
           Color: 0; 255; 255
           Color Transformer: FlatColor
-          Decay Time: 1
-          Enabled: true
+          Decay Time: 0
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
           Min Color: 0; 0; 0
@@ -392,14 +399,14 @@ Visualization Manager:
           Position Transformer: XYZ
           Queue Size: 10
           Selectable: true
-          Size (Pixels): 2
+          Size (Pixels): 4
           Size (m): 0.019999999552965164
           Style: Points
           Topic: /cloud_registered_cropped
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: false
-          Value: true
+          Value: false
       Enabled: true
       Name: explore_env
     - Class: rviz/MarkerArray
@@ -407,7 +414,12 @@ Visualization Manager:
       Marker Topic: /viz_graph_topic
       Name: topo_graph
       Namespaces:
-        {}
+        boundary: true
+        box id: true
+        odom_edge: true
+        skeleton_edge: true
+        topo_node: true
+        viewpoint_edge: true
       Queue Size: 100
       Value: true
     - Class: rviz/Marker
@@ -415,9 +427,49 @@ Visualization Manager:
       Marker Topic: /planning/expl_diag
       Name: expl_diag_hud
       Namespaces:
-        {}
+        expl_diag: true
       Queue Size: 10
       Value: true
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: avoidance_pointcloud
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.10000000149011612
+          Style: Flat Squares
+          Topic: /local_avoidance/debug_points
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: false
+          Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /local_avoidance_visualization
+          Name: avoidance_target
+          Namespaces:
+            avoidance_target: true
+          Queue Size: 100
+          Value: true
+      Enabled: true
+      Name: Local_Avoidance
   Enabled: true
   Global Options:
     Background Color: 46; 52; 54
@@ -445,7 +497,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 12.193233489990234
+      Distance: 19.95394515991211
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -453,17 +505,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -4.315830230712891
-        Y: 4.832963466644287
-        Z: 10.932487487792969
+        X: 5.3147125244140625
+        Y: 0.7812017202377319
+        Z: -0.24192461371421814
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.9147961139678955
+      Pitch: 1.1547966003417969
       Target Frame: <Fixed Frame>
-      Yaw: 1.012715220451355
+      Yaw: 3.1136484146118164
     Saved:
       - Class: rviz/ThirdPersonFollower
         Distance: 40.93450164794922

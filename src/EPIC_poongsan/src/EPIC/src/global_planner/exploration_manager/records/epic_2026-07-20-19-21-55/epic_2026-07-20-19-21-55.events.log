@@ -1,0 +1,14 @@
+# EPIC structured flight events for epic_2026-07-20-19-21-55.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1784542914.104
+# box | down=[-150, -150, 0.4] up=[150, 150, 2]
+# corridor | DilateRadiusSoft=0.60 DilateRadiusHard=0.50 MaxCorridorSize=4.0 MaxVelMag=0.9 max_traj_len=10.0 astar_safe_distance=0.65 bubble_min_radius=0.50
+# frontier | cell_size=0.20 cluster_size=[0.5, 7.0] cluster_min_points=4 candidate_dphi=0.26 candidate_znum=3 good_observation_dir_score=0.80
+# viewpoint | pillar_radius=[0.5, 2.0]x8 pillar_height=[-1.5, 1.5]x5 circle_samples=8 min_obstacle_clearance=0.65 local_tsp_size=10
+# fsm | takeoff_height=1.20 goal_tolerance=0.20 replan_time=0.20 emergency_replan_error=3.0 local_plan_max_hz=30 avoid_flag_timeout=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance_enabled=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1784542917.044][     +3.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.30V percent=37%
+[1784542921.042][     +7.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.29V percent=37% (repeated x1)
+[1784542925.038][    +11.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.29V percent=36% (repeated x1)
+[1784542929.034][    +14.9s][WAIT_TRIGGER] BATT 23.0V | voltage=23.28V percent=36% (repeated x1)
+[1784542931.034][    +16.9s][WAIT_TRIGGER] BATT 23.0V | voltage=23.26V percent=36%

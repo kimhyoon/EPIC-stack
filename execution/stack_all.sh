@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# stack1.sh — tmux 한 세션을 8칸으로 쪼개 전체 스택을 각 pane에서 실행
-#   (컨테이너 안에서 실행. 호스트에서 돌리려면: host_only/stack1_host.sh)
+# stack_all.sh — tmux 한 세션을 8칸으로 쪼개 전체 스택을 각 pane에서 실행
+#   (컨테이너 안에서 실행. 호스트에서 돌리려면: host_only/stack_all_host.sh)
 #
 #   pane 0 roscore | 1 livox | 2 fastlio | 3 mavros
 #        4 tf_relay| 5 epic   | 6 monitor| 7 free-shell
@@ -20,8 +20,11 @@
 set -u
 
 S="${SESSION:-epic}"
-D="/home/hmcl/stack1/execution"
-SRC="source /opt/ros/noetic/setup.bash; source /home/hmcl/stack1/devel/setup.bash;"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+[ -f "${WORKSPACE_ROOT}/devel/setup.bash" ] || { echo "[tmux] ${WORKSPACE_ROOT}/devel/setup.bash 없음 — 워크스페이스 먼저 빌드" >&2; exit 1; }
+D="${SCRIPT_DIR}"
+SRC="source /opt/ros/noetic/setup.bash; source ${WORKSPACE_ROOT}/devel/setup.bash;"
 
 AUTORUN=0
 EPIC_ARG=""
@@ -73,7 +76,7 @@ send 1 livox     3  "$D/1_livox.sh"
 send 2 fastlio   8  "$D/2_fastlio.sh $FASTLIO_ARG"
 send 3 mavros    5  "$D/3_mavros.sh"
 send 4 tf_relay  14 "$D/4_tf_odom_relay.sh"
-send 5 epic      18 "$D/5_epic.sh $EPIC_ARG"
+send 5 epic      18 "$D/5_epic_mid360.sh $EPIC_ARG"
 send 6 monitor   20 "rostopic hz /Odometry /livox/lidar"
 send 7 shell     0  ""
 

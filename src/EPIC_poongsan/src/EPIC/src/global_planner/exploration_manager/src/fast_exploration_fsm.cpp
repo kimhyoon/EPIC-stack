@@ -849,7 +849,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   if (!(state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
         state_ == EXEC_TRAJ || state_ == FINISH)) {
     global_path_update_timer_.stop();
-    // expl_manager_->frontier_manager_ptr_->viz_pocc();
+    expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
     global_path_update_timer_.start();
     return;

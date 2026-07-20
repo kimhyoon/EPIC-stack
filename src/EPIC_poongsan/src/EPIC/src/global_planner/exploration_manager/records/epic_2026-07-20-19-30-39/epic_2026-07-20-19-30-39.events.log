@@ -1,0 +1,63 @@
+# EPIC structured flight events for epic_2026-07-20-19-30-39.bag
+# line format: [ros_epoch][+rel_s][FSM_STATE] CATEGORY signature | detail
+# EPIC session info | published_ros=1784543438.384
+# box | down=[-150, -150, 0.4] up=[150, 150, 2]
+# corridor | DilateRadiusSoft=0.60 DilateRadiusHard=0.50 MaxCorridorSize=4.0 MaxVelMag=0.9 max_traj_len=10.0 astar_safe_distance=0.65 bubble_min_radius=0.50
+# frontier | cell_size=0.20 cluster_size=[0.5, 7.0] cluster_min_points=4 candidate_dphi=0.26 candidate_znum=3 good_observation_dir_score=0.80
+# viewpoint | pillar_radius=[0.5, 2.0]x8 pillar_height=[-1.0, 1.0]x5 circle_samples=8 min_obstacle_clearance=0.65 local_tsp_size=10
+# fsm | takeoff_height=1.20 goal_tolerance=0.20 replan_time=0.20 emergency_replan_error=3.0 local_plan_max_hz=30 avoid_flag_timeout=0.5 auto_rth_land=1 rth_land_xy_tol=0.20 avoidance_enabled=1
+# topics | odom=/Odometry cloud=/cloud_registered
+[1784543442.712][     +4.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26% (repeated x1)
+[1784543444.712][     +6.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[1784543446.711][     +8.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[1784543448.709][    +10.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26%
+[1784543452.707][    +14.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=23% (repeated x1)
+[1784543454.705][    +16.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[1784543456.704][    +18.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[1784543458.703][    +20.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[1784543460.701][    +22.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[1784543462.701][    +24.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25%
+[1784543466.699][    +28.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26% (repeated x1)
+[1784543474.693][    +36.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x3)
+[1784543476.691][    +38.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[1784543488.684][    +50.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x5)
+[1784543490.683][    +52.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26%
+[1784543492.682][    +54.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25%
+[1784543496.679][    +58.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25% (repeated x1)
+[1784543500.676][    +62.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x1)
+[1784543502.675][    +64.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[1784543504.673][    +66.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[1784543506.672][    +68.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[1784543510.671][    +72.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=24% (repeated x1)
+[1784543512.669][    +74.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[1784543532.656][    +94.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=25% (repeated x9)
+[1784543534.655][    +96.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[1784543538.652][   +100.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=25% (repeated x1)
+[1784543544.649][   +106.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24% (repeated x2)
+[1784543560.639][   +122.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x7)
+[1784543564.637][   +126.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24% (repeated x1)
+[1784543566.635][   +128.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[1784543568.634][   +130.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24%
+[1784543574.629][   +136.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x2)
+[1784543578.627][   +140.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x1)
+[1784543582.625][   +144.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x1)
+[1784543594.617][   +156.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x5)
+[1784543596.616][   +158.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[1784543598.615][   +160.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24%
+[1784543604.611][   +166.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=23% (repeated x2)
+[1784543606.611][   +168.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[1784543610.606][   +172.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x1)
+[1784543612.606][   +174.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[1784543626.600][   +188.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23% (repeated x6)
+[1784543628.597][   +190.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[1784543632.594][   +194.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23% (repeated x1)
+[1784543634.593][   +196.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[1784543636.591][   +198.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23%
+[1784543656.578][   +218.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=23% (repeated x9)
+[1784543658.577][   +220.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23%
+[1784543660.576][   +222.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[1784543662.575][   +224.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=23%
+[1784543664.573][   +226.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[1784543670.569][   +232.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.86V percent=22% (repeated x2)
+[1784543672.569][   +234.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[1784543674.568][   +236.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.86V percent=22%

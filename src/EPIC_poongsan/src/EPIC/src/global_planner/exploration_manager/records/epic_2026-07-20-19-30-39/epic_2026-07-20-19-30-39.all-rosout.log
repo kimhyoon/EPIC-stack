@@ -1,0 +1,177 @@
+# console (/rosout_agg) log for epic_2026-07-20-19-30-39.bag
+# started at 2026-07-20-19-30-39
+[INFO] [1784543439.474] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-30-39/epic_2026-07-20-19-30-39.epic.log
+[INFO] [1784543439.479] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-30-39/epic_2026-07-20-19-30-39.events.log
+[INFO] [1784543442.498] [/cloud_crop_bridge]: [CloudCrop] 3068 -> 525 pts (17%)
+[INFO] [1784543442.713] [/exploration_node]: [EV] [1784543442.712][     +4.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26% (repeated x1)
+[WARN] [1784543444.404] [/exploration_node]: wait for trigger.
+[INFO] [1784543444.712] [/exploration_node]: [EV] [1784543444.712][     +6.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[INFO] [1784543444.900] [/mavros]: HP: requesting home position
+[INFO] [1784543446.711] [/exploration_node]: [EV] [1784543446.711][     +8.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[INFO] [1784543447.548] [/cloud_crop_bridge]: [CloudCrop] 3101 -> 549 pts (18%)
+[INFO] [1784543448.709] [/exploration_node]: [EV] [1784543448.709][    +10.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26%
+[WARN] [1784543449.404] [/exploration_node]: wait for trigger.
+[INFO] [1784543452.548] [/cloud_crop_bridge]: [CloudCrop] 2738 -> 586 pts (21%)
+[INFO] [1784543452.707] [/exploration_node]: [EV] [1784543452.707][    +14.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=23% (repeated x1)
+[WARN] [1784543454.404] [/exploration_node]: wait for trigger.
+[INFO] [1784543454.705] [/exploration_node]: [EV] [1784543454.705][    +16.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[INFO] [1784543454.900] [/mavros]: HP: requesting home position
+[INFO] [1784543456.704] [/exploration_node]: [EV] [1784543456.704][    +18.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[INFO] [1784543457.592] [/cloud_crop_bridge]: [CloudCrop] 2714 -> 572 pts (21%)
+[INFO] [1784543458.703] [/exploration_node]: [EV] [1784543458.703][    +20.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[WARN] [1784543459.415] [/exploration_node]: wait for trigger.
+[INFO] [1784543460.701] [/exploration_node]: [EV] [1784543460.701][    +22.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[INFO] [1784543462.593] [/cloud_crop_bridge]: [CloudCrop] 3172 -> 554 pts (17%)
+[INFO] [1784543462.701] [/exploration_node]: [EV] [1784543462.701][    +24.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25%
+[WARN] [1784543464.424] [/exploration_node]: wait for trigger.
+[INFO] [1784543464.900] [/mavros]: HP: requesting home position
+[INFO] [1784543466.699] [/exploration_node]: [EV] [1784543466.699][    +28.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26% (repeated x1)
+[INFO] [1784543467.643] [/cloud_crop_bridge]: [CloudCrop] 3074 -> 509 pts (17%)
+[WARN] [1784543469.434] [/exploration_node]: wait for trigger.
+[INFO] [1784543472.665] [/cloud_crop_bridge]: [CloudCrop] 2689 -> 557 pts (21%)
+[WARN] [1784543474.434] [/exploration_node]: wait for trigger.
+[INFO] [1784543474.693] [/exploration_node]: [EV] [1784543474.693][    +36.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x3)
+[INFO] [1784543474.900] [/mavros]: HP: requesting home position
+[INFO] [1784543476.691] [/exploration_node]: [EV] [1784543476.691][    +38.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[INFO] [1784543477.696] [/cloud_crop_bridge]: [CloudCrop] 2681 -> 552 pts (21%)
+[WARN] [1784543479.445] [/exploration_node]: wait for trigger.
+[INFO] [1784543482.742] [/cloud_crop_bridge]: [CloudCrop] 2646 -> 539 pts (20%)
+[WARN] [1784543484.454] [/exploration_node]: wait for trigger.
+[INFO] [1784543484.900] [/mavros]: HP: requesting home position
+[INFO] [1784543487.751] [/cloud_crop_bridge]: [CloudCrop] 2706 -> 520 pts (19%)
+[INFO] [1784543488.684] [/exploration_node]: [EV] [1784543488.684][    +50.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x5)
+[WARN] [1784543489.454] [/exploration_node]: wait for trigger.
+[INFO] [1784543490.683] [/exploration_node]: [EV] [1784543490.683][    +52.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=26%
+[INFO] [1784543492.682] [/exploration_node]: [EV] [1784543492.682][    +54.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25%
+[INFO] [1784543492.798] [/cloud_crop_bridge]: [CloudCrop] 3199 -> 537 pts (17%)
+[WARN] [1784543494.454] [/exploration_node]: wait for trigger.
+[INFO] [1784543494.900] [/mavros]: HP: requesting home position
+[INFO] [1784543496.679] [/exploration_node]: [EV] [1784543496.679][    +58.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25% (repeated x1)
+[INFO] [1784543497.843] [/cloud_crop_bridge]: [CloudCrop] 3091 -> 511 pts (17%)
+[WARN] [1784543499.464] [/exploration_node]: wait for trigger.
+[INFO] [1784543500.676] [/exploration_node]: [EV] [1784543500.676][    +62.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.96V percent=25% (repeated x1)
+[INFO] [1784543502.675] [/exploration_node]: [EV] [1784543502.675][    +64.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[INFO] [1784543502.844] [/cloud_crop_bridge]: [CloudCrop] 2687 -> 555 pts (21%)
+[WARN] [1784543504.474] [/exploration_node]: wait for trigger.
+[INFO] [1784543504.674] [/exploration_node]: [EV] [1784543504.673][    +66.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[INFO] [1784543504.900] [/mavros]: HP: requesting home position
+[INFO] [1784543506.672] [/exploration_node]: [EV] [1784543506.672][    +68.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.95V percent=25%
+[INFO] [1784543507.847] [/cloud_crop_bridge]: [CloudCrop] 3153 -> 480 pts (15%)
+[WARN] [1784543509.474] [/exploration_node]: wait for trigger.
+[INFO] [1784543510.671] [/exploration_node]: [EV] [1784543510.671][    +72.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=24% (repeated x1)
+[INFO] [1784543512.669] [/exploration_node]: [EV] [1784543512.669][    +74.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[INFO] [1784543512.894] [/cloud_crop_bridge]: [CloudCrop] 3145 -> 532 pts (17%)
+[WARN] [1784543514.484] [/exploration_node]: wait for trigger.
+[INFO] [1784543514.900] [/mavros]: HP: requesting home position
+[INFO] [1784543517.895] [/cloud_crop_bridge]: [CloudCrop] 2655 -> 608 pts (23%)
+[WARN] [1784543519.486] [/exploration_node]: wait for trigger.
+[INFO] [1784543522.897] [/cloud_crop_bridge]: [CloudCrop] 3122 -> 543 pts (17%)
+[WARN] [1784543524.495] [/exploration_node]: wait for trigger.
+[INFO] [1784543524.900] [/mavros]: HP: requesting home position
+[INFO] [1784543527.948] [/cloud_crop_bridge]: [CloudCrop] 3184 -> 477 pts (15%)
+[WARN] [1784543529.497] [/exploration_node]: wait for trigger.
+[INFO] [1784543532.656] [/exploration_node]: [EV] [1784543532.656][    +94.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=25% (repeated x9)
+[INFO] [1784543532.995] [/cloud_crop_bridge]: [CloudCrop] 3258 -> 502 pts (15%)
+[WARN] [1784543534.504] [/exploration_node]: wait for trigger.
+[INFO] [1784543534.655] [/exploration_node]: [EV] [1784543534.655][    +96.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.94V percent=25%
+[INFO] [1784543534.900] [/mavros]: HP: requesting home position
+[INFO] [1784543538.049] [/cloud_crop_bridge]: [CloudCrop] 3094 -> 442 pts (14%)
+[INFO] [1784543538.652] [/exploration_node]: [EV] [1784543538.652][   +100.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.93V percent=25% (repeated x1)
+[WARN] [1784543539.504] [/exploration_node]: wait for trigger.
+[INFO] [1784543543.097] [/cloud_crop_bridge]: [CloudCrop] 3113 -> 487 pts (16%)
+[WARN] [1784543544.514] [/exploration_node]: wait for trigger.
+[INFO] [1784543544.649] [/exploration_node]: [EV] [1784543544.649][   +106.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24% (repeated x2)
+[INFO] [1784543544.900] [/mavros]: HP: requesting home position
+[INFO] [1784543548.145] [/cloud_crop_bridge]: [CloudCrop] 2408 -> 510 pts (21%)
+[WARN] [1784543549.524] [/exploration_node]: wait for trigger.
+[INFO] [1784543553.148] [/cloud_crop_bridge]: [CloudCrop] 2589 -> 577 pts (22%)
+[WARN] [1784543554.524] [/exploration_node]: wait for trigger.
+[INFO] [1784543554.900] [/mavros]: HP: requesting home position
+[INFO] [1784543558.194] [/cloud_crop_bridge]: [CloudCrop] 2490 -> 587 pts (24%)
+[WARN] [1784543559.524] [/exploration_node]: wait for trigger.
+[INFO] [1784543560.639] [/exploration_node]: [EV] [1784543560.639][   +122.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x7)
+[INFO] [1784543563.249] [/cloud_crop_bridge]: [CloudCrop] 2625 -> 615 pts (23%)
+[WARN] [1784543564.535] [/exploration_node]: wait for trigger.
+[INFO] [1784543564.637] [/exploration_node]: [EV] [1784543564.637][   +126.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24% (repeated x1)
+[INFO] [1784543564.900] [/mavros]: HP: requesting home position
+[INFO] [1784543566.635] [/exploration_node]: [EV] [1784543566.635][   +128.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[INFO] [1784543568.249] [/cloud_crop_bridge]: [CloudCrop] 3128 -> 439 pts (14%)
+[INFO] [1784543568.634] [/exploration_node]: [EV] [1784543568.634][   +130.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.92V percent=24%
+[WARN] [1784543569.545] [/exploration_node]: wait for trigger.
+[INFO] [1784543573.295] [/cloud_crop_bridge]: [CloudCrop] 3155 -> 455 pts (14%)
+[WARN] [1784543574.555] [/exploration_node]: wait for trigger.
+[INFO] [1784543574.629] [/exploration_node]: [EV] [1784543574.629][   +136.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x2)
+[INFO] [1784543574.900] [/mavros]: HP: requesting home position
+[INFO] [1784543578.296] [/cloud_crop_bridge]: [CloudCrop] 2481 -> 622 pts (25%)
+[INFO] [1784543578.627] [/exploration_node]: [EV] [1784543578.627][   +140.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x1)
+[WARN] [1784543579.564] [/exploration_node]: wait for trigger.
+[INFO] [1784543582.625] [/exploration_node]: [EV] [1784543582.625][   +144.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24% (repeated x1)
+[INFO] [1784543583.344] [/cloud_crop_bridge]: [CloudCrop] 2525 -> 618 pts (24%)
+[WARN] [1784543584.564] [/exploration_node]: wait for trigger.
+[INFO] [1784543584.900] [/mavros]: HP: requesting home position
+[INFO] [1784543588.347] [/cloud_crop_bridge]: [CloudCrop] 3152 -> 475 pts (15%)
+[WARN] [1784543589.574] [/exploration_node]: wait for trigger.
+[INFO] [1784543593.427] [/cloud_crop_bridge]: [CloudCrop] 3168 -> 413 pts (13%)
+[WARN] [1784543594.584] [/exploration_node]: wait for trigger.
+[INFO] [1784543594.617] [/exploration_node]: [EV] [1784543594.617][   +156.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x5)
+[INFO] [1784543594.900] [/mavros]: HP: requesting home position
+[INFO] [1784543596.616] [/exploration_node]: [EV] [1784543596.616][   +158.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.91V percent=24%
+[INFO] [1784543598.446] [/cloud_crop_bridge]: [CloudCrop] 3147 -> 588 pts (19%)
+[INFO] [1784543598.615] [/exploration_node]: [EV] [1784543598.615][   +160.3s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24%
+[WARN] [1784543599.594] [/exploration_node]: wait for trigger.
+[INFO] [1784543603.447] [/cloud_crop_bridge]: [CloudCrop] 2625 -> 625 pts (24%)
+[WARN] [1784543604.597] [/exploration_node]: wait for trigger.
+[INFO] [1784543604.611] [/exploration_node]: [EV] [1784543604.611][   +166.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=23% (repeated x2)
+[INFO] [1784543604.900] [/mavros]: HP: requesting home position
+[INFO] [1784543606.612] [/exploration_node]: [EV] [1784543606.611][   +168.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[INFO] [1784543608.494] [/cloud_crop_bridge]: [CloudCrop] 2525 -> 549 pts (22%)
+[WARN] [1784543609.604] [/exploration_node]: wait for trigger.
+[INFO] [1784543610.607] [/exploration_node]: [EV] [1784543610.606][   +172.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.90V percent=24% (repeated x1)
+[INFO] [1784543612.606] [/exploration_node]: [EV] [1784543612.606][   +174.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[INFO] [1784543613.513] [/cloud_crop_bridge]: [CloudCrop] 3078 -> 394 pts (13%)
+[WARN] [1784543614.614] [/exploration_node]: wait for trigger.
+[INFO] [1784543614.900] [/mavros]: HP: requesting home position
+[INFO] [1784543618.547] [/cloud_crop_bridge]: [CloudCrop] 3163 -> 589 pts (19%)
+[WARN] [1784543619.614] [/exploration_node]: wait for trigger.
+[INFO] [1784543623.597] [/cloud_crop_bridge]: [CloudCrop] 3330 -> 536 pts (16%)
+[WARN] [1784543624.616] [/exploration_node]: wait for trigger.
+[INFO] [1784543624.900] [/mavros]: HP: requesting home position
+[INFO] [1784543626.600] [/exploration_node]: [EV] [1784543626.600][   +188.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23% (repeated x6)
+[INFO] [1784543628.597] [/exploration_node]: [EV] [1784543628.597][   +190.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[INFO] [1784543628.647] [/cloud_crop_bridge]: [CloudCrop] 3199 -> 534 pts (17%)
+[WARN] [1784543629.624] [/exploration_node]: wait for trigger.
+[INFO] [1784543632.594] [/exploration_node]: [EV] [1784543632.594][   +194.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23% (repeated x1)
+[INFO] [1784543633.700] [/cloud_crop_bridge]: [CloudCrop] 3176 -> 430 pts (14%)
+[INFO] [1784543634.593] [/exploration_node]: [EV] [1784543634.593][   +196.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.89V percent=23%
+[WARN] [1784543634.634] [/exploration_node]: wait for trigger.
+[INFO] [1784543634.900] [/mavros]: HP: requesting home position
+[INFO] [1784543636.591] [/exploration_node]: [EV] [1784543636.591][   +198.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23%
+[INFO] [1784543638.749] [/cloud_crop_bridge]: [CloudCrop] 3123 -> 484 pts (15%)
+[WARN] [1784543639.634] [/exploration_node]: wait for trigger.
+[INFO] [1784543643.792] [/cloud_crop_bridge]: [CloudCrop] 3185 -> 446 pts (14%)
+[WARN] [1784543644.644] [/exploration_node]: wait for trigger.
+[INFO] [1784543644.902] [/mavros]: HP: requesting home position
+[INFO] [1784543648.849] [/cloud_crop_bridge]: [CloudCrop] 3148 -> 487 pts (15%)
+[WARN] [1784543649.654] [/exploration_node]: wait for trigger.
+[INFO] [1784543653.891] [/cloud_crop_bridge]: [CloudCrop] 3133 -> 515 pts (16%)
+[WARN] [1784543654.654] [/exploration_node]: wait for trigger.
+[INFO] [1784543654.900] [/mavros]: HP: requesting home position
+[INFO] [1784543656.578] [/exploration_node]: [EV] [1784543656.578][   +218.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=23% (repeated x9)
+[INFO] [1784543658.578] [/exploration_node]: [EV] [1784543658.577][   +220.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.88V percent=23%
+[INFO] [1784543658.893] [/cloud_crop_bridge]: [CloudCrop] 2583 -> 601 pts (23%)
+[WARN] [1784543659.664] [/exploration_node]: wait for trigger.
+[INFO] [1784543660.576] [/exploration_node]: [EV] [1784543660.576][   +222.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[INFO] [1784543662.575] [/exploration_node]: [EV] [1784543662.575][   +224.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=23%
+[INFO] [1784543663.944] [/cloud_crop_bridge]: [CloudCrop] 2619 -> 544 pts (21%)
+[INFO] [1784543664.573] [/exploration_node]: [EV] [1784543664.573][   +226.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[WARN] [1784543664.664] [/exploration_node]: wait for trigger.
+[INFO] [1784543664.900] [/mavros]: HP: requesting home position
+[INFO] [1784543668.991] [/cloud_crop_bridge]: [CloudCrop] 2671 -> 627 pts (23%)
+[WARN] [1784543669.664] [/exploration_node]: wait for trigger.
+[INFO] [1784543670.569] [/exploration_node]: [EV] [1784543670.569][   +232.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.86V percent=22% (repeated x2)
+[INFO] [1784543672.569] [/exploration_node]: [EV] [1784543672.569][   +234.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.87V percent=22%
+[INFO] [1784543673.995] [/cloud_crop_bridge]: [CloudCrop] 3284 -> 555 pts (17%)
+[INFO] [1784543674.568] [/exploration_node]: [EV] [1784543674.568][   +236.2s][WAIT_TRIGGER] BATT 22.5V | voltage=22.86V percent=22%
+[WARN] [1784543674.674] [/exploration_node]: wait for trigger.
+[INFO] [1784543674.900] [/mavros]: HP: requesting home position
+[INFO] [1784543678.995] [/cloud_crop_bridge]: [CloudCrop] 2648 -> 621 pts (23%)

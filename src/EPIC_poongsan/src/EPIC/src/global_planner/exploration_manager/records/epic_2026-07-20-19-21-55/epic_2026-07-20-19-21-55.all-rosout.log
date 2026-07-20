@@ -1,0 +1,13 @@
+# console (/rosout_agg) log for epic_2026-07-20-19-21-55.bag
+# started at 2026-07-20-19-21-55
+[INFO] [1784542915.179] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-21-55/epic_2026-07-20-19-21-55.epic.log
+[INFO] [1784542915.182] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-21-55/epic_2026-07-20-19-21-55.events.log
+[INFO] [1784542917.044] [/exploration_node]: [EV] [1784542917.044][     +3.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.30V percent=37%
+[WARN] [1784542920.124] [/exploration_node]: wait for trigger.
+[INFO] [1784542921.042] [/exploration_node]: [EV] [1784542921.042][     +7.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.29V percent=37% (repeated x1)
+[INFO] [1784542924.900] [/mavros]: HP: requesting home position
+[INFO] [1784542925.038] [/exploration_node]: [EV] [1784542925.038][    +11.0s][WAIT_TRIGGER] BATT 23.0V | voltage=23.29V percent=36% (repeated x1)
+[WARN] [1784542925.124] [/exploration_node]: wait for trigger.
+[INFO] [1784542929.034] [/exploration_node]: [EV] [1784542929.034][    +14.9s][WAIT_TRIGGER] BATT 23.0V | voltage=23.28V percent=36% (repeated x1)
+[WARN] [1784542930.134] [/exploration_node]: wait for trigger.
+[INFO] [1784542931.034] [/exploration_node]: [EV] [1784542931.034][    +16.9s][WAIT_TRIGGER] BATT 23.0V | voltage=23.26V percent=36%

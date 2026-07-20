@@ -11,6 +11,9 @@ add_compile_options(-std=c++14)
 #  전환 방법:
 #    catkin build local_avoidance --cmake-args -DUSE_LIVOX_LIDAR=OFF
 #    (영구 설정: catkin config --cmake-args -DUSE_LIVOX_LIDAR=OFF)
+# ⚠ 기본 OFF (이식성). 단 이 리그(Mid360 직결)는 드라이버가 CustomMsg(xfer_format=1)를
+#   쏘므로 ON 으로 빌드해야 함 — OFF(PointCloud2) 빌드는 /livox/lidar 타입 불일치로
+#   콜백이 아예 안 불린다 (2026-07-20 바닥 테스트 무반응의 원인).
 option(USE_LIVOX_LIDAR "Use livox_ros_driver2 CustomMsg as lidar input (OFF = sensor_msgs/PointCloud2)" OFF)
 
 set(LIDAR_DEP "")
@@ -28,6 +31,7 @@ find_package(catkin REQUIRED COMPONENTS
   nav_msgs
   std_msgs
   mavros_msgs
+  visualization_msgs
   tf
   pcl_ros
   pcl_conversions
@@ -37,7 +41,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(PCL REQUIRED)
 
 catkin_package(
-  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs std_msgs mavros_msgs tf pcl_ros pcl_conversions ${LIDAR_DEP}
+  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs std_msgs mavros_msgs visualization_msgs tf pcl_ros pcl_conversions ${LIDAR_DEP}
 )
 
 include_directories(

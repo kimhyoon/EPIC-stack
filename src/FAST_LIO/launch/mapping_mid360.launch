@@ -6,7 +6,9 @@
 	<rosparam command="load" file="$(find fast_lio)/config/mid360.yaml" />
 
 	<param name="feature_extract_enable" type="bool" value="0"/>
-	<param name="point_filter_num" type="int" value="3"/>
+	<!-- 1 = 전처리 데시메이션 없음: /cloud_registered 풀 해상도 (EPIC 관측 밀도용).
+	     매칭은 filter_size_surf voxel 재다운샘플이라 localization 영향 미미. (구 값: 3) -->
+	<param name="point_filter_num" type="int" value="1"/>
 	<param name="max_iteration" type="int" value="3" />
 	<param name="filter_size_surf" type="double" value="0.5" />
 	<param name="filter_size_map" type="double" value="0.5" />

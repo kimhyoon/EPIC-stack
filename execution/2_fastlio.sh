@@ -5,8 +5,11 @@
 # 사용: ./2_fastlio.sh        (rviz 없음)
 #       ./2_fastlio.sh --rviz (rviz 포함)
 set -u
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+[ -f "${WORKSPACE_ROOT}/devel/setup.bash" ] || { echo "[fastlio] ${WORKSPACE_ROOT}/devel/setup.bash 없음 — 워크스페이스 먼저 빌드" >&2; exit 1; }
 source /opt/ros/noetic/setup.bash
-source /home/hmcl/stack1/devel/setup.bash
+source "${WORKSPACE_ROOT}/devel/setup.bash"
 
 RVIZ=false
 for a in "$@"; do [ "$a" = "--rviz" ] && RVIZ=true; done

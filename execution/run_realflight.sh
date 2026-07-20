@@ -34,9 +34,12 @@ done
 
 # ---- 설정 -----------------------------------------------------------------
 ROS_SETUP="/opt/ros/noetic/setup.bash"
-STACK_WS="/home/hmcl/stack1/devel/setup.bash"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+STACK_WS="${WORKSPACE_ROOT}/devel/setup.bash"
+[ -f "$STACK_WS" ] || { echo "[realflight] $STACK_WS 없음 — 워크스페이스 먼저 빌드" >&2; exit 1; }
 FCU_URL="${FCU_URL:-/dev/ttyACM0:921600}"
-LOG_DIR="/home/hmcl/stack1/logs"
+LOG_DIR="${LOG_DIR:-${WORKSPACE_ROOT}/logs}"
 mkdir -p "$LOG_DIR"
 
 # 메인 셸에서 rostopic 등을 쓰기 위해 미리 source (백그라운드 서브셸도 상속)

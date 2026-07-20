@@ -26,6 +26,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.getParam("FrontierManager/good_observation_force_trust_length",
               frtp_.good_observation_force_trust_length_);
   nh.getParam("FrontierManager/update_length", frtp_.update_length_);
+  // [feature: box-margin] yaml 로만 활성화 (키 없으면 0 = 기존 동작).
+  nh.param("FrontierManager/box_boundary_margin", frtp_.box_boundary_margin_, 0);
   nh.getParam("FrontierManager/view_frt", frtp_.view_frt_);
   nh.getParam("FrontierManager/view_cluster", frtp_.view_cluster_);
 
@@ -835,7 +837,17 @@ void FrontierManager::updateFrontierClusters(
       frtd_.label_map_[bytes] = DENSE;
       good_count++;
       continue;
-    } else if (bad_dis) {
+    }
+    // [feature: box-margin] 박스 경계 마진 내 bad 셀은 frontier 승격 경로에서
+    // 제외하고 SPARSE 로만 남긴다: 경계 너머는 관측 자체가 불가라 영영 해소
+    // 안 되는 frontier(탐사 미종료/재방문 루프)가 되기 때문. 여기서 끊으면
+    // 아래 box search·normal 계산도 건너뛰어 반복 비용이 없다. good 관측으로
+    // DENSE 가 되는 경로는 그대로 열려 있다 (위 분기 + force_trust).
+    if (frtp_.box_boundary_margin_ > 0 && is_near_box_boundary(pt)) {
+      frtd_.label_map_[bytes] = SPARSE;
+      continue;
+    }
+    if (bad_dis) {
       bad_dis_set.insert(cells_2_update[i]);
     } else {
       bad_dir_set.insert(cells_2_update[i]);
@@ -1135,6 +1147,22 @@ inline bool FrontierManager::isInBox(const PointType &pt) {
 
 inline bool FrontierManager::isInBox(const Eigen::Vector3f &pt) {
   return lidar_map_interface_->IsInBox(pt);
+}
+
+// [feature: box-margin] 6면 프로브: pt 에서 각 축 ±margin*cell_size 지점 중
+// 하나라도 박스 밖이면 경계 마진 안으로 판정. box 가 여러 개(union)여도 동작.
+bool FrontierManager::is_near_box_boundary(const PointType &pt) {
+  const float m = frtp_.box_boundary_margin_ * frtp_.cell_size_;
+  const Eigen::Vector3f c = pt.getVector3fMap();
+  for (int axis = 0; axis < 3; axis++) {
+    for (int sgn = -1; sgn <= 1; sgn += 2) {
+      Eigen::Vector3f probe = c;
+      probe(axis) += sgn * m;
+      if (!lidar_map_interface_->IsInBox(probe))
+        return true;
+    }
+  }
+  return false;
 }
 
 void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {

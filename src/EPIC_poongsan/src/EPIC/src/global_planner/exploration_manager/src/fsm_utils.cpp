@@ -18,7 +18,13 @@ void FastExplorationFSM::pubState() {
   state_marker.action = Marker::ADD;
   state_marker.color.r = 1.0;
   state_marker.color.a = 1.0;
-  state_marker.text = fd_->state_str_[int(state_)];
+  // 표시만 오버라이드: 회피 MUX 가 조종 중이면 FSM 상태 대신 AVOIDANCE 를 그린다.
+  // FSM 상태 자체는 안 바뀐다 (판정식은 FSMCallback 상단의 avoiding 과 동일).
+  const bool avoiding_now =
+      avoidance_enabled_ && have_avoid_flag_ && (avoid_flag_ == 1) &&
+      ((ros::Time::now() - last_avoid_flag_stamp_).toSec() < avoid_flag_timeout_);
+  state_marker.text = avoiding_now ? std::string("AVOIDANCE")
+                                   : fd_->state_str_[int(state_)];
   state_marker.header.frame_id = "odom";
   state_marker.header.stamp = ros::Time::now();
 

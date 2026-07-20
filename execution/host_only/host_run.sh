@@ -17,7 +17,11 @@
 set -u
 
 CONTAINER="${CONTAINER:-epic_drone}"      # 기본 컨테이너 이름 (docker ps 로 확인)
-EXEC_DIR="/home/hmcl/stack1/execution"    # 컨테이너 내부 경로
+# 컨테이너 내부 execution 경로 — 기본값은 이 스크립트 위치에서 유추
+# (워크스페이스가 컨테이너에 같은 경로로 마운트됐다는 가정).
+# 다르면: EXEC_DIR=/컨테이너/내부/execution ./host_run.sh ...
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+EXEC_DIR="${EXEC_DIR:-$(cd -- "${SCRIPT_DIR}/.." && pwd)}"
 
 if [ $# -lt 1 ]; then
   echo "usage: $0 <script.sh> [args...]"

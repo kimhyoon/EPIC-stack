@@ -5,7 +5,9 @@ Extended from a 2D `LaserScan` node to **3D point clouds** (e.g. Livox Mid-360).
 
 ## Approach
 
-A 3D point cloud is reduced to **two bands** (raw sensor frame, small-tilt assumption):
+Incoming points are first rotated sensor→body by the mount pitch (`sensor_pitch_deg`,
+positive = tilted down; 0 = flat mount, identity). The cloud is then reduced to
+**two bands** in the **body frame**:
 
 - **Horizontal slab** `|z| < band_z_thr` → drives **x, y** avoidance (classic 2D APF on the in-plane cut).
 - **Vertical column** `hypot(x, y) < band_r_thr` (AND) → drives **z** avoidance (ceiling / floor / overhead).
@@ -41,6 +43,7 @@ See [`config/local_avoidance.yaml`](config/local_avoidance.yaml). Key ones:
 | `avoidance_moving_m` | 1.45 | max move distance (3D) |
 | `band_z_thr` | 0.3 | horizontal slab half-thickness |
 | `band_r_thr` | 0.3 | vertical column radius |
+| `sensor_pitch_deg` | 0.0 | sensor mount pitch (deg, down = positive); rotates points sensor→body at ingestion |
 
 ## Build & Run
 

@@ -50,6 +50,10 @@ struct FrontierParam {
   int dense_cell_cloud_num_;
   int sparse_cell_cloud_num_;
   int noise_cell_range_;
+  // [feature: box-margin] 탐사 박스 경계로부터 이 셀 수 이내의 bad 관측 셀은
+  // frontier 로 승격하지 않는다 (경계 너머 관측 불가 → 해소 안 되는 frontier 방지).
+  // 기본 0 = 비활성. yaml 의 FrontierManager/box_boundary_margin 으로만 켠다.
+  int box_boundary_margin_ = 0;
   float cluster_min_size_;
   Eigen::Vector3f map_min_;
   Eigen::Vector3f map_max_;
@@ -293,6 +297,8 @@ private:
   void removeUnreachableViewpoints(vector<ClusterInfo::Ptr> &clusters);
   bool isInBox(const PointType &pt);
   bool isInBox(const Eigen::Vector3f &pt);
+  // [feature: box-margin] pt 가 탐사 박스 경계에서 margin*cell_size 이내인가 (6면 프로브)
+  bool is_near_box_boundary(const PointType &pt);
   bool computeSuperClusterInfo(SuperClusterInfo::Ptr &super_cluster);
   void reclusterSuperCluster(SuperClusterInfo::Ptr &super_cluster);
 

@@ -1,0 +1,8 @@
+# console (/rosout_agg) log for epic_2026-07-20-19-03-16.bag
+# started at 2026-07-20-19-03-16
+[INFO] [1784541796.259] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-03-16/epic_2026-07-20-19-03-16.epic.log
+[INFO] [1784541796.262] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-03-16/epic_2026-07-20-19-03-16.events.log
+[WARN] [1784541801.201] [/exploration_node]: wait for trigger.
+[INFO] [1784541804.900] [/mavros]: HP: requesting home position
+[WARN] [1784541806.201] [/exploration_node]: wait for trigger.
+[WARN] [1784541811.211] [/exploration_node]: wait for trigger.

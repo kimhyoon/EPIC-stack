@@ -3,8 +3,9 @@
 # enables exactly one bridge pass from /cloud_registered to the cropped topic.
 #topic param:
 # 실비행용. FAST-LIO 출력에 맞춰 시뮬 토픽에서 변경.
-odometry_topic: /Odometry          # FAST-LIO odom  (시뮬: /quad_0/lidar_slam/odom)
+odometry_topic: /mavros/local_position/odom          # PX4 EKF odom (수평 자세 — lidar_pitch 25와 짝) (시뮬: /quad_0/lidar_slam/odom)
 cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
+lidar_perception/cloud_frame_mode: world
 
 # ── ML-X FOV 에뮬레이션: 센서 crop 브릿지 (cloud_crop_bridge) ──────────────
 # Mid-360(수평 360°) 데이터를 ML-X(전방 120°x35°)처럼 잘라 EPIC 에 공급하는 스위치.
@@ -17,14 +18,15 @@ cloud_crop/enable: true
 cloud_crop/output_topic: /cloud_registered_cropped
 # ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
 cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
-cloud_crop/fov_up: 37.5           # 수직 상한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
-cloud_crop/fov_down: 0        # 수직 하한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+cloud_crop/fov_up: 17.5           # 수직 상한 elevation [deg] 
+cloud_crop/fov_down: -17.5        # 수직 하한 elevation [deg]
 cloud_crop/min_range: 0.0         # [m]
 cloud_crop/max_range: 30.0        # [m], <= (0 = 무제한)
 cloud_crop/yaw_offset_deg: 0.0    # 센서 정면이 기체 +x 에서 벗어난 장착각 [deg, CCW]
-# ⚠ crop 켤 때 아래 lidar_perception/fov_up(52)/fov_down(-7)은 Mid-360 물리값이라
-#   crop 데이터(±17.5°)보다 넓다 — EPIC 이 FOV 밖을 '관측됨'으로 오인하지 않게
-#   17.5/-17.5 로(viewpoint 는 그보다 보수적으로) 함께 줄이는 것 권장.
+# ⚠ 아래 lidar_perception/fov_up/down 은 센서(광축) 프레임 elevation [deg] —
+#   minco corridor-clip 이 (값 - lidar_pitch)로 body 환산해 쓴다 (planner_manager.cpp:581).
+#   crop ±17.5°(body) = 센서 프레임 7.5°~42.5° → 아래 42.5/7.5 로 crop 과 정합 완료.
+#   (body 값 17.5/-17.5 를 그대로 넣으면 콘이 25° 아래로 꺾이니 금지.)
 global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
@@ -42,18 +44,21 @@ bubble_topo/init_region_size_y: 3.3
 bubble_topo/init_region_size_z: 2.0
 bubble_topo/cube_discrete_size: 0.4
 bubble_topo/odom_node_distance: 3.0
-bubble_astar/safe_distance: 0.65 ####
+bubble_astar/safe_distance: 0.6 ####
 # map param
 max_update_region_num: 99999999
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 
-lidar_perception/fov_up: 37.5  # Original MID360 tilted-mount profile
-lidar_perception/fov_down: 5.0
+lidar_perception/fov_up: 42.5  # ML-X crop 정합값: body +17.5° + lidar_pitch 25 (원본 MID360 프로파일: 37.5)
+lidar_perception/fov_down: 7.5 # body -17.5° + 25 (원본: 5.0)
 lidar_perception/lidar_pitch: 25.0
-lidar_perception/fov_viewpoint_up: 48.0
-lidar_perception/fov_viewpoint_down: -5.0
-lidar_perception/max_ray_length: 10  #13
+
+# for viewpoint evaluation. more conservative then actual fov.
+lidar_perception/fov_viewpoint_up: 40.0
+lidar_perception/fov_viewpoint_down: 10.0
+lidar_perception/fov_viewpoint_horizontal: 100
+lidar_perception/max_ray_length: 30  #13
 
 # PR #1 observes this MID360 profile as a forward, non-360 LiDAR.
 lidar_perception/yaw_fov: 120.0
@@ -68,13 +73,16 @@ parallel_astar/insert_node_timeout: 0.004
 FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
 FrontierManager/good_observation_direction_score: 0.8
-FrontierManager/good_observation_force_trust_length: 4.5
-FrontierManager/good_observation_trust_length: 12.0
+FrontierManager/good_observation_force_trust_length: 1.0
+FrontierManager/good_observation_trust_length: 20.0
 FrontierManager/update_length: 25.0  #15
-FrontierManager/cluster_max_size: 7.0  #15
+# 박스 경계에서 이 셀 수(x cell_size) 이내의 bad 관측 셀은 frontier 승격 금지.
+# 경계 너머는 관측 불가라 해소 안 되는 frontier(탐사 미종료/재방문 루프) 방지. 0 = off.
+FrontierManager/box_boundary_margin: 2
+FrontierManager/cluster_max_size: 3.0  #15
 FrontierManager/cluster_min_size: 0.5
-FrontierManager/cluster_min_radius: 1.8 # DBSCAN 判断邻居的阈值
-FrontierManager/cluster_direction_radius: -1.0 # cos(theta) > cluster_direction_radius [-1, 1]
+FrontierManager/cluster_min_radius: 1.0 # DBSCAN 判断邻居的阈值
+FrontierManager/cluster_direction_radius: 0.5 # cos(theta) > cluster_direction_radius [-1, 1]
 FrontierManager/cluster_minmum_point_num: 4
 # 柱形采样
 ViewpointManager/sample_pillar_min_height: -1.0
@@ -87,7 +95,7 @@ ViewpointManager/sample_pillar_circle_sample_num: 8
 # 뷰포인트가 벽에서 최소 떨어질 거리[m] (구 하드코딩 0.9, frontier_manager.cpp:1191).
 # 폭 < 2*이값 복도는 유효 뷰포인트 없어 "도달불가"로 스킵됨.
 # 낮추면(예 0.5) 좁은 복도까지 탐사(벽 근접 주의), 높이면 보수적. safe_distance(0.7)와 함께 조절.
-ViewpointManager/min_obstacle_clearance: 0.65
+ViewpointManager/min_obstacle_clearance: 0.5
 ViewpointManager/local_tsp_size: 10  #10
 # area
 box_num: 1
@@ -97,8 +105,8 @@ dead_area_num: 0
 # ====================================================================
 # trajectory param
 max_traj_len: 10.0
-DilateRadiusSoft: 0.6 # corrido
-DilateRadiusHard: 0.5 # collision check threshold
+DilateRadiusSoft: 0.5 # corrido
+DilateRadiusHard: 0.4 # collision check threshold
 MaxCorridorSize: 4.0
 MaxVelMag: 0.9 #4.0
 maxBdrMag: 10000.0

@@ -1,0 +1,96 @@
+# console (/rosout_agg) log for epic_2026-07-20-19-16-02.bag
+# started at 2026-07-20-19-16-02
+[INFO] [1784542562.124] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-16-02/epic_2026-07-20-19-16-02.epic.log
+[INFO] [1784542562.126] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-16-02/epic_2026-07-20-19-16-02.events.log
+[INFO] [1784542563.260] [/exploration_node]: [EV] [1784542563.260][     +2.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45%
+[INFO] [1784542564.900] [/mavros]: HP: requesting home position
+[INFO] [1784542565.260] [/exploration_node]: [EV] [1784542565.260][     +4.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.54V percent=45%
+[WARN] [1784542567.055] [/exploration_node]: wait for trigger.
+[WARN] [1784542572.055] [/exploration_node]: wait for trigger.
+[INFO] [1784542573.255] [/exploration_node]: [EV] [1784542573.254][    +12.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45% (repeated x3)
+[INFO] [1784542574.900] [/mavros]: HP: requesting home position
+[WARN] [1784542577.055] [/exploration_node]: wait for trigger.
+[INFO] [1784542579.252] [/exploration_node]: [EV] [1784542579.252][    +18.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.54V percent=45% (repeated x2)
+[WARN] [1784542582.065] [/exploration_node]: wait for trigger.
+[INFO] [1784542584.900] [/mavros]: HP: requesting home position
+[WARN] [1784542587.065] [/exploration_node]: wait for trigger.
+[WARN] [1784542592.075] [/exploration_node]: wait for trigger.
+[INFO] [1784542594.900] [/mavros]: HP: requesting home position
+[WARN] [1784542597.075] [/exploration_node]: wait for trigger.
+[INFO] [1784542601.236] [/exploration_node]: [EV] [1784542601.236][    +40.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45% (repeated x10)
+[WARN] [1784542602.085] [/exploration_node]: wait for trigger.
+[INFO] [1784542604.900] [/mavros]: HP: requesting home position
+[INFO] [1784542605.235] [/exploration_node]: [EV] [1784542605.235][    +44.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.52V percent=44% (repeated x1)
+[WARN] [1784542607.085] [/exploration_node]: wait for trigger.
+[INFO] [1784542607.235] [/exploration_node]: [EV] [1784542607.235][    +46.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45%
+[INFO] [1784542609.232] [/exploration_node]: [EV] [1784542609.232][    +48.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.51V percent=44%
+[INFO] [1784542611.235] [/exploration_node]: [EV] [1784542611.235][    +50.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.52V percent=44%
+[WARN] [1784542612.096] [/exploration_node]: wait for trigger.
+[INFO] [1784542614.900] [/mavros]: HP: requesting home position
+[INFO] [1784542615.232] [/exploration_node]: [EV] [1784542615.232][    +54.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45% (repeated x1)
+[WARN] [1784542617.105] [/exploration_node]: wait for trigger.
+[INFO] [1784542621.225] [/exploration_node]: [EV] [1784542621.225][    +60.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.52V percent=45% (repeated x2)
+[WARN] [1784542622.115] [/exploration_node]: wait for trigger.
+[INFO] [1784542624.900] [/mavros]: HP: requesting home position
+[INFO] [1784542625.225] [/exploration_node]: [EV] [1784542625.225][    +64.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.53V percent=45% (repeated x1)
+[WARN] [1784542627.115] [/exploration_node]: wait for trigger.
+[INFO] [1784542627.221] [/exploration_node]: [EV] [1784542627.221][    +66.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.52V percent=45%
+[INFO] [1784542629.220] [/exploration_node]: [EV] [1784542629.220][    +68.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.51V percent=44%
+[INFO] [1784542631.222] [/exploration_node]: [EV] [1784542631.222][    +70.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.52V percent=44%
+[WARN] [1784542632.125] [/exploration_node]: wait for trigger.
+[INFO] [1784542633.220] [/exploration_node]: [EV] [1784542633.220][    +72.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.51V percent=44%
+[INFO] [1784542634.900] [/mavros]: HP: requesting home position
+[WARN] [1784542637.125] [/exploration_node]: wait for trigger.
+[WARN] [1784542642.125] [/exploration_node]: wait for trigger.
+[INFO] [1784542644.900] [/mavros]: HP: requesting home position
+[WARN] [1784542647.135] [/exploration_node]: wait for trigger.
+[INFO] [1784542649.210] [/exploration_node]: [EV] [1784542649.210][    +88.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.50V percent=44% (repeated x7)
+[WARN] [1784542652.146] [/exploration_node]: wait for trigger.
+[INFO] [1784542653.205] [/exploration_node]: [EV] [1784542653.205][    +92.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.51V percent=44% (repeated x1)
+[INFO] [1784542654.900] [/mavros]: HP: requesting home position
+[INFO] [1784542655.208] [/exploration_node]: [EV] [1784542655.208][    +94.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.50V percent=44%
+[WARN] [1784542657.155] [/exploration_node]: wait for trigger.
+[INFO] [1784542659.206] [/exploration_node]: [EV] [1784542659.205][    +98.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.51V percent=44% (repeated x1)
+[WARN] [1784542662.165] [/exploration_node]: wait for trigger.
+[INFO] [1784542664.900] [/mavros]: HP: requesting home position
+[INFO] [1784542665.197] [/exploration_node]: [EV] [1784542665.197][   +104.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.50V percent=44% (prev repeated x2 over 4.0s)
+[WARN] [1784542667.165] [/exploration_node]: wait for trigger.
+[INFO] [1784542671.194] [/exploration_node]: [EV] [1784542671.194][   +110.2s][WAIT_TRIGGER] BATT 23.5V | voltage=23.50V percent=44% (repeated x1)
+[WARN] [1784542672.175] [/exploration_node]: wait for trigger.
+[INFO] [1784542674.900] [/mavros]: HP: requesting home position
+[WARN] [1784542677.185] [/exploration_node]: wait for trigger.
+[WARN] [1784542682.185] [/exploration_node]: wait for trigger.
+[INFO] [1784542684.900] [/mavros]: HP: requesting home position
+[INFO] [1784542685.185] [/exploration_node]: [EV] [1784542685.185][   +124.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.49V percent=44% (repeated x3)
+[INFO] [1784542687.190] [/exploration_node]: [EV] [1784542687.190][   +126.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.50V percent=44%
+[WARN] [1784542687.195] [/exploration_node]: wait for trigger.
+[WARN] [1784542692.205] [/exploration_node]: wait for trigger.
+[INFO] [1784542694.900] [/mavros]: HP: requesting home position
+[INFO] [1784542695.181] [/exploration_node]: [EV] [1784542695.181][   +134.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.49V percent=43% (repeated x3)
+[WARN] [1784542697.205] [/exploration_node]: wait for trigger.
+[WARN] [1784542702.215] [/exploration_node]: wait for trigger.
+[INFO] [1784542704.900] [/mavros]: HP: requesting home position
+[INFO] [1784542705.175] [/exploration_node]: [EV] [1784542705.175][   +144.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.48V percent=43% (repeated x4)
+[WARN] [1784542707.225] [/exploration_node]: wait for trigger.
+[INFO] [1784542709.172] [/exploration_node]: [EV] [1784542709.172][   +148.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.49V percent=43% (repeated x1)
+[INFO] [1784542711.172] [/exploration_node]: [EV] [1784542711.172][   +150.2s][WAIT_TRIGGER] BATT 23.0V | voltage=23.48V percent=43%
+[WARN] [1784542712.235] [/exploration_node]: wait for trigger.
+[INFO] [1784542714.900] [/mavros]: HP: requesting home position
+[WARN] [1784542717.245] [/exploration_node]: wait for trigger.
+[INFO] [1784542719.166] [/exploration_node]: [EV] [1784542719.166][   +158.1s][WAIT_TRIGGER] BATT 23.0V | voltage=23.47V percent=43% (repeated x3)
+[WARN] [1784542722.247] [/exploration_node]: wait for trigger.
+[INFO] [1784542723.165] [/exploration_node]: [EV] [1784542723.165][   +162.1s][WAIT_TRIGGER] BATT 23.0V | voltage=23.48V percent=43% (repeated x1)
+[INFO] [1784542724.900] [/mavros]: HP: requesting home position
+[WARN] [1784542727.255] [/exploration_node]: wait for trigger.
+[INFO] [1784542731.159] [/exploration_node]: [EV] [1784542731.159][   +170.1s][WAIT_TRIGGER] BATT 23.0V | voltage=23.49V percent=43% (repeated x3)
+[WARN] [1784542732.255] [/exploration_node]: wait for trigger.
+[INFO] [1784542733.158] [/exploration_node]: [EV] [1784542733.158][   +172.1s][WAIT_TRIGGER] BATT 23.0V | voltage=23.48V percent=43%
+[INFO] [1784542734.900] [/mavros]: HP: requesting home position
+[WARN] [1784542737.255] [/exploration_node]: wait for trigger.
+[WARN] [1784542742.255] [/exploration_node]: wait for trigger.
+[INFO] [1784542744.900] [/mavros]: HP: requesting home position
+[WARN] [1784542747.265] [/exploration_node]: wait for trigger.
+[WARN] [1784542752.275] [/exploration_node]: wait for trigger.
+[INFO] [1784542754.900] [/mavros]: HP: requesting home position
+[INFO] [1784542757.145] [/exploration_node]: [EV] [1784542757.145][   +196.1s][WAIT_TRIGGER] BATT 23.0V | voltage=23.47V percent=43% (repeated x11)
+[WARN] [1784542757.275] [/exploration_node]: wait for trigger.
