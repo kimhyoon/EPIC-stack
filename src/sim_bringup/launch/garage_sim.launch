@@ -34,11 +34,14 @@
   <arg name="use_cloud_crop_bridge" default="true" />
 
   <!-- Simulation-only reactive local avoidance. Real flight uses real_flight.launch. -->
-  <arg name="enable_avoidance" default="true" />
+  <arg name="enable_avoidance" default="false" />
 
   <!-- Evaluation parameters -->
   <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
   <arg name="eval_auto_shutdown" default="false" />
+  <arg name="record_results" default="true" />
+  <arg name="result_root" default="$(find sim_bringup)/../../result" />
+  <arg name="result_tmp_root" default="/dev/shm/epic_sim_results" />
 
   <!-- Trajectory/Waypoint server -->
   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
@@ -125,21 +128,48 @@
           args="/position_cmd /planning/pos_cmd" output="screen" />
   </group>
 
-  <!-- Exploration evaluation metrics -->
-  <node pkg="epic_planner" name="exploration_evaluator" type="evaluate_exploration.py" output="screen">
-    <param name="odom_topic" value="$(arg odom_topic)" />
-    <param name="position_cmd_topic" value="/planning/pos_cmd" />
-    <param name="pcd_path" value="$(arg map_pcd)" />
-    <param name="cell_size" value="0.4" />
-    <param name="map_min_x" value="-10.0" />
-    <param name="map_min_y" value="-6.0" />
-    <param name="map_min_z" value="-0.2" />
-    <param name="map_max_x" value="182.0" />
-    <param name="map_max_y" value="150.2" />
-    <param name="map_max_z" value="3.8" />
-    <param name="output_dir" value="$(arg eval_output_dir)" />
-    <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
-  </node>
+  <!-- One-command simulation result collection. The manager runs the original
+       EPIC evaluator and planning metric scripts unchanged, keeps runtime CSV
+       writes in tmpfs, and starts the original plotters only after FINISH. -->
+  <group if="$(arg record_results)">
+    <node pkg="sim_bringup" name="sim_result_manager"
+          type="sim_result_manager.py" output="screen">
+      <param name="result_root" value="$(arg result_root)" />
+      <param name="tmp_root" value="$(arg result_tmp_root)" />
+      <param name="test_prefix" value="test" />
+      <param name="experiment_name" value="epic_planning" />
+      <param name="odom_topic" value="$(arg odom_topic)" />
+      <param name="position_cmd_topic" value="/planning/pos_cmd" />
+      <param name="pcd_path" value="$(arg map_pcd)" />
+      <param name="cell_size" value="0.4" />
+      <param name="map_min_x" value="-10.0" />
+      <param name="map_min_y" value="-6.0" />
+      <param name="map_min_z" value="-0.2" />
+      <param name="map_max_x" value="182.0" />
+      <param name="map_max_y" value="150.2" />
+      <param name="map_max_z" value="3.8" />
+    </node>
+  </group>
+
+  <!-- Preserve the previous direct evaluator path when automatic result
+       management is explicitly disabled. -->
+  <group unless="$(arg record_results)">
+    <node pkg="epic_planner" name="exploration_evaluator"
+          type="evaluate_exploration.py" output="screen">
+      <param name="odom_topic" value="$(arg odom_topic)" />
+      <param name="position_cmd_topic" value="/planning/pos_cmd" />
+      <param name="pcd_path" value="$(arg map_pcd)" />
+      <param name="cell_size" value="0.4" />
+      <param name="map_min_x" value="-10.0" />
+      <param name="map_min_y" value="-6.0" />
+      <param name="map_min_z" value="-0.2" />
+      <param name="map_max_x" value="182.0" />
+      <param name="map_max_y" value="150.2" />
+      <param name="map_max_z" value="3.8" />
+      <param name="output_dir" value="$(arg eval_output_dir)" />
+      <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
+    </node>
+  </group>
 
   <!-- RViz-only downsampled map overlay. The latched publisher loads and sends
        this asset once, then stays alive for later RViz subscriptions without

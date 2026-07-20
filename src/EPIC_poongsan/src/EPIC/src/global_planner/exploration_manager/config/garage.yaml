@@ -32,11 +32,10 @@ bubble_topo/min_x: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_y: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_z: 0.3                # Desktop 120-degree comparison value.
 bubble_topo/bubble_min_radius: 0.61
-bubble_topo/init_region_size_x: 3.3   # [synced: real]
-bubble_topo/init_region_size_y: 3.3   # [synced: real]
+bubble_topo/init_region_size_x: 2.5   # Desktop 120-degree comparison value.
+bubble_topo/init_region_size_y: 2.5   # Desktop 120-degree comparison value.
 bubble_topo/init_region_size_z: 2.0
 bubble_topo/cube_discrete_size: 0.45  # Original garage Simulation value.
-bubble_topo/odom_node_distance: 6.0   # Original garage Simulation value.
 bubble_astar/safe_distance: 0.6
 # map param
 max_update_region_num: 35000
@@ -88,7 +87,7 @@ ViewpointManager/sample_pillar_min_radius: 0.3
 ViewpointManager/sample_pillar_max_radius: 1.2
 ViewpointManager/sample_pillar_radius_layer_num: 5
 ViewpointManager/sample_pillar_circle_sample_num: 12
-ViewpointManager/local_tsp_size: 5
+ViewpointManager/local_tsp_size: 20
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
@@ -100,10 +99,10 @@ dead_area_num: 0
 max_traj_len: 10.0
 DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
 DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
-MaxCorridorSize: 4.0   # [synced: real]
+MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
 MaxVelMag: 1.0         # Desktop 120-degree comparison value.
 maxBdrMag: 10000.0
-MaxTiltAngle: 0.8 # [synced: real] max attitude angle: 60deg=1.0472, 45deg=0.7854, 30deg=0.5236, 10deg=0.1745.
+MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
 MinThrust: 15.0
 MaxThrust: 22.0
 VehicleMass: 1.9
@@ -112,17 +111,17 @@ HorizDrag: 0.70   # [SIM keep] matched to simulation dynamics; do not use real=0
 VertDrag: 0.80    # [SIM keep] do not use real=0.0 here.
 ParasDrag: 0.01   # [SIM keep] do not use real=0.0 here.
 SpeedEps: 0.0001
-WeightT: 700.0    # [synced: real]
-WeightSafeT: 200.0 # [synced: real]
+WeightT: 2000.0   # Desktop 120-degree comparison value.
+WeightSafeT: 400.0 # Desktop 120-degree comparison value.
 # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
-ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6]  # [synced: real]
+ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
 SmoothingEps: 0.015
 IntegralIntervs: 32
-RelCostTol: 1.1e-6  # [synced: real]
+RelCostTol: 1.0e-6  # Desktop 120-degree comparison value.
 #param for yaw opt
 yaw_max_vel: 2.0    # Desktop 120-degree comparison value.
 yaw_rho_vis: 10000.0
-yaw_time_fwd: 2.5   # [synced: real]
+yaw_time_fwd: 3.0   # Desktop 120-degree comparison value.
 # FSM param
 fsm/goal_tolerance: 0.2
 fsm/max_segment_length: 99.0
