@@ -35,11 +35,11 @@ bubble_topo/bubble_min_radius: 0.61
 bubble_topo/init_region_size_x: 3.3   # [synced: real]
 bubble_topo/init_region_size_y: 3.3   # [synced: real]
 bubble_topo/init_region_size_z: 2.0
-bubble_topo/cube_discrete_size: 0.25  # Desktop 120-degree comparison value.
-bubble_topo/odom_node_distance: 1.0   # Desktop 120-degree comparison value.
+bubble_topo/cube_discrete_size: 0.45  # Original garage Simulation value.
+bubble_topo/odom_node_distance: 6.0   # Original garage Simulation value.
 bubble_astar/safe_distance: 0.6
 # map param
-max_update_region_num: 99999999
+max_update_region_num: 35000
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 lidar_perception/fov_up: 15.0
@@ -67,8 +67,8 @@ local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
 local_planning/p0_down: 0.2    # P0 extent below the flight controller [m]
-parallel_astar/update_connection_timeout: 0.002
-parallel_astar/insert_node_timeout: 0.002
+parallel_astar/update_connection_timeout: 0.008
+parallel_astar/insert_node_timeout: 0.008
 FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
 FrontierManager/good_observation_direction_score: 0.8   # Desktop 120-degree comparison value.
@@ -88,7 +88,7 @@ ViewpointManager/sample_pillar_min_radius: 0.3
 ViewpointManager/sample_pillar_max_radius: 1.2
 ViewpointManager/sample_pillar_radius_layer_num: 5
 ViewpointManager/sample_pillar_circle_sample_num: 12
-ViewpointManager/local_tsp_size: 20
+ViewpointManager/local_tsp_size: 5
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
