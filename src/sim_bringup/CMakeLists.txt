@@ -7,5 +7,6 @@ catkin_package()
 
 catkin_install_python(PROGRAMS
   scripts/sim_result_manager.py
+  scripts/plot_tracking_accuracy_report.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

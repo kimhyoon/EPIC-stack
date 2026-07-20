@@ -59,6 +59,9 @@ class SimResultManager:
         self.plot_evaluation_script = scripts_dir / "plot_experiment_results.py"
         self.plot_planning_script = scripts_dir / "plot_planning_time.py"
         self.plot_session_script = scripts_dir / "plot_session.py"
+        self.plot_tracking_report_script = (
+            Path(rospkg.RosPack().get_path("sim_bringup")) /
+            "scripts" / "plot_tracking_accuracy_report.py")
         self._verify_source_scripts()
 
         self.result_root.mkdir(parents=True, exist_ok=True)
@@ -125,6 +128,7 @@ class SimResultManager:
             self.plot_evaluation_script,
             self.plot_planning_script,
             self.plot_session_script,
+            self.plot_tracking_report_script,
         ]
         missing = [str(path) for path in scripts if not path.is_file()]
         if missing:
@@ -377,6 +381,7 @@ class SimResultManager:
             self.plot_evaluation_script,
             self.plot_planning_script,
             self.plot_session_script,
+            self.plot_tracking_report_script,
         ]
         with destination.open("w", encoding="ascii") as stream:
             for path in scripts:
@@ -426,6 +431,16 @@ class SimResultManager:
                 log_file,
             ) if tracking_counts["odom"] and tracking_counts["cmd"] else -1
 
+            tracking_csv = self.session_dir / "traj-error" / "tracking_error.csv"
+            tracking_report_png = (
+                self.session_dir / "traj-error" /
+                "tracking_accuracy_by_axis.png")
+            tracking_report_exit = self._run_plot(
+                [sys.executable, str(self.plot_tracking_report_script),
+                 str(tracking_csv), str(tracking_report_png)],
+                log_file,
+            ) if tracking_exit == 0 and tracking_csv.is_file() else -1
+
             csv_files = self._copy_artifacts(
                 self.work_dir, "*.csv", self.final_dir / "csv_file")
             png_files = self._copy_artifacts(
@@ -442,6 +457,7 @@ class SimResultManager:
                 stream.write("evaluation_plot_exit=%d\n" % evaluation_exit)
                 stream.write("planning_plot_exit=%d\n" % planning_exit)
                 stream.write("tracking_plot_exit=%d\n" % tracking_exit)
+                stream.write("tracking_report_exit=%d\n" % tracking_report_exit)
                 stream.write("tracking_odom_samples=%d\n" % tracking_counts["odom"])
                 stream.write("tracking_cmd_samples=%d\n" % tracking_counts["cmd"])
                 stream.write("csv_count=%d\n" % len(csv_files))
