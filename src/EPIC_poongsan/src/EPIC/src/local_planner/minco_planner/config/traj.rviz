@@ -7,10 +7,8 @@ Panels:
         - /Global Options1
         - /Axes1
         - /global_planner1
-        - /global_planner1/viewpoint_info1
-        - /global_planner1/viewpoint_info1/MarkerArray1
-        - /global_planner1/viewpoint_info1/MarkerArray1/Namespaces1
         - /debug_info1
+        - /debug_info1/viewpoint_info1
         - /debug_info1/label_map1/well_observed1
         - /debug_info1/corridor_compare1
         - /explore_env1/buffered_cloud1/Autocompute Value Bounds1
@@ -119,46 +117,6 @@ Visualization Manager:
             goal_path_order: true
           Queue Size: 100
           Value: true
-        - Class: rviz/Group
-          Displays:
-            - Class: rviz/MarkerArray
-              Enabled: true
-              Marker Topic: /exploration_node/sf_cluster_marker
-              Name: MarkerArray
-              Namespaces:
-                {}
-              Queue Size: 100
-              Value: true
-            - Alpha: 1
-              Autocompute Intensity Bounds: true
-              Autocompute Value Bounds:
-                Max Value: 10
-                Min Value: -10
-                Value: true
-              Axis: Z
-              Channel Name: intensity
-              Class: rviz/PointCloud2
-              Color: 255; 255; 255
-              Color Transformer: Intensity
-              Decay Time: 0
-              Enabled: true
-              Invert Rainbow: false
-              Max Color: 255; 255; 255
-              Min Color: 0; 0; 0
-              Name: PointCloud2
-              Position Transformer: XYZ
-              Queue Size: 10
-              Selectable: true
-              Size (Pixels): 3
-              Size (m): 0.20000000298023224
-              Style: Flat Squares
-              Topic: /exploration_node/viewpoint_centers
-              Unreliable: false
-              Use Fixed Frame: true
-              Use rainbow: true
-              Value: true
-          Enabled: false
-          Name: viewpoint_info
       Enabled: true
       Name: global_planner
     - Class: rviz/Group
@@ -235,6 +193,46 @@ Visualization Manager:
               Value: true
           Enabled: false
           Name: current_frame
+        - Class: rviz/Group
+          Displays:
+            - Class: rviz/MarkerArray
+              Enabled: true
+              Marker Topic: /exploration_node/sf_cluster_marker
+              Name: viewpoint_clusters
+              Namespaces:
+                {}
+              Queue Size: 100
+              Value: true
+            - Alpha: 1
+              Autocompute Intensity Bounds: true
+              Autocompute Value Bounds:
+                Max Value: 10
+                Min Value: -10
+                Value: true
+              Axis: Z
+              Channel Name: intensity
+              Class: rviz/PointCloud2
+              Color: 255; 170; 0
+              Color Transformer: FlatColor
+              Decay Time: 0
+              Enabled: true
+              Invert Rainbow: false
+              Max Color: 255; 255; 255
+              Min Color: 0; 0; 0
+              Name: viewpoint_candidates
+              Position Transformer: XYZ
+              Queue Size: 10
+              Selectable: true
+              Size (Pixels): 5
+              Size (m): 0.25
+              Style: Spheres
+              Topic: /exploration_node/viewpoint_centers
+              Unreliable: false
+              Use Fixed Frame: true
+              Use rainbow: false
+              Value: true
+          Enabled: true
+          Name: viewpoint_info
         - Class: rviz/Group
           Displays:
             - Alpha: 0.5
