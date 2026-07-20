@@ -39,12 +39,30 @@ def rmse(values):
 
 
 def set_report_style():
-    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid"):
+    for style in ("seaborn-v0_8-darkgrid", "seaborn-darkgrid"):
         try:
             plt.style.use(style)
-            return
+            break
         except OSError:
             continue
+
+    matplotlib.rcParams.update({
+        "figure.facecolor": "white",
+        "savefig.facecolor": "white",
+        "axes.facecolor": "#f3f2f8",
+        "axes.edgecolor": "#f3f2f8",
+        "axes.titlesize": 13.5,
+        "axes.labelsize": 12,
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans"],
+        "font.size": 10,
+        "grid.color": "white",
+        "grid.linewidth": 1.0,
+        "grid.alpha": 0.8,
+        "legend.fontsize": 11,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+    })
 
 
 def render(input_csv, output_png):
@@ -62,37 +80,41 @@ def render(input_csv, output_png):
     rmse_y_mm = rmse(error_y_mm)
     rmse_z_mm = rmse(error_z_mm)
 
-    figure, axes = plt.subplots(1, 2, figsize=(14, 5))
+    # Match the 1839 x 605 report figure embedded in the evaluation PDF.
+    figure, axes = plt.subplots(1, 2, figsize=(18.39, 6.05), dpi=100)
 
-    axes[0].plot(time_s, error_3d_mm, color="blue", linewidth=0.7)
+    axes[0].plot(time_s, error_3d_mm, color="blue", linewidth=1.0)
     axes[0].axhline(
         rmse_3d_mm,
         color="red",
-        linewidth=1.2,
+        linewidth=1.5,
         label="RMSE: %.1f mm" % rmse_3d_mm,
     )
     axes[0].set_title("3D Position Error over Time")
     axes[0].set_xlabel("Time (seconds)")
     axes[0].set_ylabel("Error (mm)")
-    axes[0].legend(loc="upper right")
+    axes[0].legend(loc="upper right", frameon=False)
 
     axes[1].plot(
-        time_s, error_x_mm, color="red", linewidth=0.7,
+        time_s, error_x_mm, color="red", linewidth=1.0,
         label="X - RMSE: %.1f mm" % rmse_x_mm)
     axes[1].plot(
-        time_s, error_y_mm, color="green", linewidth=0.7,
+        time_s, error_y_mm, color="green", linewidth=1.0,
         label="Y - RMSE: %.1f mm" % rmse_y_mm)
     axes[1].plot(
-        time_s, error_z_mm, color="blue", linewidth=0.7,
+        time_s, error_z_mm, color="blue", linewidth=1.0,
         label="Z - RMSE: %.1f mm" % rmse_z_mm)
     axes[1].set_title("Position Error by Axis")
     axes[1].set_xlabel("Time (seconds)")
     axes[1].set_ylabel("Error (mm)")
-    axes[1].legend(loc="upper right")
+    axes[1].legend(loc="upper right", frameon=False)
 
-    figure.tight_layout(w_pad=3.0)
+    # Fixed axes geometry from the report image. Avoid tight_layout because its
+    # margins change with the number of digits in the current test's ticks.
+    axes[0].set_position([0.04731, 0.11405, 0.44535, 0.82314])
+    axes[1].set_position([0.54812, 0.11405, 0.44535, 0.82314])
     output_png.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(output_png, dpi=150, bbox_inches="tight")
+    figure.savefig(output_png, dpi=100)
     plt.close(figure)
 
     print(
