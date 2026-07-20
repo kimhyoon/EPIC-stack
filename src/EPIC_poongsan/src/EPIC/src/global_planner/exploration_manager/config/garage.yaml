@@ -85,8 +85,8 @@ ViewpointManager/sample_pillar_min_height: -1.5  # Desktop 120-degree comparison
 ViewpointManager/sample_pillar_max_height: 1.5   # Desktop 120-degree comparison value.
 ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
 ViewpointManager/sample_pillar_min_radius: 0.3
-ViewpointManager/sample_pillar_max_radius: 1.2
-ViewpointManager/sample_pillar_radius_layer_num: 5
+ViewpointManager/sample_pillar_max_radius: 9.0
+ViewpointManager/sample_pillar_radius_layer_num: 8
 ViewpointManager/sample_pillar_circle_sample_num: 12
 ViewpointManager/local_tsp_size: 20
 # area
@@ -101,7 +101,7 @@ max_traj_len: 10.0
 DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
 DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
 MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
-MaxVelMag: 1.0         # Desktop 120-degree comparison value.
+MaxVelMag: 2.0
 maxBdrMag: 10000.0
 MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
 MinThrust: 15.0
