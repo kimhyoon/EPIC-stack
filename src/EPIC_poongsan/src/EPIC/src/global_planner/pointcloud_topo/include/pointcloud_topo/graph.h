@@ -8,6 +8,7 @@
  */
 
 #pragma once
+#include <cstdint>
 #include <Eigen/Eigen>
 #include <geometry_msgs/Point.h>
 #include <omp.h>
@@ -25,6 +26,7 @@
 #include <pointcloud_topo/parallel_bubble_astar.h>
 #include <random>
 #include <ros/ros.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <thread>
 #include <lidar_map/lidar_map.h>
 #include <unordered_map>
@@ -257,6 +259,9 @@ public:
   ros::Publisher bubble_astar_search_cost_pub_;
 
 private:
+  bool planner_debug_enabled_ = false;
+  uint64_t topo_debug_batch_seq_ = 0;
+  ros::Publisher topo_edge_debug_pub_;
   PointVector check_pts_;
   pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> check_pts_octree_;
   int max_update_region_num_;

@@ -40,8 +40,12 @@
   <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
   <arg name="eval_auto_shutdown" default="false" />
   <arg name="record_results" default="true" />
+  <!-- Root-cause recording is intentionally opt-in because full cloud and
+       planner evidence topics can perturb timing measurements. -->
+  <arg name="record_planner_debug" default="false" />
   <arg name="result_root" default="$(find sim_bringup)/../../result" />
   <arg name="result_tmp_root" default="/dev/shm/epic_sim_results" />
+  <arg name="workspace_root" default="$(find sim_bringup)/../.." />
 
   <!-- Trajectory/Waypoint server -->
   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
@@ -71,6 +75,8 @@
 
   <!-- EPIC exploration algorithm. When cloud_crop/enable is true, EPIC's
        LIO/FSM subscribers select cloud_crop/output_topic themselves. -->
+  <param name="/exploration_node/planner_debug/enable"
+         value="$(arg record_planner_debug)" />
   <include file="$(find epic_planner)/launch/algorithm.xml">
     <arg name="config_file" value="$(arg config_file)" />
   </include>
@@ -140,6 +146,8 @@
       <param name="experiment_name" value="epic_planning" />
       <param name="odom_topic" value="$(arg odom_topic)" />
       <param name="position_cmd_topic" value="/planning/pos_cmd" />
+      <param name="planner_debug_enabled" value="$(arg record_planner_debug)" />
+      <param name="workspace_root" value="$(arg workspace_root)" />
       <param name="pcd_path" value="$(arg map_pcd)" />
       <param name="cell_size" value="0.4" />
       <param name="map_min_x" value="-10.0" />

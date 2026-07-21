@@ -36,6 +36,19 @@ class SimResultManager:
         self.test_prefix = rospy.get_param("~test_prefix", "test")
         self.experiment_name = rospy.get_param("~experiment_name", "epic_planning")
         self.eval_flush_timeout = float(rospy.get_param("~eval_flush_timeout", 15.0))
+        self.planner_debug_enabled = bool(
+            rospy.get_param("~planner_debug_enabled", False))
+        self.workspace_root = Path(os.path.abspath(os.path.expanduser(
+            rospy.get_param("~workspace_root", "/workspace/sim_validation_ws"))))
+        git_root_probe = subprocess.run(
+            ["git", "-C", str(self.workspace_root), "rev-parse", "--show-toplevel"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            check=False,
+        )
+        if git_root_probe.returncode == 0 and git_root_probe.stdout.strip():
+            self.workspace_root = Path(git_root_probe.stdout.strip())
 
         self.odom_topic = rospy.get_param("~odom_topic")
         self.position_cmd_topic = rospy.get_param(
@@ -88,8 +101,12 @@ class SimResultManager:
 
         self.raw_tracking_bag = self.session_dir / (self.test_id + "_raw.bag")
         self.tracking_bag = self.session_dir / (self.test_id + ".bag")
+        self.debug_bag = self.final_dir / (self.test_id + "_planner_debug.bag")
+        self.debug_params = self.final_dir / (self.test_id + "_params.yaml")
+        self.debug_manifest = self.final_dir / (self.test_id + "_manifest.txt")
         self.events_path = self.session_dir / (self.test_id + ".events.log")
         self.bag_process = None
+        self.debug_bag_process = None
         self.events_file = None
         self.events_sub = None
         self.session_info_sub = None
@@ -120,6 +137,10 @@ class SimResultManager:
         rospy.loginfo("[SimResult] armed for one test: %s", self.test_id)
         rospy.loginfo("[SimResult] runtime files use %s", self.work_dir)
         rospy.loginfo("[SimResult] final output will be %s", self.final_dir)
+        if self.planner_debug_enabled:
+            rospy.logwarn(
+                "[SimResult] planner debug recording is enabled; do not use "
+                "this run as an uncontaminated timing benchmark")
 
     def _verify_source_scripts(self):
         scripts = [
@@ -214,6 +235,103 @@ class SimResultManager:
             "[SimResult] recording tracking inputs: %s -> %s",
             ", ".join(topics), self.raw_tracking_bag)
 
+    def _planner_debug_topics(self):
+        return list(dict.fromkeys([
+            self.odom_topic,
+            "/quad0_pcl_render_node/cloud",
+            "/quad0_pcl_render_node/cloud_cropped",
+            "/quad0_pcl_render_node/collision_cloud",
+            "/quad0_pcl_render_node/sensor_pose",
+            "/debug/generated_pcd_map",
+            "/tf",
+            "/tf_static",
+            "/exploration_node/occ",
+            "/exploration_node/pocc",
+            "/exploration_node/frt",
+            "/exploration_node/viewpoint_centers",
+            "/exploration_node/sf_cluster_marker",
+            "/viz_graph_topic",
+            "/global_tour",
+            "/visualizer/edge_origin",
+            "/visualizer/mesh_origin",
+            "/visualizer/edge",
+            "/visualizer/mesh",
+            "/planning/trajectory",
+            "/planning/yaw_trajectory",
+            "/position_cmd",
+            "/planning/pos_cmd",
+            "/FSM_flag_avoidance",
+            "/target_avoidance",
+            "/planning/state",
+            "/planning/expl_diag_str",
+            "/epic/events",
+            "/debug/local_planner_obstacle_points",
+            "/debug/local_guide_path",
+            "/debug/raw_hpolys",
+            "/debug/clipped_hpolys",
+            "/debug/active_fov_faces",
+            "/debug/topo_edge_checks",
+            "/debug/trajectory_clearance",
+        ]))
+
+    def _start_planner_debug_bag(self):
+        if not self.planner_debug_enabled or self.debug_bag_process is not None:
+            return
+        self.final_dir.mkdir(parents=True, exist_ok=True)
+        topics = self._planner_debug_topics()
+        command = [
+            "rosbag", "record", "--lz4", "-O", str(self.debug_bag),
+        ] + topics + ["__name:=sim_planner_debug_recorder"]
+        self.debug_bag_process = subprocess.Popen(
+            command, preexec_fn=os.setsid)
+        params_log = self.final_dir / "rosparam_dump.log"
+        with params_log.open("w", encoding="utf-8") as stream:
+            subprocess.run(
+                ["rosparam", "dump", str(self.debug_params)],
+                stdout=stream,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+        rospy.logwarn(
+            "[SimResult] recording planner root-cause evidence (%d topics) -> %s",
+            len(topics), self.debug_bag)
+
+    @staticmethod
+    def _command_output(command):
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+        return result.returncode, result.stdout.rstrip()
+
+    def _write_debug_manifest(self):
+        if not self.planner_debug_enabled:
+            return
+        pcd_path = Path(self.pcd_path)
+        git_code, git_head = self._command_output(
+            ["git", "-C", str(self.workspace_root), "rev-parse", "HEAD"])
+        status_code, git_status = self._command_output(
+            ["git", "-C", str(self.workspace_root), "status", "--short"])
+        with self.debug_manifest.open("w", encoding="utf-8") as stream:
+            stream.write("test_id=%s\n" % self.test_id)
+            stream.write("workspace_root=%s\n" % self.workspace_root)
+            stream.write("git_head_exit=%d\n" % git_code)
+            stream.write("git_head=%s\n" % git_head)
+            stream.write("git_status_exit=%d\n" % status_code)
+            stream.write("git_status_begin\n%s\ngit_status_end\n" % git_status)
+            stream.write("pcd_path=%s\n" % pcd_path)
+            stream.write("pcd_size_bytes=%d\n" % (
+                pcd_path.stat().st_size if pcd_path.is_file() else -1))
+            stream.write("pcd_sha256=%s\n" % (
+                self._sha256(pcd_path) if pcd_path.is_file() else "missing"))
+            stream.write("planner_debug_topics_begin\n")
+            for topic in self._planner_debug_topics():
+                stream.write(topic + "\n")
+            stream.write("planner_debug_topics_end\n")
+
     def _session_info_callback(self, msg):
         if self.events_file is None or self.session_info_written:
             return
@@ -235,6 +353,7 @@ class SimResultManager:
 
         if state == "WAIT_TRIGGER":
             self.wait_trigger_seen = True
+            self._start_planner_debug_bag()
 
         # Keep TAKEOFF_HOVER out of the evaluator's legacy state stream. The
         # latched publisher also preserves WAIT_TRIGGER while the evaluator
@@ -271,12 +390,12 @@ class SimResultManager:
         return summary.is_file()
 
     @staticmethod
-    def _stop_process(name, process):
+    def _stop_process(name, process, timeout=10):
         if process.poll() is not None:
             return
         try:
             os.killpg(os.getpgid(process.pid), signal.SIGINT)
-            process.wait(timeout=10)
+            process.wait(timeout=timeout)
         except Exception as exc:
             rospy.logwarn("[SimResult] %s collector did not stop cleanly: %s", name, exc)
             try:
@@ -305,6 +424,10 @@ class SimResultManager:
         if self.bag_process is not None:
             self._stop_process("tracking rosbag", self.bag_process)
             self.bag_process = None
+        if self.debug_bag_process is not None:
+            self._stop_process(
+                "planner debug rosbag", self.debug_bag_process, timeout=60)
+            self.debug_bag_process = None
 
     def _normalize_tracking_bag(self):
         if not self.raw_tracking_bag.is_file():
@@ -403,6 +526,7 @@ class SimResultManager:
 
             self._stop_collectors()
             tracking_counts = self._normalize_tracking_bag()
+            self._write_debug_manifest()
             if not evaluation_ready:
                 evaluation_ready = (self.eval_iter_dir / "summary.csv").is_file()
 
@@ -462,6 +586,12 @@ class SimResultManager:
                 stream.write("tracking_cmd_samples=%d\n" % tracking_counts["cmd"])
                 stream.write("csv_count=%d\n" % len(csv_files))
                 stream.write("png_count=%d\n" % len(png_files))
+                stream.write("planner_debug_enabled=%s\n" % (
+                    "true" if self.planner_debug_enabled else "false"))
+                stream.write("planner_debug_bag=%s\n" % (
+                    self.debug_bag.name if self.debug_bag.is_file() else "missing"))
+                stream.write("planner_debug_bag_bytes=%d\n" % (
+                    self.debug_bag.stat().st_size if self.debug_bag.is_file() else -1))
 
             rospy.loginfo("[SimResult] result finalized: %s", self.final_dir)
             rospy.loginfo("[SimResult] generated %d CSV and %d PNG files",

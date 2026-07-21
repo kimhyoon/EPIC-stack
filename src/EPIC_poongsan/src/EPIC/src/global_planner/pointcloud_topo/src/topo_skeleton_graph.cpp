@@ -9,6 +9,9 @@
 
 #include "pointcloud_topo/graph.h"
 
+#include <cmath>
+#include <limits>
+
 void debug_exit(const std::string &location) {
   std::cout << "\033[1;31m Terminating process at location: " << location << "\033[0m" << std::endl;
   exit(0);
@@ -36,6 +39,7 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   nh.param("bubble_topo/frontier_bubble_min_radius", frt_bubble_radius_, 0.5);
   nh.param("bubble_topo/cube_discrete_size", cube_discrete_size, 0.3);
   nh.param("bubble_topo/odom_node_distance", odom_node_distance_, 5.0);
+  nh.param("planner_debug/enable", planner_debug_enabled_, false);
 
   nh.getParam("parallel_astar/update_connection_timeout", update_connection_timeout);
   nh.getParam("parallel_astar/insert_node_timeout", insert_node_timeout);
@@ -74,6 +78,11 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   
   // Initialize timing publisher
   bubble_astar_search_cost_pub_ = nh.advertise<std_msgs::Float32>("/local_planning/bubble_astar_search_cost", 10);
+  if (planner_debug_enabled_) {
+    topo_edge_debug_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/topo_edge_checks", 10);
+    ROS_WARN("[PlannerDebug] topology edge evidence publisher enabled");
+  }
 }
 
 BubbleNode::BubbleNode(double radius, Eigen::Vector3f center) {
@@ -715,9 +724,39 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
   }
 
   // 串行更新节点
+  std_msgs::Float64MultiArray debug_msg;
+  const bool publish_debug =
+      planner_debug_enabled_ && topo_edge_debug_pub_.getNumSubscribers() > 0;
+  if (publish_debug) {
+    // Schema v1: [version, batch_seq, only_raycast, pair_count,
+    //             success, start_xyz, end_xyz, path_point_count,
+    //             path_cost, min_known_obstacle_distance, ...].
+    debug_msg.data.reserve(4 + pair_vector.size() * 10);
+    debug_msg.data.push_back(1.0);
+    debug_msg.data.push_back(static_cast<double>(++topo_debug_batch_seq_));
+    debug_msg.data.push_back(only_raycast ? 1.0 : 0.0);
+    debug_msg.data.push_back(static_cast<double>(pair_vector.size()));
+  }
   for (size_t i = 0; i < path_vec.size(); i++) {
-    if (path_vec[i].back().norm() < 0.5)
+    const bool success =
+        !path_vec[i].empty() && path_vec[i].back().norm() >= 0.5;
+    if (publish_debug) {
+      debug_msg.data.push_back(success ? 1.0 : 0.0);
+      for (int axis = 0; axis < 3; ++axis)
+        debug_msg.data.push_back(pair_vector[i].first->center_[axis]);
+      for (int axis = 0; axis < 3; ++axis)
+        debug_msg.data.push_back(pair_vector[i].second->center_[axis]);
+      const size_t path_point_count =
+          path_vec[i].empty() ? 0 : path_vec[i].size() - 1;
+      debug_msg.data.push_back(static_cast<double>(path_point_count));
+    }
+    if (!success) {
+      if (publish_debug) {
+        debug_msg.data.push_back(-1.0);
+        debug_msg.data.push_back(-1.0);
+      }
       continue;
+    }
     auto node1 = pair_vector[i].first;
     auto node2 = pair_vector[i].second;
     node1->neighbors_.insert(node2);
@@ -730,7 +769,21 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
     parallel_bubble_astar_->calculatePathCost(path_vec[i], cost);
     node1->weight_[node2] = cost;
     node2->weight_[node1] = cost;
+    if (publish_debug) {
+      double min_distance = std::numeric_limits<double>::infinity();
+      for (const auto &point : path_vec[i]) {
+        const Eigen::Vector3d point_d = point.cast<double>();
+        const double distance = lidar_map_interface_->getDisToOcc(point_d);
+        if (std::isfinite(distance) && distance < min_distance)
+          min_distance = distance;
+      }
+      debug_msg.data.push_back(cost);
+      debug_msg.data.push_back(
+          std::isfinite(min_distance) ? min_distance : -1.0);
+    }
   }
+  if (publish_debug)
+    topo_edge_debug_pub_.publish(debug_msg);
 }
 
 void TopoGraph::getRegionsToUpdate() {

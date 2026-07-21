@@ -15,6 +15,8 @@ find_package(catkin REQUIRED COMPONENTS
   tf
   std_msgs
   geometry_msgs
+  nav_msgs
+  sensor_msgs
   quadrotor_msgs
   mavros_msgs
   poly_traj
@@ -32,7 +34,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES plan_manage
-  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lidar_map frontier_manager
+  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lidar_map frontier_manager nav_msgs sensor_msgs
 )
 
 include_directories(

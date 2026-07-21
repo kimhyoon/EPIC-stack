@@ -7,6 +7,7 @@
 #include <ros/ros.h>
 #include <traj_utils/PolyTraj.h>
 #include <lidar_map/lidar_map.h>
+#include <cstdint>
 #include <random>
 #include "gcopter/firi.hpp"
 #include "gcopter/flatness.hpp"
@@ -17,10 +18,13 @@
 #include "misc/visualizer.hpp"
 
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/Path.h>
 #include <nav_msgs/Odometry.h>
 #include <pointcloud_topo/graph.h>
 #include <pointcloud_topo/graph_visualizer.hpp>
 #include <pointcloud_topo/parallel_bubble_astar.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <std_msgs/Float64MultiArray.h>
 #include <tf/tf.h>
 
 // Defined in the frontier_manager package (global namespace). Forward-declared
@@ -126,6 +130,18 @@ public:
   ros::Subscriber pos_sub;
   ros::Publisher yaw_state_pub;
 
+  // Simulation-only planner evidence. The publishers remain disabled unless
+  // planner_debug/enable is explicitly set by sim_bringup.
+  bool planner_debug_enabled_ = false;
+  uint64_t planner_debug_seq_ = 0;
+  uint64_t current_debug_plan_seq_ = 0;
+  ros::Publisher debug_obstacle_points_pub_;
+  ros::Publisher debug_guide_path_pub_;
+  ros::Publisher debug_raw_hpolys_pub_;
+  ros::Publisher debug_clipped_hpolys_pub_;
+  ros::Publisher debug_fov_faces_pub_;
+  ros::Publisher debug_traj_clearance_pub_;
+
   minco::MINCO_S3NU yaw_traj_opt_;
   LocalTrajData local_data_;
   // 마지막 로컬 궤적 계획 실패 사유 (성공 시 clear). FSM 이벤트 로거가 읽어
@@ -162,6 +178,15 @@ public:
   double yaw_fov_ = 2.0 * M_PI; // horizontal FOV [rad] (lidar_perception/yaw_fov)
   // Intersect each forward corridor polytope with the observed FOV cone faces.
   void clipCorridorToObservedCone(std::vector<Eigen::MatrixX4d> &hPolys);
+
+  void publishDebugGuidePath(const vector<Eigen::Vector3d> &path);
+  void publishDebugObstaclePoints(
+      const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud);
+  void publishDebugHPolys(const std::vector<Eigen::MatrixX4d> &hPolys,
+                          ros::Publisher &publisher);
+  void publishDebugTrajectoryClearance(bool safe, double collision_time,
+                                       double min_distance,
+                                       const Eigen::Vector3d &sample_position);
 
 private:
   /* main planning algorithms & modules */

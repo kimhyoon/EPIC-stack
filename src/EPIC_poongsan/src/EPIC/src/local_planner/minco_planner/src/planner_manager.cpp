@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <limits>
 #include <math.h>
 #include <random>
 #include <ros/ros.h>
@@ -48,6 +49,91 @@ void FastPlannerManager::printTimeCost(double time_threhold, double time_cost,
   }
 }
 
+void FastPlannerManager::publishDebugGuidePath(
+    const vector<Eigen::Vector3d> &path) {
+  if (!planner_debug_enabled_ || debug_guide_path_pub_.getNumSubscribers() == 0)
+    return;
+
+  nav_msgs::Path msg;
+  msg.header.seq = static_cast<uint32_t>(current_debug_plan_seq_);
+  msg.header.stamp = ros::Time::now();
+  msg.header.frame_id = "world";
+  msg.poses.reserve(path.size());
+  for (const auto &point : path) {
+    geometry_msgs::PoseStamped pose;
+    pose.header = msg.header;
+    pose.pose.position.x = point.x();
+    pose.pose.position.y = point.y();
+    pose.pose.position.z = point.z();
+    pose.pose.orientation.w = 1.0;
+    msg.poses.push_back(pose);
+  }
+  debug_guide_path_pub_.publish(msg);
+}
+
+void FastPlannerManager::publishDebugObstaclePoints(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr &cloud) {
+  if (!planner_debug_enabled_ ||
+      debug_obstacle_points_pub_.getNumSubscribers() == 0)
+    return;
+
+  sensor_msgs::PointCloud2 msg;
+  pcl::toROSMsg(*cloud, msg);
+  msg.header.seq = static_cast<uint32_t>(current_debug_plan_seq_);
+  msg.header.stamp = ros::Time::now();
+  msg.header.frame_id = "world";
+  debug_obstacle_points_pub_.publish(msg);
+}
+
+void FastPlannerManager::publishDebugHPolys(
+    const std::vector<Eigen::MatrixX4d> &hPolys, ros::Publisher &publisher) {
+  if (!planner_debug_enabled_ || publisher.getNumSubscribers() == 0)
+    return;
+
+  // Schema v1: [version, plan_seq, poly_count,
+  //             rows, (nx, ny, nz, d) * rows, ...].
+  std_msgs::Float64MultiArray msg;
+  size_t value_count = 3;
+  for (const auto &poly : hPolys)
+    value_count += 1 + static_cast<size_t>(poly.rows()) * 4;
+  msg.data.reserve(value_count);
+  msg.data.push_back(1.0);
+  msg.data.push_back(static_cast<double>(current_debug_plan_seq_));
+  msg.data.push_back(static_cast<double>(hPolys.size()));
+  for (const auto &poly : hPolys) {
+    msg.data.push_back(static_cast<double>(poly.rows()));
+    for (int row = 0; row < poly.rows(); ++row)
+      for (int col = 0; col < 4; ++col)
+        msg.data.push_back(poly(row, col));
+  }
+  publisher.publish(msg);
+}
+
+void FastPlannerManager::publishDebugTrajectoryClearance(
+    bool safe, double collision_time, double min_distance,
+    const Eigen::Vector3d &sample_position) {
+  if (!planner_debug_enabled_ ||
+      debug_traj_clearance_pub_.getNumSubscribers() == 0)
+    return;
+
+  // Schema v1: [version, plan_seq, traj_id, safe, collision_time,
+  //             min_known_obstacle_distance, x, y, z, hard_radius].
+  std_msgs::Float64MultiArray msg;
+  msg.data = {
+      1.0,
+      static_cast<double>(current_debug_plan_seq_),
+      static_cast<double>(local_data_.traj_id_),
+      safe ? 1.0 : 0.0,
+      collision_time,
+      min_distance,
+      sample_position.x(),
+      sample_position.y(),
+      sample_position.z(),
+      gcopter_config_->dilateRadiusHard,
+  };
+  debug_traj_clearance_pub_.publish(msg);
+}
+
 void FastPlannerManager::initPlanModules(
     ros::NodeHandle &nh, ParallelBubbleAstar::Ptr &parallel_path_finder,
     TopoGraph::Ptr &graph) {
@@ -68,6 +154,7 @@ void FastPlannerManager::initPlanModules(
   nh.param("local_planning/p0_up", p0_up_, 0.2);
   nh.param("local_planning/p0_down", p0_down_, 0.2);
   nh.param("local_planning/viz_origin_corridor", viz_origin_corridor_, false);
+  nh.param("planner_debug/enable", planner_debug_enabled_, false);
   double yaw_fov_deg = 360.0;
   nh.param("lidar_perception/yaw_fov", yaw_fov_deg, 360.0);
   yaw_fov_ = yaw_fov_deg * M_PI / 180.0;
@@ -102,6 +189,21 @@ void FastPlannerManager::initPlanModules(
   goal_sub = nh.subscribe("/move_base_simple/goal", 10,
                           &FastPlannerManager::goalCallback, this);
   yaw_state_pub = nh.advertise<std_msgs::Int32>("/yaw_state", 10);
+  if (planner_debug_enabled_) {
+    debug_obstacle_points_pub_ = nh.advertise<sensor_msgs::PointCloud2>(
+        "/debug/local_planner_obstacle_points", 10);
+    debug_guide_path_pub_ =
+        nh.advertise<nav_msgs::Path>("/debug/local_guide_path", 10);
+    debug_raw_hpolys_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/raw_hpolys", 10);
+    debug_clipped_hpolys_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/clipped_hpolys", 10);
+    debug_fov_faces_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/active_fov_faces", 10);
+    debug_traj_clearance_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/trajectory_clearance", 100);
+    ROS_WARN("[PlannerDebug] internal planner evidence publishers enabled");
+  }
 }
 
 // test_gs
@@ -169,12 +271,20 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   Vector3d last_sphere_cen_;
   if (curr_time > duration) {
     collision_time = duration;
+    publishDebugTrajectoryClearance(
+        true, collision_time, -1.0, local_data_.curr_pos_);
     return true;
   }
 
   last_sphere_cen_ = traj.getPos(curr_time);
-  double last_radius_ = lidar_map_interface_->getDisToOcc(last_sphere_cen_) -
-                        gcopter_config_->dilateRadiusHard;
+  const double initial_distance =
+      lidar_map_interface_->getDisToOcc(last_sphere_cen_);
+  double min_distance =
+      std::isfinite(initial_distance) && initial_distance >= 0.0
+          ? initial_distance
+          : std::numeric_limits<double>::infinity();
+  Eigen::Vector3d min_distance_position = last_sphere_cen_;
+  double last_radius_ = initial_distance - gcopter_config_->dilateRadiusHard;
   
   // Measure path collision check time
   ros::Time path_collision_start = ros::Time::now();
@@ -196,8 +306,14 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
       continue;
     }
     double dis2occ = sqrt(PointDist[0]);
+    if (dis2occ < min_distance) {
+      min_distance = dis2occ;
+      min_distance_position = curr_pos;
+    }
     if (dis2occ < gcopter_config_->dilateRadiusHard) {
       collision_time = curr_time;
+      publishDebugTrajectoryClearance(
+          false, collision_time, min_distance, min_distance_position);
       return false;
     }
     last_sphere_cen_ = curr_pos;
@@ -212,6 +328,10 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   // Publish timing information
   double check_time = (ros::Time::now() - check_start).toSec() * 1000.0;
   gcopter_viz_->publishCollisionCheckCost(check_time);
+  publishDebugTrajectoryClearance(
+      true, duration,
+      std::isfinite(min_distance) ? min_distance : -1.0,
+      min_distance_position);
   
   return true;
 }
@@ -220,6 +340,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                                          bool is_static) {
 
   ros::Time start = ros::Time::now();
+  if (planner_debug_enabled_)
+    current_debug_plan_seq_ = ++planner_debug_seq_;
 
   vector<Eigen::Vector3d> path_shorten;
   bool use_shorten_path = false;
@@ -246,6 +368,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   for (int i = 0; i <= end_idx; i++) {
     path_shorten.emplace_back(path[i].cast<double>());
   }
+  publishDebugGuidePath(path_shorten);
 
   if (use_shorten_path) {
     Eigen::Vector3f fwd_dir = path[end_idx] - path[end_idx - 1];
@@ -291,6 +414,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   sor.setInputCloud(cloud_origin);
   sor.setLeafSize(0.28, 0.28, 0.28);  // 0.35 → 0.28
   sor.filter(*cloud_tmp);
+  publishDebugObstaclePoints(cloud_tmp);
 
   surf_points.reserve(cloud_tmp->points.size());
   for (const pcl::PointXYZ &point : cloud_tmp->points) {
@@ -310,8 +434,10 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   // clipping. Method B does not alter the obstacle set, so no second
   // convexCover is needed for the comparison overlay.
   std::vector<Eigen::MatrixX4d> raw_hPolys;
-  if (clip_corridor_to_observed_ && viz_origin_corridor_)
+  if (planner_debug_enabled_ ||
+      (clip_corridor_to_observed_ && viz_origin_corridor_))
     raw_hPolys = hPolys;
+  publishDebugHPolys(raw_hPolys, debug_raw_hpolys_pub_);
 
   // --- Prepend P0: a robot-sized, yaw-aligned free box at the current pose. The
   // space the robot physically occupies is free regardless of observation, so it
@@ -440,6 +566,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   }
   if (!raw_hPolys.empty())
     gcopter_viz_->visualizePolytopeOrigin(raw_hPolys);
+  publishDebugHPolys(hPolys, debug_clipped_hpolys_pub_);
 
   gcopter::GCOPTER_PolytopeSFC gcopter;
   Eigen::VectorXd magnitudeBounds(5);
@@ -625,6 +752,29 @@ void FastPlannerManager::clipCorridorToObservedCone(
   for (size_t fi = 0; fi < faces.size(); ++fi)
     if (has_frontier[fi] && !observed_outside[fi])
       active_idx.push_back((int)fi);
+
+  if (planner_debug_enabled_ && debug_fov_faces_pub_.getNumSubscribers() > 0) {
+    // Schema v1: [version, plan_seq, face_count,
+    //             face_index, has_frontier, observed_outside, active,
+    //             nx, ny, nz, d, ...].
+    std_msgs::Float64MultiArray msg;
+    msg.data.reserve(3 + faces.size() * 8);
+    msg.data.push_back(1.0);
+    msg.data.push_back(static_cast<double>(current_debug_plan_seq_));
+    msg.data.push_back(static_cast<double>(faces.size()));
+    for (size_t fi = 0; fi < faces.size(); ++fi) {
+      const bool active = has_frontier[fi] && !observed_outside[fi];
+      msg.data.push_back(static_cast<double>(fi));
+      msg.data.push_back(has_frontier[fi] ? 1.0 : 0.0);
+      msg.data.push_back(observed_outside[fi] ? 1.0 : 0.0);
+      msg.data.push_back(active ? 1.0 : 0.0);
+      msg.data.push_back(faces[fi].n.x());
+      msg.data.push_back(faces[fi].n.y());
+      msg.data.push_back(faces[fi].n.z());
+      msg.data.push_back(faces[fi].d);
+    }
+    debug_fov_faces_pub_.publish(msg);
+  }
   if (active_idx.empty())
     return;
 
