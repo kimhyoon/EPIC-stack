@@ -36,8 +36,16 @@ class SimResultManager:
         self.test_prefix = rospy.get_param("~test_prefix", "test")
         self.experiment_name = rospy.get_param("~experiment_name", "epic_planning")
         self.eval_flush_timeout = float(rospy.get_param("~eval_flush_timeout", 15.0))
+        self.shutdown_on_finish = bool(
+            rospy.get_param("~shutdown_on_finish", True))
         self.planner_debug_enabled = bool(
             rospy.get_param("~planner_debug_enabled", False))
+        self.config_path = Path(os.path.abspath(os.path.expanduser(
+            rospy.get_param("~config_path"))))
+        self.use_cloud_crop_bridge = bool(
+            rospy.get_param("~use_cloud_crop_bridge", False))
+        self.enable_avoidance = bool(
+            rospy.get_param("~enable_avoidance", False))
         self.workspace_root = Path(os.path.abspath(os.path.expanduser(
             rospy.get_param("~workspace_root", "/workspace/sim_validation_ws"))))
         git_root_probe = subprocess.run(
@@ -99,6 +107,13 @@ class SimResultManager:
         self.planning_dir.mkdir(parents=True)
         self.session_dir.mkdir(parents=True)
 
+        self.config_snapshot = self.work_dir / self.config_path.name
+        if self.config_path.is_file():
+            shutil.copy2(str(self.config_path), str(self.config_snapshot))
+        else:
+            rospy.logwarn("[SimResult] config snapshot source is missing: %s",
+                          self.config_path)
+
         self.raw_tracking_bag = self.session_dir / (self.test_id + "_raw.bag")
         self.tracking_bag = self.session_dir / (self.test_id + ".bag")
         self.debug_bag = self.final_dir / (self.test_id + "_planner_debug.bag")
@@ -117,6 +132,12 @@ class SimResultManager:
         self.wait_trigger_seen = False
         self.test_active = False
         self.finish_seen = False
+        self.test_start_ros_time = None
+        self.test_finish_ros_time = None
+        self.test_start_monotonic = None
+        self.test_finish_monotonic = None
+        self.test_start_datetime = None
+        self.test_finish_datetime = None
         self.finalizing = False
         self.finalized = False
         self.lock = threading.Lock()
@@ -367,11 +388,21 @@ class SimResultManager:
         if (not self.test_active and self.wait_trigger_seen and
                 state == "PLAN_TRAJ_EXP"):
             self.test_active = True
+            stamp = msg.header.stamp.to_sec()
+            self.test_start_ros_time = (
+                stamp if stamp > 0.0 else rospy.Time.now().to_sec())
+            self.test_start_monotonic = time.monotonic()
+            self.test_start_datetime = datetime.now().astimezone()
             self._start_tracking_bag()
             rospy.loginfo("[SimResult] test measurement started")
 
         if self.test_active and state == "FINISH" and not self.finish_seen:
             self.finish_seen = True
+            stamp = msg.header.stamp.to_sec()
+            self.test_finish_ros_time = (
+                stamp if stamp > 0.0 else rospy.Time.now().to_sec())
+            self.test_finish_monotonic = time.monotonic()
+            self.test_finish_datetime = datetime.now().astimezone()
             rospy.loginfo("[SimResult] FINISH received; sealing metrics before plotting")
             threading.Thread(
                 target=self._finalize,
@@ -510,6 +541,131 @@ class SimResultManager:
             for path in scripts:
                 stream.write("%s  %s\n" % (self._sha256(path), path))
 
+    def _duration_values(self):
+        ros_seconds = None
+        wall_seconds = None
+        if (self.test_start_ros_time is not None and
+                self.test_finish_ros_time is not None):
+            ros_seconds = max(
+                0.0, self.test_finish_ros_time - self.test_start_ros_time)
+        if (self.test_start_monotonic is not None and
+                self.test_finish_monotonic is not None):
+            wall_seconds = max(
+                0.0, self.test_finish_monotonic - self.test_start_monotonic)
+        return ros_seconds, wall_seconds
+
+    def _copy_config_snapshot(self):
+        if not self.config_snapshot.is_file():
+            return None
+        destination = self.final_dir / self.config_path.name
+        shutil.copy2(str(self.config_snapshot), str(destination))
+        return destination
+
+    @staticmethod
+    def _format_optional(value, precision=3):
+        if value is None:
+            return "unavailable"
+        return ("%%.%df" % precision) % value
+
+    def _write_test_summary(self, status, config_copy, evaluation_ready,
+                            evaluation_exit, planning_exit, tracking_exit,
+                            tracking_report_exit, tracking_counts, csv_count,
+                            png_count, finalization_error):
+        ros_seconds, wall_seconds = self._duration_values()
+        ros_minutes = ros_seconds / 60.0 if ros_seconds is not None else None
+        wall_minutes = wall_seconds / 60.0 if wall_seconds is not None else None
+        started_at = (self.test_start_datetime.isoformat()
+                      if self.test_start_datetime else "unavailable")
+        finished_at = (self.test_finish_datetime.isoformat()
+                       if self.test_finish_datetime else "unavailable")
+        config_name = config_copy.name if config_copy else "missing"
+        config_sha = (self._sha256(config_copy)
+                      if config_copy and config_copy.is_file() else "missing")
+        finish_observed = self.finish_seen and status == "COMPLETE"
+
+        summary_path = self.final_dir / "TEST_SUMMARY.md"
+        with summary_path.open("w", encoding="utf-8") as stream:
+            stream.write("# Simulation Test Summary\n\n")
+            stream.write("| Field | Value |\n")
+            stream.write("|---|---|\n")
+            stream.write("| Test case | `%s` |\n" % self.test_id)
+            stream.write("| Status | `%s` |\n" % status)
+            stream.write("| FINISH observed | `%s` |\n" %
+                         ("yes" if finish_observed else "no"))
+            stream.write("| Measurement start | `%s` |\n" % started_at)
+            stream.write("| FINISH/shutdown time | `%s` |\n" % finished_at)
+            stream.write("| ROS elapsed time | `%s s` |\n" %
+                         self._format_optional(ros_seconds))
+            stream.write("| ROS elapsed time | `%s min` |\n" %
+                         self._format_optional(ros_minutes))
+            stream.write("| Wall elapsed time | `%s s` |\n" %
+                         self._format_optional(wall_seconds))
+            stream.write("| Wall elapsed time | `%s min` |\n" %
+                         self._format_optional(wall_minutes))
+            stream.write("| Configuration snapshot | `%s` |\n" % config_name)
+            stream.write("| Configuration SHA256 | `%s` |\n" % config_sha)
+            stream.write("| ML-X crop bridge | `%s` |\n" %
+                         ("enabled" if self.use_cloud_crop_bridge else "disabled"))
+            stream.write("| Reactive avoidance | `%s` |\n" %
+                         ("enabled" if self.enable_avoidance else "disabled"))
+            stream.write("| Odometry topic | `%s` |\n" % self.odom_topic)
+            stream.write("| Position command topic | `%s` |\n" %
+                         self.position_cmd_topic)
+            stream.write("\n## Duration Definition\n\n")
+            stream.write(
+                "Elapsed time is measured from the first `PLAN_TRAJ_EXP` "
+                "after `WAIT_TRIGGER` to the first `FINISH`. ROS elapsed time "
+                "is the primary simulation duration; wall elapsed time is "
+                "recorded as a runtime diagnostic.\n\n")
+            stream.write("## Result Integrity\n\n")
+            stream.write("- Evaluation summary: `%s`\n" %
+                         ("present" if evaluation_ready else "missing"))
+            stream.write("- Evaluation plot exit: `%d`\n" % evaluation_exit)
+            stream.write("- Planning plot exit: `%d`\n" % planning_exit)
+            stream.write("- Tracking plot exit: `%d`\n" % tracking_exit)
+            stream.write("- Tracking report exit: `%d`\n" %
+                         tracking_report_exit)
+            stream.write("- Tracking odometry samples: `%d`\n" %
+                         tracking_counts["odom"])
+            stream.write("- Tracking command samples: `%d`\n" %
+                         tracking_counts["cmd"])
+            stream.write("- CSV files: `%d`\n" % csv_count)
+            stream.write("- PNG files: `%d`\n" % png_count)
+            stream.write("- Finalization error: `%s`\n" %
+                         (finalization_error or "none"))
+
+    def _update_finished_test_index(self, config_copy):
+        if not self.finish_seen:
+            return
+        ros_seconds, wall_seconds = self._duration_values()
+        ros_minutes = ros_seconds / 60.0 if ros_seconds is not None else None
+        wall_minutes = wall_seconds / 60.0 if wall_seconds is not None else None
+        index_path = self.result_root / "FINISHED_TESTCASES.md"
+        header = (
+            "# Finished Simulation Test Cases\n\n"
+            "Durations are measured from the first `PLAN_TRAJ_EXP` after "
+            "`WAIT_TRIGGER` to the first `FINISH`.\n\n"
+            "| Test case | ROS time (min) | Wall time (min) | Summary | Config |\n"
+            "|---|---:|---:|---|---|\n"
+        )
+        row = (
+            "| `{test_id}` | {ros_minutes} | {wall_minutes} | "
+            "[TEST_SUMMARY.md]({test_id}/TEST_SUMMARY.md) | "
+            "[{config_name}]({test_id}/{config_name}) |\n"
+        ).format(
+            test_id=self.test_id,
+            ros_minutes=self._format_optional(ros_minutes),
+            wall_minutes=self._format_optional(wall_minutes),
+            config_name=config_copy.name if config_copy else "missing",
+        )
+        existing = (index_path.read_text(encoding="utf-8")
+                    if index_path.is_file() else header)
+        if "| `%s` |" % self.test_id not in existing:
+            if not existing.endswith("\n"):
+                existing += "\n"
+            existing += row
+            index_path.write_text(existing, encoding="utf-8")
+
     def _finalize(self, status):
         with self.lock:
             if self.finalizing or self.finalized:
@@ -518,6 +674,14 @@ class SimResultManager:
 
         evaluation_ready = False
         tracking_counts = {"odom": 0, "cmd": 0, "total": 0}
+        evaluation_exit = -1
+        planning_exit = -1
+        tracking_exit = -1
+        tracking_report_exit = -1
+        csv_files = []
+        png_files = []
+        config_copy = None
+        finalization_error = ""
         try:
             # Freeze tracking exactly at FINISH before evaluator CSV flushing.
             self._stop_tracking_capture()
@@ -531,6 +695,7 @@ class SimResultManager:
                 evaluation_ready = (self.eval_iter_dir / "summary.csv").is_file()
 
             self.final_dir.mkdir(parents=True, exist_ok=True)
+            config_copy = self._copy_config_snapshot()
             log_file = self.final_dir / "postprocess.log"
 
             evaluation_exit = self._run_plot(
@@ -593,21 +758,57 @@ class SimResultManager:
                 stream.write("planner_debug_bag_bytes=%d\n" % (
                     self.debug_bag.stat().st_size if self.debug_bag.is_file() else -1))
 
+                ros_seconds, wall_seconds = self._duration_values()
+                stream.write("finish_observed=%s\n" %
+                             ("true" if self.finish_seen else "false"))
+                stream.write("elapsed_ros_seconds=%s\n" %
+                             self._format_optional(ros_seconds))
+                stream.write("elapsed_wall_seconds=%s\n" %
+                             self._format_optional(wall_seconds))
+                stream.write("config_snapshot=%s\n" %
+                             (config_copy.name if config_copy else "missing"))
+
             rospy.loginfo("[SimResult] result finalized: %s", self.final_dir)
             rospy.loginfo("[SimResult] generated %d CSV and %d PNG files",
                           len(csv_files), len(png_files))
         except Exception as exc:
+            finalization_error = str(exc)
             rospy.logerr("[SimResult] finalization failed: %s", exc)
         finally:
+            self.final_dir.mkdir(parents=True, exist_ok=True)
+            if config_copy is None:
+                try:
+                    config_copy = self._copy_config_snapshot()
+                except Exception as exc:
+                    if not finalization_error:
+                        finalization_error = "config snapshot: %s" % exc
+            try:
+                self._write_test_summary(
+                    status, config_copy, evaluation_ready, evaluation_exit,
+                    planning_exit, tracking_exit, tracking_report_exit,
+                    tracking_counts, len(csv_files), len(png_files),
+                    finalization_error)
+                if status == "COMPLETE":
+                    self._update_finished_test_index(config_copy)
+            except Exception as exc:
+                rospy.logerr("[SimResult] summary generation failed: %s", exc)
             shutil.rmtree(str(self.work_dir), ignore_errors=True)
             with self.lock:
                 self.finalized = True
                 self.finalizing = False
+            if status == "COMPLETE" and self.shutdown_on_finish:
+                rospy.loginfo(
+                    "[SimResult] FINISH artifacts sealed; requesting roslaunch shutdown")
+                rospy.signal_shutdown("FINISH result finalized")
 
     def _on_shutdown(self):
         if self.finalized:
             return
         if self.test_active:
+            if self.test_finish_ros_time is None:
+                self.test_finish_ros_time = rospy.Time.now().to_sec()
+                self.test_finish_monotonic = time.monotonic()
+                self.test_finish_datetime = datetime.now().astimezone()
             self._finalize("PARTIAL")
         else:
             self._stop_collectors()
