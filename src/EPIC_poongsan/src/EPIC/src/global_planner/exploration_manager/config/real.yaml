@@ -2,18 +2,21 @@
 # Real-flight topics and on/off switches.
 # Keep flight-side topic changes in this block.
 # ══════════════════════════════════════════════════════════════════
+
+# [EPIC 위치 입력][ROS 토픽][비행필수]
+# EPIC, trajectory server 및 비행 브리지가 사용할 기체 위치·자세·속도 입력.
+# 적용 기준: 2026-07-23 풍산 측 협의에 따라 실제 ML-X 기체는 /mavros/odometry/in 사용.
+# 프로파일 차이: mid360.yaml은 /Odometry, mid360_mlx.yaml은 /mavros/local_position/odom을 사용하므로 혼동하지 말 것.
+# 변경: 실제 기체에서 nav_msgs/Odometry를 발행하는 토픽 이름으로 맞출 것.
+# 이 토픽이 없거나 발행이 중단되면 EPIC은 현재 위치를 알 수 없어 탐사를 시작할 수 없음.
+# 확인: rostopic info /mavros/odometry/in
 odometry_topic: /mavros/odometry/in
+# 실제 ML-X 기체에서는 LIO-SAM이 등록한 실비행 점군을 EPIC 지도·frontier·corridor 입력으로 사용하므로 /lio_sam/mapping/cloud_registered_raw 토픽을 선택한다.
 cloud_topic: /lio_sam/mapping/cloud_registered_raw
 
-# Reactive local avoidance 마스터 스위치 (단일 소스: 이 값 하나로 on/off).
-# true  = 회피 노드가 /FSM_flag_avoidance, /target_avoidance 발행 + 브리지 MUX 동작
-# false = 회피 노드 비활성(flag=0만 발행), 브리지 MUX 차단, FSM도 플래그 무시
+# [반응형 국소회피][운용고정]
+# 실제 ML-X 기체에서는 사용하지 않으므로 항상 false로 유지한다.
 local_avoidance/enable: false
-# 회피 노드 입력 토픽: 별도 키 없음 — 위의 odometry_topic / cloud_topic 을 그대로 읽는다.
-# (world-frame registered cloud 는 노드가 odom 포즈로 body 프레임 역변환해 사용.
-#  odom 프레임과 PX4 setpoint local 프레임은 EV 연동으로 원점/축 일치가 전제 — 필수 확인!)
-# 예외: USE_LIVOX_LIDAR=ON 빌드(드라이버 직결 CustomMsg)일 때만 raw 토픽 지정 필요:
-# local_avoidance/lidar_topic: /livox/lidar
 
 # 기록(record) 스위치 — record_on_goal.py 가 이 값들만 읽는다 (launch 인자 아님).
 # 시작: /planning/state 첫 수신(EPIC FSM 기동) / 종료: FSM LANDED 시 정상 마감.
@@ -32,29 +35,86 @@ record/args: "-a"      # rosbag record 인자 (예: 토픽만 추리려면 변�
 rviz/enable: false     # true 면 real.rviz 로 rviz 자동 실행
 rviz/config: ""        # rviz 설정 파일. 빈 값 = <epic_planner 패키지>/config/real.rviz
 # ══════════════════════════════════════════════════════════════════
+
+# ====================================================================
+# global_planning/* : 전역 탐사 목표 선택 시작
+
+# [전역 탐사 비용 가중치][현재 비활성]
+# 현재 비활성 상태이므로 값을 변경해도 전역 경로 선정에 영향을 주지 않는다.
 global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
-# Visualization debugging has high overhead and is not recommended to be enabled.
-view_graph: true
-FrontierManager/view_cluster: true
-FrontierManager/view_frt: true
-# graph
-bubble_topo/min_x: 1.11
-bubble_topo/min_y: 1.11
-bubble_topo/min_z: 0.51
-bubble_topo/bubble_min_radius: 0.61
-bubble_topo/init_region_size_x: 3.3
-bubble_topo/init_region_size_y: 3.3
-bubble_topo/init_region_size_z: 2.0
-bubble_topo/cube_discrete_size: 0.4
-bubble_topo/odom_node_distance: 3.0
-bubble_astar/safe_distance: 0.6
-# map param
-max_update_region_num: 99999999
+
+# global_planning/* : 전역 탐사 목표 선택 끝
+# ====================================================================
+
+# [RViz 디버그 시각화]
+view_graph: true                    # topology graph의 노드와 edge 표시
+FrontierManager/view_cluster: true # frontier cluster와 선택 viewpoint 표시
+FrontierManager/view_frt: true     # DENSE·SPARSE·frontier cell 점군 표시
+
+# ====================================================================
+# bubble_topo/*, bubble_astar/* : Topology graph 생성·경로 탐색 시작
+
+# [Topology 후보 공간 분할]
+# 빈 공간을 얼마나 잘게 나누어 RViz에서 초록색으로 표시되는 topology graph의 경로 연결점 후보를 찾을지 결정한다.
+# 값 증가 시 연산량은 감소하지만 좁은 공간의 연결점을 놓칠 수 있고, 값 감소 시 좁은 공간을 더 세밀하게 검사하지만 처리 속도가 느려질 수 있다.
+# 초록색 graph의 촘촘함에 간접적으로 영향을 주지만 node 간격이나 그물 크기를 직접 지정하는 값은 아니다.
+bubble_topo/min_x: 1.11  # X축 박스의 최소 분할 크기[m]
+bubble_topo/min_y: 1.11  # Y축 박스의 최소 분할 크기[m]
+bubble_topo/min_z: 0.51  # Z축 박스의 최소 분할 크기[m]
+
+# [경로 연결점 주변의 최소 빈 공간]
+# 연결점 후보 주변에 장애물이 없는 구형 공간을 만들고, 그 반경이 이 값 이상일 때만 유효한 연결점으로 사용한다.
+# 값 증가 시 안전 여유는 커지지만 좁은 통로의 연결점이 사라질 수 있고, 값 감소 시 좁은 통로의 연결점은 늘지만 벽에 가까워질 수 있다.
+# topology 연결점 생성 기준이며 최종 MINCO 궤적의 장애물 안전거리를 직접 결정하는 값은 아니다.
+bubble_topo/bubble_min_radius: 0.61  # 연결점 중심에서 가장 가까운 장애물까지의 최소 거리[m]
+
+# [Topology 맵 갱신 구역 크기]
+# 전체 탐사 맵을 topology 계산용 박스들로 나눌 때 각 박스의 X·Y·Z 크기를 몇 m로 설정할지 결정한다.
+# 값 증가 시 구역 수는 감소하지만 구역당 연산량이 증가하며, 값 감소 시 세밀한 갱신이 가능하지만 구역 수와 갱신 호출이 증가한다.
+# 경로 연결점의 간격이나 크기를 직접 결정하는 값은 아니다.
+bubble_topo/init_region_size_x: 3.3  # 계산용 박스의 가로 길이(X축)[m]
+bubble_topo/init_region_size_y: 3.3  # 계산용 박스의 세로 길이(Y축)[m]
+bubble_topo/init_region_size_z: 2.0  # 계산용 박스의 높이(Z축)[m]
+
+# [Topology 박스 내부 검사점 간격]
+# topology 계산용 박스 안을 바둑판처럼 나누어 경로 연결점을 만들 수 있는 빈 공간을 얼마나 촘촘하게 확인할지 결정한다.
+# 값 증가 시 연산량은 감소하지만 좁은 통로의 연결점을 놓칠 수 있고, 값 감소 시 좁은 통로를 더 세밀하게 확인하지만 연산량과 메모리 사용량이 증가한다.
+# LiDAR point cloud의 voxel 크기나 map downsampling 해상도가 아니며 topology graph의 node 간격을 직접 지정하지도 않는다.
+bubble_topo/cube_discrete_size: 0.4  # 박스 내부 가상 검사점 사이의 거리[m]
+
+# [드론 이동 이력 연결점 간격]
+# 드론이 지나온 길을 다시 사용할 수 있도록 RViz의 초록색 topology graph에 이동 이력 연결점을 최소 몇 m 간격으로 남길지 결정한다.
+# 값 증가 시 연산량은 감소하지만 코너나 좁은 통로의 연결이 끊길 수 있고, 값 감소 시 복귀 경로 연결성은 좋아지지만 node·edge 수와 연산량이 증가한다.
+# 모든 topology node의 간격이나 edge 길이가 아니라 드론이 실제로 지나온 경로에 추가하는 이력 node의 최소 간격이다.
+bubble_topo/odom_node_distance: 3.0  # 이동 경로에 추가하는 이력 연결점의 최소 거리[m]
+
+# [Topology 경로의 장애물 안전거리]
+# RViz의 초록색 topology graph로 경로를 찾을 때 벽이나 장애물에서 이 값보다 가까운 공간을 경로로 사용하지 않게 한다.
+# 값 증가 시 안전 여유는 커지지만 좁은 통로의 경로를 찾지 못할 수 있고, 값 감소 시 좁은 통로를 통과할 가능성은 커지지만 충돌 위험이 증가한다.
+# 최종 MINCO 궤적의 안전거리가 아니므로 bubble_min_radius, DilateRadiusHard/Soft 및 실제 기체 크기와 함께 확인한다.
+bubble_astar/safe_distance: 0.6  # topology 경로와 장애물 사이의 최소 거리[m]
+
+# [한 번에 갱신할 Topology 박스 수]
+# LiDAR로 새로운 공간을 관측했을 때 현재 드론과 가까운 박스부터 한 번의 topology 갱신에서 최대 몇 개까지 처리할지 결정한다.
+# 값 증가 시 넓은 영역을 빠르게 반영하지만 순간 연산량이 증가하고, 값 감소 시 연산량은 줄지만 먼 구역의 갱신이 늦거나 누락될 수 있다.
+# 전체 맵의 박스 수나 크기가 아니라 한 번에 처리할 박스 수만 제한하며, 현재 값 99999999는 사실상 무제한이다.
+max_update_region_num: 99999999  # 한 번의 topology 갱신에서 처리할 최대 박스 수[개]
+
+# bubble_topo/*, bubble_astar/* : Topology graph 생성·경로 탐색 끝
+# ====================================================================
+
+# ====================================================================
+# frontier/*, lidar_perception/* : Frontier 후보와 LiDAR 인식 모델 시작
+
+# [Frontier 후보 샘플링][현재 비활성]
+# 현재 viewpoint 후보 생성은 ViewpointManager/sample_pillar_*로 대체되었으며, 아래 값은 실행 로그에만 기록된다.
 frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 
+# [LiDAR FOV·장착각·좌표계][수정 금지]
+# 모든 lidar_perception/* 값은 LiDAR 사양·물리 장착각·odom/point cloud 좌표계에 맞춰 검증된 고정값이므로 절대로 개별 수정하지 않는다.
 lidar_perception/fov_up: 15.0
 lidar_perception/fov_down: -15.0
 # 수평 FOV [deg]. 360=전방위(Mid360), 제한 FOV 라이다(예: 전방 120도)는 실값 입력.
@@ -78,52 +138,184 @@ lidar_perception/fov_viewpoint_down: -15.0
 lidar_perception/yaw_fov: 120.0
 lidar_perception/is_360lidar: false
 lidar_perception/max_ray_length: 10  #13
+
+# frontier/*, lidar_perception/* : Frontier 후보와 LiDAR 인식 모델 끝
 # ====================================================================
-parallel_astar/update_connection_timeout: 0.002
-parallel_astar/insert_node_timeout: 0.002
-FrontierManager/cell_size: 0.4
-FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.6
-FrontierManager/good_observation_force_trust_length: 4.5
-FrontierManager/good_observation_trust_length: 12.0
-FrontierManager/update_length: 15.0  #15
-FrontierManager/cluster_max_size: 5.0  #15
-FrontierManager/cluster_min_size: 1.0
-FrontierManager/cluster_min_radius: 1.8 # DBSCAN 判断邻居的阈值
-FrontierManager/cluster_direction_radius: -1.0 # cos(theta) > cluster_direction_radius [-1, 1]
-FrontierManager/cluster_minmum_point_num: 5
-# 柱形采样
-ViewpointManager/sample_pillar_min_height: -1.0
-ViewpointManager/sample_pillar_max_height: 1.0
-ViewpointManager/sample_pillar_height_layer_num: 5
-ViewpointManager/sample_pillar_min_radius: 0.5
-ViewpointManager/sample_pillar_max_radius: 2.0
-ViewpointManager/sample_pillar_radius_layer_num: 8
-ViewpointManager/sample_pillar_circle_sample_num: 4
-# 뷰포인트가 벽에서 최소 떨어질 거리[m] (구 하드코딩 0.9, frontier_manager.cpp:1191).
-# 폭 < 2*이값 복도는 유효 뷰포인트 없어 "도달불가"로 스킵됨.
-# 낮추면(예 0.5) 좁은 복도까지 탐사(벽 근접 주의), 높이면 보수적. safe_distance(0.7)와 함께 조절.
-ViewpointManager/min_obstacle_clearance: 0.5
-ViewpointManager/local_tsp_size: 12  #10
-# area
-box_num: 1
-box_0/down: [-150.0, -150.0, 0.5]    # 실공간 12x12x3m (camera_init=이륙지점 원점). 시뮬 cave: [-48,-206,-7]
-box_0/up:   [150, 150, 2.5]       #  182x150 은 cave 좌표 — 실비행 금지
-dead_area_num: 0
+
 # ====================================================================
-# trajectory param
-max_traj_len: 10.0
-# Local SFC corridor clipping to the observed forward-FOV region.
-local_planning/clip_corridor_to_observed: true
-local_planning/clip_cone_faces: true
-DilateRadiusSoft: 0.6 # corrido
-DilateRadiusHard: 0.45 # collision check threshold
-MaxCorridorSize: 4.0
-MaxVelMag: 1.0 #4.0
-maxBdrMag: 10000.0
-MaxTiltAngle: 0.8 #1.0
-MinThrust: 15.0
-MaxThrust: 22.0
+# parallel_astar/* : Topology 연결 탐색 시작
+
+# [Topology 연결 탐색 제한시간]
+# 기존 연결을 갱신하거나 새로운 연결점을 graph에 추가할 때 연결 경로를 찾기 위해 허용하는 최대 연산시간이다.
+# 값 증가 시 연결 성공 가능성은 커지지만 연산시간이 증가하고, 값 감소 시 빠르게 종료하지만 실제 경로가 있어도 연결에 실패할 수 있다.
+# 지나치게 작으면 topology graph가 끊겨 경로 탐색이 실패할 수 있다.
+parallel_astar/update_connection_timeout: 0.002  # 기존 graph 연결 갱신 제한시간[s]
+parallel_astar/insert_node_timeout: 0.002         # 새 연결점 삽입 시 연결 탐색 제한시간[s]
+
+# parallel_astar/* : Topology 연결 탐색 끝
+# ====================================================================
+
+# ====================================================================
+# FrontierManager/* : Frontier 검출·클러스터링 시작
+
+# [Frontier 지도의 셀 크기]
+# LiDAR로 본 공간을 몇 m 크기의 정육면체 칸으로 나누어 Frontier를 찾을지 결정한다.
+# 값 증가 시 셀과 Frontier 묶음이 줄어 viewpoint 생성 대상도 감소할 수 있지만 좁은 통로를 놓칠 수 있고, 값 감소 시 작은 Frontier와 viewpoint 후보가 늘지만 연산량·메모리·노이즈가 증가한다.
+FrontierManager/cell_size: 0.4  # 한 셀의 가로·세로·높이[m]
+
+# [새 관측 주변의 재검사 범위]
+# 새로운 LiDAR 점이 들어왔을 때 주변 몇 칸까지 다시 확인하여 잘못 남은 Frontier와 노이즈를 정리할지 결정한다.
+# 값 증가 시 잘못 남은 Frontier와 viewpoint 목표가 빠르게 정리되지만 연산량이 증가하고, 값 감소 시 연산은 줄지만 이미 해소된 Frontier에서 viewpoint가 계속 생성될 수 있다.
+FrontierManager/noise_cell_range: 1  # 주변 재검사 범위[셀]
+
+# [관측 방향 판정 기준]
+# 벽 모서리나 점군이 끊긴 부분을 정상적으로 관측한 공간으로 인정할지, viewpoint에서 해당 Frontier가 잘 보이는지 판단하는 엄격도를 결정한다.
+# 값 증가 시 관측과 viewpoint 가시성 판정이 엄격해져 유효 viewpoint가 줄거나 0개가 될 수 있고, 값 감소 시 viewpoint는 쉽게 생성되지만 불완전한 관측까지 유효하다고 판단할 수 있다.
+FrontierManager/good_observation_direction_score: 0.6  # 관측 방향 신뢰 기준[0~1]
+
+# [근거리 강제 관측 완료 거리]
+# 드론과 가까운 셀은 관측 방향이 다소 좋지 않아도 관측 완료(DENSE)로 처리하여 Frontier 대상에서 제거할 거리를 결정한다.
+# 값 증가 시 근거리 Frontier 묶음과 viewpoint 목표가 빠르게 줄지만 실제 미관측 영역까지 제거할 수 있고, 값 감소 시 근거리 Frontier와 viewpoint가 오래 남아 반복 목표가 될 수 있다.
+FrontierManager/good_observation_force_trust_length: 4.5  # 강제 관측 완료 거리[m]
+
+# [일반 관측 신뢰 거리]
+# LiDAR에서 몇 m 떨어진 셀까지 정상 관측으로 인정하고, viewpoint가 해당 Frontier를 볼 수 있다고 평가할지 결정한다.
+# 값 증가 시 먼 셀이 관측 완료되어 Frontier는 줄지만 기존 Frontier는 더 먼 viewpoint에서도 평가할 수 있고, 값 감소 시 가까운 viewpoint만 유효해져 후보가 줄고 같은 장소를 반복 탐사할 수 있다.
+FrontierManager/good_observation_trust_length: 12.0  # 일반 관측 및 viewpoint 평가 거리[m]
+
+# [한 번에 갱신할 LiDAR 거리]
+# 현재 드론 주변 몇 m까지 Frontier 지도를 새 점군으로 갱신할지 결정한다.
+# 값 증가 시 먼 Frontier와 viewpoint 목표가 빠르게 생성·갱신되지만 연산량이 증가하고, 값 감소 시 먼 Frontier와 viewpoint 생성이 늦어져 가까운 영역 위주로 탐사한다.
+FrontierManager/update_length: 15.0  # Frontier 지도 갱신 반경[m]
+
+# [Frontier 묶음의 최대 크기]
+# 서로 붙어 있는 Frontier를 하나의 viewpoint 생성 대상으로 최대 어느 크기까지 묶을지 결정한다.
+# 값 증가 시 넓은 Frontier가 하나로 합쳐져 묶음과 대표 viewpoint 수가 줄고, 값 감소 시 Frontier가 여러 묶음으로 나뉘어 생성되는 viewpoint 목표 수가 증가한다.
+FrontierManager/cluster_max_size: 5.0  # Frontier 묶음의 최대 크기[m]
+
+# [Viewpoint 생성 대상 Frontier 최소 크기]
+# Frontier 묶음이 이 값보다 작으면 dormant로 분류하여 viewpoint 후보 생성 단계로 넘기지 않는다.
+# 값 증가 시 dormant Frontier가 늘어 viewpoint를 생성하는 Frontier 묶음과 전체 viewpoint 후보 수가 감소하고, 값 감소 시 작은 Frontier도 후보 생성 단계로 넘어가 viewpoint 수가 증가하지만 노이즈 목표와 연산량도 증가할 수 있다.
+# 값이 너무 크면 Frontier가 남아 있어도 viewpoint가 0개가 되어 탐사가 조기에 종료될 수 있다.
+FrontierManager/cluster_min_size: 1.0  # Viewpoint 생성 대상으로 인정할 Frontier 묶음의 최소 크기
+
+# [같은 Frontier로 연결할 거리]
+# Frontier 셀끼리 몇 m 이내에 있을 때 하나의 viewpoint 생성 대상으로 묶을지 결정한다.
+# 값 증가 시 떨어진 셀도 하나로 합쳐져 Frontier 묶음과 viewpoint 목표 수가 줄고, 값 감소 시 작은 묶음과 viewpoint 목표가 늘지만 너무 작게 분리된 묶음은 dormant로 제외될 수 있다.
+FrontierManager/cluster_min_radius: 1.8  # 이웃 Frontier 검색 거리[m]
+
+# [같은 Frontier로 인정할 표면 방향]
+# 서로 다른 방향을 향하는 벽과 모서리의 Frontier를 하나의 viewpoint 생성 대상으로 묶을지 결정한다.
+# 값 증가 시 같은 방향의 셀만 묶여 Frontier 묶음과 viewpoint 목표가 늘 수 있고, 값 감소 시 코너처럼 방향이 다른 셀도 합쳐져 목표 수는 줄지만 하나의 viewpoint로 전체 Frontier를 보기 어려울 수 있다.
+FrontierManager/cluster_direction_radius: -1.0  # 표면 방향 유사도[-1~1]
+
+# [클러스터링 시작에 필요한 Frontier 수]
+# 새로 발견된 Frontier 셀이 최소 몇 개 이상일 때 묶음을 만들고 viewpoint 생성을 시작할지 결정한다.
+# 값 증가 시 적은 Frontier 입력은 클러스터링되지 않아 viewpoint가 생성되지 않고, 값 감소 시 적은 셀에서도 viewpoint가 생성되지만 노이즈 목표가 증가할 수 있다.
+FrontierManager/cluster_minmum_point_num: 5  # 신규 Frontier 최소 셀 수[개]
+
+# FrontierManager/* : Frontier 검출·클러스터링 끝
+# ====================================================================
+
+# ====================================================================
+# ViewpointManager/* : Viewpoint 생성·선택 시작
+
+# [Viewpoint 높이 범위]
+# Frontier보다 위·아래 어느 높이에서 드론의 관측 위치를 찾을지 결정한다.
+# 아래쪽 후보가 필요하면 min_height를 더 음수로, 위쪽 후보가 필요하면 max_height를 높인다.
+# 범위를 너무 넓히면 바닥·천장 근처의 불필요한 후보가 증가할 수 있다.
+ViewpointManager/sample_pillar_min_height: -1.0  # Frontier 기준 아래쪽 탐색 한계[m]
+ViewpointManager/sample_pillar_max_height: 1.0   # Frontier 기준 위쪽 탐색 한계[m]
+
+# [Viewpoint 높이별 후보 수]
+# 위·아래 탐색 범위에 몇 개의 높이 후보를 만들지 결정한다.
+# 적절한 높이의 viewpoint를 못 찾으면 증가, 연산이 느리면 감소한다.
+ViewpointManager/sample_pillar_height_layer_num: 5  # 높이 후보 층 수[개]
+
+# [Viewpoint 거리 범위]
+# Frontier에서 얼마나 가까운 곳부터 먼 곳까지 관측 위치를 찾을지 결정한다.
+# 좁은 통로에서 viewpoint가 없으면 min_radius를 낮추고, 가까운 곳에 공간이 없으면 max_radius를 높인다.
+# min_radius를 너무 낮추면 벽 가까이에 후보가 생성되고, max_radius를 너무 높이면 불필요하게 먼 목표가 선택될 수 있다.
+ViewpointManager/sample_pillar_min_radius: 0.5  # 가장 가까운 후보 거리[m]
+ViewpointManager/sample_pillar_max_radius: 2.0  # 가장 먼 후보 거리[m]
+
+# [Viewpoint 거리별 후보 수]
+# 가까운 곳부터 먼 곳까지 몇 단계의 거리 후보를 만들지 결정한다.
+# 유효한 거리의 viewpoint를 자주 놓치면 증가, 연산이 느리면 감소한다.
+ViewpointManager/sample_pillar_radius_layer_num: 8  # 거리 후보 단계 수[개]
+
+# [Viewpoint 방향별 후보 수]
+# Frontier 주변 360도에서 몇 방향으로 관측 위치를 만들지 결정한다.
+# 통로 방향의 viewpoint를 못 찾으면 증가, 후보가 너무 많아 연산이 느리면 감소한다.
+ViewpointManager/sample_pillar_circle_sample_num: 4  # 한 바퀴의 방향 후보 수[개]
+
+# [Viewpoint와 장애물의 최소 거리]
+# 벽이나 장애물에 너무 가까운 viewpoint 후보를 제거한다.
+# 좁은 통로에서 viewpoint가 모두 사라지면 낮추고, 목표가 벽에 너무 가까우면 높인다.
+# 너무 낮추면 벽 근처 목표와 충돌 위험이 증가하고, 너무 높이면 viewpoint가 0개가 될 수 있다.
+ViewpointManager/min_obstacle_clearance: 0.5  # 장애물과 확보할 최소 거리[m]
+
+# [한 번에 검사할 Frontier 수]
+# 가까운 Frontier 중 이번 계획 주기에 viewpoint를 검사할 최대 개수를 결정한다.
+# Frontier가 남았는데 viewpoint 0개로 탐사가 끝나면 높이고, viewpoint 계산이 너무 느리면 낮춘다.
+# 후보 위치 모양을 바꾸는 값은 아니며, 이번 주기에 검사하는 Frontier 범위만 바꾼다.
+ViewpointManager/local_tsp_size: 12  # 한 주기에 검사할 Frontier 묶음 수[개]
+
+
+# ViewpointManager/* : Viewpoint 생성·선택 끝
+# ====================================================================
+
+# [탐사 허용 영역]
+# EPIC은 아래 박스 내부에서만 Frontier, viewpoint 및 경로를 생성한다.
+box_num: 1                              # 탐사 허용 박스 수[개]
+box_0/down: [-150.0, -150.0, 0.5]      # 박스의 최소 [X, Y, Z] 좌표[m]
+box_0/up:   [150, 150, 2.5]             # 박스의 최대 [X, Y, Z] 좌표[m]
+dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 수[개], 0이면 없음
+# ====================================================================
+# local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 시작
+
+# [국소 궤적 최대 길이][현장 튜닝]
+# 현재 위치에서 선택된 viewpoint 방향으로 한 번에 생성할 MINCO 국소 궤적 구간의 최대 길이를 결정한다.
+# Frontier와 viewpoint는 정상적으로 생성되지만 궤적이 목표 전에 계속 짧게 끝나면 값을 늘려 viewpoint까지 이어지는 궤적과 탐사 가능성을 높일 수 있다.
+# 충돌·Corridor·topology 연결 실패로 궤적 자체가 생성되지 않는 문제는 이 값을 늘려도 해결되지 않으며, 값이 크면 궤적 생성 연산량이 증가할 수 있다.
+max_traj_len: 10.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
+
+# [Corridor·충돌 안전 설정][수정 금지]
+# 아래 값은 미관측 영역 진입 방지, 장애물 안전거리 및 Corridor 크기에 관여하는 검증값이므로 변경하지 않는다.
+local_planning/clip_corridor_to_observed: true  # 관측 영역 내부로 Corridor 제한
+local_planning/clip_cone_faces: true            # LiDAR FOV 경계면으로 Corridor 제한
+DilateRadiusSoft: 0.6                           # MINCO 최적화의 장애물 안전거리[m]
+DilateRadiusHard: 0.45                          # 최종 충돌 검사의 장애물 안전거리[m]
+MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 크기[m]
+# [MINCO 비행 제한값][PX4 하드 제한 아님]
+# 아래 값은 MINCO가 궤적을 생성할 때 사용하는 소프트 제한이며, PX4 setpoint나 실제 기체의 하드 제한을 직접 설정하지 않는다.
+
+# [최대 비행 속도]
+# MINCO가 생성하는 3차원 궤적의 최대 속도를 결정한다.
+# 탐사가 너무 느리면 높이고, 경로 추종 오차·진동·제동거리 문제가 발생하면 낮춘다.
+# 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
+MaxVelMag: 1.0  # 최대 비행 속도[m/s]
+
+# [이동 궤적에 따른 기체 자세 변화율]
+# 급가속·급감속·경로 굴곡을 따라가기 위해 필요한 기체 기울기 변화율의 최대 크기를 MINCO가 계산할 때 사용한다.
+# 급격한 기울기 변화와 진동이 발생하면 낮추고, 가속·방향 전환 궤적 생성이 지나치게 제한되면 높인다.
+# 기수가 좌우로 회전하는 Yaw 궤적의 속도 제한이 아니며, Yaw 회전속도는 yaw_max_vel에서 설정한다.
+# 현재 값 10000은 사실상 이 제한을 사용하지 않는 설정이다.
+maxBdrMag: 10000.0  # 위치 궤적으로 인해 발생하는 body rate 최대 크기[rad/s]
+
+# [기체 최대 기울기]
+# 가속·감속·방향 전환 시 기체가 최대로 기울어질 수 있는 각도를 결정한다.
+# 움직임이 너무 공격적이면 낮추고, 가속이나 방향 전환 성능이 부족하면 높인다.
+# 값을 높이면 속도는 빨라질 수 있지만 자세 불안정과 추종 오차가 증가할 수 있다.
+MaxTiltAngle: 0.8  # 최대 기울기[rad], 약 45.8도
+
+# [MINCO 추력 범위]
+# 궤적을 따라가기 위해 MINCO가 사용할 수 있는 최소·최대 총추력을 결정한다.
+# 상승·급제동 성능이 부족하면 MaxThrust를 확인하고, 하강이 어렵거나 계속 떠오르면 MinThrust를 확인한다.
+# 이 값은 MINCO가 궤적을 생성할 때 사용하는 소프트 제한이며, PX4에 전달되는 추력 setpoint를 직접 제한하거나 이 범위로 강제하지 않는다.
+# 기체의 호버 추력(VehicleMass × GravAcc)이 MinThrust와 MaxThrust 사이에 있어야 한다.
+MinThrust: 15.0  # 최소 총추력[N]
+MaxThrust: 22.0  # 최대 총추력[N]
 VehicleMass: 1.9
 GravAcc: 9.8
 HorizDrag: 0.0
@@ -136,11 +328,33 @@ ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_
 SmoothingEps: 0.015
 IntegralIntervs: 32
 RelCostTol: 1.1e-6
-#param for yaw opt
-yaw_max_vel: 1.0 # 角速度限制, 要大
+
+# local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 끝
+# ====================================================================
+
+# ====================================================================
+# Yaw 궤적 생성 시작
+
+# [최대 Yaw 회전속도]
+# 드론의 기수가 이동 경로와 viewpoint를 바라보도록 생성하는 Yaw 궤적의 최대 회전속도를 결정한다.
+# 기수 회전이 너무 느리면 높이고, 좌우 급회전·흔들림·Yaw 추종 오차가 발생하면 낮춘다.
+# PX4의 실제 Yaw rate 하드 제한이 아니라 EPIC이 생성하는 Yaw 궤적의 계획값이다.
+yaw_max_vel: 1.0  # 1.0 rad/s = 57.3 deg/s
+
+# [Yaw 목표 방향 추종 가중치]
+# 생성되는 Yaw 궤적이 이동 경로와 viewpoint를 보고 계산한 목표 Yaw 방향을 얼마나 강하게 따라갈지 결정한다.
+# 기수가 이동 방향을 잘 바라보지 않으면 높이고, Yaw 변화가 지나치게 민감하거나 불안정하면 낮춘다.
+# Yaw 회전속도 값이 아니며, 실제 회전속도는 yaw_max_vel에서 설정한다.
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 2.5
-# FSM param (poongsan 전용 — RTH/로컬플래닝 동작에 필요)
+
+# Yaw 궤적 생성 끝
+# ====================================================================
+
+# ====================================================================
+# fsm/* : 탐사 상태·재계획·이륙·복귀 시작
+
+# Poongsan 전용 FSM 설정
 fsm/goal_tolerance: 0.1
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz)
@@ -167,3 +381,6 @@ fsm/takeoff_timeout: 20.0        # 타임아웃: 고도 근처면 탐색, 아니
 fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 후 그 자리 hold)
 fsm/finish_hover_duration: 1.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
 fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
+
+# fsm/* : 탐사 상태·재계획·이륙·복귀 끝
+# ====================================================================
