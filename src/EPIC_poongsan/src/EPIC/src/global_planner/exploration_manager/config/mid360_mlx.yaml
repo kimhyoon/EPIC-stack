@@ -73,9 +73,9 @@ bubble_topo/bubble_min_radius: 0.5  # 연결점 중심에서 가장 가까운 �
 # 전체 탐사 맵을 topology 계산용 박스들로 나눌 때 각 박스의 X·Y·Z 크기를 몇 m로 설정할지 결정한다.
 # 값 증가 시 구역 수는 감소하지만 구역당 연산량이 증가하며, 값 감소 시 세밀한 갱신이 가능하지만 구역 수와 갱신 호출이 증가한다.
 # 경로 연결점의 간격이나 크기를 직접 결정하는 값은 아니다.
-bubble_topo/init_region_size_x: 3.3  # 계산용 박스의 가로 길이(X축)[m]
-bubble_topo/init_region_size_y: 3.3  # 계산용 박스의 세로 길이(Y축)[m]
-bubble_topo/init_region_size_z: 2.0  # 계산용 박스의 높이(Z축)[m]
+bubble_topo/init_region_size_x: 1.5  # 계산용 박스의 가로 길이(X축)[m]
+bubble_topo/init_region_size_y: 1.5  # 계산용 박스의 세로 길이(Y축)[m]
+bubble_topo/init_region_size_z: 1.0  # 계산용 박스의 높이(Z축)[m]
 
 # [Topology 박스 내부 검사점 간격]
 # topology 계산용 박스 안을 바둑판처럼 나누어 경로 연결점을 만들 수 있는 빈 공간을 얼마나 촘촘하게 확인할지 결정한다.
@@ -87,13 +87,13 @@ bubble_topo/cube_discrete_size: 0.4  # 박스 내부 가상 검사점 사이의 
 # 드론이 지나온 길을 다시 사용할 수 있도록 RViz의 초록색 topology graph에 이동 이력 연결점을 최소 몇 m 간격으로 남길지 결정한다.
 # 값 증가 시 연산량은 감소하지만 코너나 좁은 통로의 연결이 끊길 수 있고, 값 감소 시 복귀 경로 연결성은 좋아지지만 node·edge 수와 연산량이 증가한다.
 # 모든 topology node의 간격이나 edge 길이가 아니라 드론이 실제로 지나온 경로에 추가하는 이력 node의 최소 간격이다.
-bubble_topo/odom_node_distance: 3.0  # 이동 경로에 추가하는 이력 연결점의 최소 거리[m]
+bubble_topo/odom_node_distance: 1.5  # 이동 경로에 추가하는 이력 연결점의 최소 거리[m]
 
 # [Topology 경로의 장애물 안전거리]
 # RViz의 초록색 topology graph로 경로를 찾을 때 벽이나 장애물에서 이 값보다 가까운 공간을 경로로 사용하지 않게 한다.
 # 값 증가 시 안전 여유는 커지지만 좁은 통로의 경로를 찾지 못할 수 있고, 값 감소 시 좁은 통로를 통과할 가능성은 커지지만 충돌 위험이 증가한다.
 # 최종 MINCO 궤적의 안전거리가 아니므로 bubble_min_radius, DilateRadiusHard/Soft 및 실제 기체 크기와 함께 확인한다.
-bubble_astar/safe_distance: 0.6  # topology 경로와 장애물 사이의 최소 거리[m]
+bubble_astar/safe_distance: 0.2  # topology 경로와 장애물 사이의 최소 거리[m]
 
 # [한 번에 갱신할 Topology 박스 수]
 # LiDAR로 새로운 공간을 관측했을 때 현재 드론과 가까운 박스부터 한 번의 topology 갱신에서 최대 몇 개까지 처리할지 결정한다.
@@ -122,9 +122,9 @@ lidar_perception/fov_viewpoint_down: 10.0
 lidar_perception/fov_viewpoint_horizontal: 100
 lidar_perception/max_ray_length: 30  #13
 
-# PR #1 observes this MID360 profile as a forward, non-360 LiDAR.
+# NUC mid360_mlx tuning baseline: disable the horizontal FOV-edge scan.
 lidar_perception/yaw_fov: 120.0
-lidar_perception/is_360lidar: false
+lidar_perception/is_360lidar: true
 
 # frontier/*, lidar_perception/* : Frontier 후보와 LiDAR 인식 모델 끝
 # ====================================================================
@@ -239,7 +239,7 @@ ViewpointManager/sample_pillar_height_layer_num: 5  # 높이 후보 층 수[개]
 # Frontier에서 얼마나 가까운 곳부터 먼 곳까지 관측 위치를 찾을지 결정한다.
 # 좁은 통로에서 viewpoint가 없으면 min_radius를 낮추고, 가까운 곳에 공간이 없으면 max_radius를 높인다.
 # min_radius를 너무 낮추면 벽 가까이에 후보가 생성되고, max_radius를 너무 높이면 불필요하게 먼 목표가 선택될 수 있다.
-ViewpointManager/sample_pillar_min_radius: 0.5  # 가장 가까운 후보 거리[m]
+ViewpointManager/sample_pillar_min_radius: 0.8  # 가장 가까운 후보 거리[m]
 ViewpointManager/sample_pillar_max_radius: 2.0  # 가장 먼 후보 거리[m]
 
 # [Viewpoint 거리별 후보 수]
@@ -281,7 +281,7 @@ dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 
 # 현재 위치에서 선택된 viewpoint 방향으로 한 번에 생성할 MINCO 국소 궤적 구간의 최대 길이를 결정한다.
 # Frontier와 viewpoint는 정상적으로 생성되지만 궤적이 목표 전에 계속 짧게 끝나면 값을 늘려 viewpoint까지 이어지는 궤적과 탐사 가능성을 높일 수 있다.
 # 충돌·Corridor·topology 연결 실패로 궤적 자체가 생성되지 않는 문제는 이 값을 늘려도 해결되지 않으며, 값이 크면 궤적 생성 연산량이 증가할 수 있다.
-max_traj_len: 10.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
+max_traj_len: 20.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
 
 # [Corridor·충돌 안전 설정][수정 금지]
 # 아래 값은 장애물 안전거리 및 Corridor 크기에 관여하는 검증값이므로 변경하지 않는다.

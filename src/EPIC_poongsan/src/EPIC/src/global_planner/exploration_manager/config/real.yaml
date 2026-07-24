@@ -68,15 +68,15 @@ bubble_topo/min_z: 0.51  # Z축 박스의 최소 분할 크기[m]
 # 연결점 후보 주변에 장애물이 없는 구형 공간을 만들고, 그 반경이 이 값 이상일 때만 유효한 연결점으로 사용한다.
 # 값 증가 시 안전 여유는 커지지만 좁은 통로의 연결점이 사라질 수 있고, 값 감소 시 좁은 통로의 연결점은 늘지만 벽에 가까워질 수 있다.
 # topology 연결점 생성 기준이며 최종 MINCO 궤적의 장애물 안전거리를 직접 결정하는 값은 아니다.
-bubble_topo/bubble_min_radius: 0.61  # 연결점 중심에서 가장 가까운 장애물까지의 최소 거리[m]
+bubble_topo/bubble_min_radius: 0.5  # 연결점 중심에서 가장 가까운 장애물까지의 최소 거리[m]
 
 # [Topology 맵 갱신 구역 크기]
 # 전체 탐사 맵을 topology 계산용 박스들로 나눌 때 각 박스의 X·Y·Z 크기를 몇 m로 설정할지 결정한다.
 # 값 증가 시 구역 수는 감소하지만 구역당 연산량이 증가하며, 값 감소 시 세밀한 갱신이 가능하지만 구역 수와 갱신 호출이 증가한다.
 # 경로 연결점의 간격이나 크기를 직접 결정하는 값은 아니다.
-bubble_topo/init_region_size_x: 3.3  # 계산용 박스의 가로 길이(X축)[m]
-bubble_topo/init_region_size_y: 3.3  # 계산용 박스의 세로 길이(Y축)[m]
-bubble_topo/init_region_size_z: 2.0  # 계산용 박스의 높이(Z축)[m]
+bubble_topo/init_region_size_x: 1.5  # 계산용 박스의 가로 길이(X축)[m]
+bubble_topo/init_region_size_y: 1.5  # 계산용 박스의 세로 길이(Y축)[m]
+bubble_topo/init_region_size_z: 1.0  # 계산용 박스의 높이(Z축)[m]
 
 # [Topology 박스 내부 검사점 간격]
 # topology 계산용 박스 안을 바둑판처럼 나누어 경로 연결점을 만들 수 있는 빈 공간을 얼마나 촘촘하게 확인할지 결정한다.
@@ -88,7 +88,7 @@ bubble_topo/cube_discrete_size: 0.4  # 박스 내부 가상 검사점 사이의 
 # 드론이 지나온 길을 다시 사용할 수 있도록 RViz의 초록색 topology graph에 이동 이력 연결점을 최소 몇 m 간격으로 남길지 결정한다.
 # 값 증가 시 연산량은 감소하지만 코너나 좁은 통로의 연결이 끊길 수 있고, 값 감소 시 복귀 경로 연결성은 좋아지지만 node·edge 수와 연산량이 증가한다.
 # 모든 topology node의 간격이나 edge 길이가 아니라 드론이 실제로 지나온 경로에 추가하는 이력 node의 최소 간격이다.
-bubble_topo/odom_node_distance: 3.0  # 이동 경로에 추가하는 이력 연결점의 최소 거리[m]
+bubble_topo/odom_node_distance: 1.5  # 이동 경로에 추가하는 이력 연결점의 최소 거리[m]
 
 # [Topology 경로의 장애물 안전거리]
 # RViz의 초록색 topology graph로 경로를 찾을 때 벽이나 장애물에서 이 값보다 가까운 공간을 경로로 사용하지 않게 한다.
@@ -161,7 +161,7 @@ parallel_astar/insert_node_timeout: 0.002         # 새 연결점 삽입 시 연
 # [Frontier 지도의 셀 크기]
 # LiDAR로 본 공간을 몇 m 크기의 정육면체 칸으로 나누어 Frontier를 찾을지 결정한다.
 # 값 증가 시 셀과 Frontier 묶음이 줄어 viewpoint 생성 대상도 감소할 수 있지만 좁은 통로를 놓칠 수 있고, 값 감소 시 작은 Frontier와 viewpoint 후보가 늘지만 연산량·메모리·노이즈가 증가한다.
-FrontierManager/cell_size: 0.4  # 한 셀의 가로·세로·높이[m]
+FrontierManager/cell_size: 0.2  # 한 셀의 가로·세로·높이[m]
 
 # [새 관측 주변의 재검사 범위]
 # 새로운 LiDAR 점이 들어왔을 때 주변 몇 칸까지 다시 확인하여 잘못 남은 Frontier와 노이즈를 정리할지 결정한다.
@@ -197,7 +197,7 @@ FrontierManager/cluster_max_size: 5.0  # Frontier 묶음의 최대 크기[m]
 # Frontier 묶음이 이 값보다 작으면 dormant로 분류하여 viewpoint 후보 생성 단계로 넘기지 않는다.
 # 값 증가 시 dormant Frontier가 늘어 viewpoint를 생성하는 Frontier 묶음과 전체 viewpoint 후보 수가 감소하고, 값 감소 시 작은 Frontier도 후보 생성 단계로 넘어가 viewpoint 수가 증가하지만 노이즈 목표와 연산량도 증가할 수 있다.
 # 값이 너무 크면 Frontier가 남아 있어도 viewpoint가 0개가 되어 탐사가 조기에 종료될 수 있다.
-FrontierManager/cluster_min_size: 1.0  # Viewpoint 생성 대상으로 인정할 Frontier 묶음의 최소 크기
+FrontierManager/cluster_min_size: 0.5  # Viewpoint 생성 대상으로 인정할 Frontier 묶음의 최소 크기
 
 # [같은 Frontier로 연결할 거리]
 # Frontier 셀끼리 몇 m 이내에 있을 때 하나의 viewpoint 생성 대상으로 묶을지 결정한다.
@@ -236,7 +236,7 @@ ViewpointManager/sample_pillar_height_layer_num: 5  # 높이 후보 층 수[개]
 # Frontier에서 얼마나 가까운 곳부터 먼 곳까지 관측 위치를 찾을지 결정한다.
 # 좁은 통로에서 viewpoint가 없으면 min_radius를 낮추고, 가까운 곳에 공간이 없으면 max_radius를 높인다.
 # min_radius를 너무 낮추면 벽 가까이에 후보가 생성되고, max_radius를 너무 높이면 불필요하게 먼 목표가 선택될 수 있다.
-ViewpointManager/sample_pillar_min_radius: 0.5  # 가장 가까운 후보 거리[m]
+ViewpointManager/sample_pillar_min_radius: 0.8  # 가장 가까운 후보 거리[m]
 ViewpointManager/sample_pillar_max_radius: 2.0  # 가장 먼 후보 거리[m]
 
 # [Viewpoint 거리별 후보 수]
@@ -268,8 +268,8 @@ ViewpointManager/local_tsp_size: 12  # 한 주기에 검사할 Frontier 묶음 �
 # [탐사 허용 영역]
 # EPIC은 아래 박스 내부에서만 Frontier, viewpoint 및 경로를 생성한다.
 box_num: 1                              # 탐사 허용 박스 수[개]
-box_0/down: [-150.0, -150.0, 0.5]      # 박스의 최소 [X, Y, Z] 좌표[m]
-box_0/up:   [150, 150, 2.5]             # 박스의 최대 [X, Y, Z] 좌표[m]
+box_0/down: [-2.0, -15, 0.1]            # 박스의 최소 [X, Y, Z] 좌표[m]
+box_0/up:   [22, 15, 2.1]               # 박스의 최대 [X, Y, Z] 좌표[m]
 dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 수[개], 0이면 없음
 # ====================================================================
 # local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 시작
@@ -278,7 +278,7 @@ dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 
 # 현재 위치에서 선택된 viewpoint 방향으로 한 번에 생성할 MINCO 국소 궤적 구간의 최대 길이를 결정한다.
 # Frontier와 viewpoint는 정상적으로 생성되지만 궤적이 목표 전에 계속 짧게 끝나면 값을 늘려 viewpoint까지 이어지는 궤적과 탐사 가능성을 높일 수 있다.
 # 충돌·Corridor·topology 연결 실패로 궤적 자체가 생성되지 않는 문제는 이 값을 늘려도 해결되지 않으며, 값이 크면 궤적 생성 연산량이 증가할 수 있다.
-max_traj_len: 10.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
+max_traj_len: 20.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
 
 # [Corridor·충돌 안전 설정][수정 금지]
 # 아래 값은 미관측 영역 진입 방지, 장애물 안전거리 및 Corridor 크기에 관여하는 검증값이므로 변경하지 않는다.
