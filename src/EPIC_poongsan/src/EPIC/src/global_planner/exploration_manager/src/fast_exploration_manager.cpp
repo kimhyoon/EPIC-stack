@@ -208,7 +208,18 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ") " +
         frontier_manager_ptr_->vp_stats_.str();
-    planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
+    // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
+    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다.
+    // MAGNA = "이번 주기에 갱신되지 않은 tour" (EARLY_FINISH 가 설치한 rescue
+    // 경로이거나, 전역 계획 실패로 남은 직전 tour). 어느 쪽인지는 같은 시점의
+    // diag_result_ 와 EARLY_FINISH 이벤트 로그로 구분한다.
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour
+    if (ed_->global_tour_.size() >= 2)
+      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
+                                                   VizColor::MAGNA, "global");
+    else
+      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
@@ -318,7 +329,18 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ")";
     planner_manager_->topo_graph_->removeNodes(viewpoints);
-    planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
+    // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
+    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다.
+    // MAGNA = "이번 주기에 갱신되지 않은 tour" (EARLY_FINISH 가 설치한 rescue
+    // 경로이거나, 전역 계획 실패로 남은 직전 tour). 어느 쪽인지는 같은 시점의
+    // diag_result_ 와 EARLY_FINISH 이벤트 로그로 구분한다.
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour
+    if (ed_->global_tour_.size() >= 2)
+      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
+                                                   VizColor::MAGNA, "global");
+    else
+      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
@@ -659,7 +681,9 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   }
 
   // Visualize the tour
-  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::BLUE, "goal");
+  // RTH(원점복귀/좌표이동) 경로. 탐사 경로(BLUE)와 색으로 구분한다 — 예전엔 둘 다
+  // BLUE 라 ns(global_path / goal_path)로만 갈렸고 화면에서는 분간이 안 됐다.
+  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::ORANGE, "goal");
 
   ros::Time end = ros::Time::now();
   ROS_DEBUG("[Goal Planning] Total planning time: %.2f ms",

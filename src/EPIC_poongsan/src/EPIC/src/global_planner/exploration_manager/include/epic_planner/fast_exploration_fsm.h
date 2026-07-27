@@ -106,6 +106,12 @@ private:
                                   std_srvs::Trigger::Response &res);
   void logGlobalPlanEvent(int res, double t_ms); // GLOBAL 이벤트 공통 발행
   bool verbose_console_ = false;      // true 면 기존 타이밍 cout/INFO 유지
+  /* [feature: astar-profile] A* 탐색 소요시간 분포 발행.
+     parallel_astar/*_timeout 을 올릴지 판단하는 근거 (/planning/timing/astar_profile). */
+  ros::Publisher astar_profile_pub_;
+  double astar_profile_period_ = 5.0;   // [s] 벽시계 기준 발행 주기
+  double astar_conn_timeout_ms_ = 0.0, astar_insert_timeout_ms_ = 0.0;
+
   /* stuck watchdog: 미션 상태에서 장시간 무이동 감지 (이벤트만, 자동회복 아님) */
   Eigen::Vector3d stuck_ref_pos_ = Eigen::Vector3d::Zero();
   ros::Time stuck_ref_t_;

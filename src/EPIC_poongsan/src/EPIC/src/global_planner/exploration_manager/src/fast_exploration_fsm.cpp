@@ -584,7 +584,16 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     }
 
     if (res == SUCCEED) {
-      frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
+      // res 는 callExplorationPlanner() = "로컬 궤적 계획"의 결과다. 궤적이
+      // 만들어졌다는 사실만으로 frontier 가 존재한다고 볼 수 없다 — EARLY_FINISH
+      // 가 넣은 probe 는 뷰포인트가 아니라 평범한 토포 노드이므로, 그쪽으로
+      // 궤적이 잘 나와도 frontier 는 여전히 0개일 수 있다. 여기서 무조건 latch
+      // 하면 probe 로 향하는 로컬 계획이 성공하는 순간 warmup 보호가 풀리고,
+      // 여정이 끝난 뒤 첫 NO_FRONTIER 한 번에 유예 없이 FINISH 로 떨어진다.
+      // 기준은 "뷰포인트가 존재하는가"가 아니라 "실제로 경로가 나온 뷰포인트가
+      // 있었는가"여야 한다 (viewpoints=1(path_reachable 0) 인 경우가 실제로 있다).
+      if (expl_manager_->ed_->diag_num_reachable_vp_ > 0)
+        frontiers_ever_seen_ = true;  // reachable viewpoint seen -> warmup done
       poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
       poly_traj_pub_.publish(fd_->newest_traj_);
       fd_->static_state_ = false;
@@ -993,6 +1002,17 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       nh.advertise<std_msgs::String>("/planning/early_finish_state", 10, true);
   publishEarlyFinishStatus("IDLE");
   rth_metrics_pub_ = nh.advertise<std_msgs::Float32>("/planning/rth_distance", 10);
+  // [feature: astar-profile]
+  astar_profile_pub_ =
+      nh.advertise<std_msgs::String>("/planning/timing/astar_profile", 10);
+  nh.param("fsm/astar_profile_period", astar_profile_period_, 5.0);
+  {
+    double t = 0.0;
+    nh.param("parallel_astar/update_connection_timeout", t, 0.0);
+    astar_conn_timeout_ms_ = t * 1000.0;
+    nh.param("parallel_astar/insert_node_timeout", t, 0.0);
+    astar_insert_timeout_ms_ = t * 1000.0;
+  }
   // exploration debug HUD (rviz text marker) + machine-readable string (bag/log)
   diag_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/expl_diag", 10);
   diag_str_pub_ = nh.advertise<std_msgs::String>("/planning/expl_diag_str", 10);
@@ -1188,6 +1208,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     global_path_update_timer_.stop();
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
+  expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
     global_path_update_timer_.start();
     return;
   }
@@ -1251,6 +1272,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     }
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
+  expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
     global_path_update_timer_.start();
     return;
   }
@@ -1317,6 +1339,22 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
 
   expl_manager_->frontier_manager_ptr_->viz_pocc();
   expl_manager_->frontier_manager_ptr_->visfrtcluster();
+  expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
+  // [feature: astar-profile] 상한 대비 실제 소요시간 분포를 주기적으로 발행.
+  {
+    static ros::WallTime t_prof = ros::WallTime::now();
+    if ((ros::WallTime::now() - t_prof).toSec() > astar_profile_period_ &&
+        ParallelBubbleAstar::profile_.count() > 0) {
+      t_prof = ros::WallTime::now();
+      const std::string rep = ParallelBubbleAstar::profile_.report(true);
+      std_msgs::String m;
+      m.data = rep;
+      astar_profile_pub_.publish(m);
+      ROS_INFO("[astar-profile] %s (caps: conn=%.1fms insert=%.1fms)",
+               rep.c_str(), astar_conn_timeout_ms_, astar_insert_timeout_ms_);
+    }
+  }
+
   static ros::Time t_p = ros::Time::now();
   if ((ros::Time::now() - t_p).toSec() > 5.0) {
     expl_manager_->frontier_manager_ptr_->printMemoryCost();
