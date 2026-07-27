@@ -355,6 +355,17 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
 
     planner_manager_->local_data_.end_yaw_ = viewpoint_reachable.front()->yaw_;
     planner_manager_->topo_graph_->removeNodes(viewpoints);
+    // 다중(TSP) 분기와 동일하게 마무리한다. 이 두 줄이 빠져 있어서 뷰포인트가
+    // 정확히 1개인 주기마다 어긋났다:
+    //   - vizTour 를 안 불러 /global_tour 에는 직전 주기 경로가 그대로 남고
+    //   - updateGoalNode 를 안 불러 next_goal_node_ 도 직전 목표에 머문다
+    //     (위 :228 의 호출은 global_tour_ 를 새로 만들기 "전"이라 옛 값을 쓴다)
+    // 결과적으로 로컬 계획의 끝점이 화면의 global tour 와 한 주기씩 어긋났다.
+    // 실측 로그에서 viewpoints=1(path_reachable 1) 이 반복되는 동안 next_goal 이
+    // (1.7,4.9) -> (1.5,6.5) 로 뒤늦게 따라오는 것으로 나타났다.
+    updateGoalNode();
+    planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
+                                                 VizColor::BLUE, "global");
     return SUCCEED;
   }
 
