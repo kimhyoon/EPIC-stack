@@ -170,6 +170,22 @@ fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
 # to gather more observations; if a real frontier reappears on the way, normal
 # exploration takes over immediately. Enabled here so the garage simulation
 # exercises the same path as the flight profiles.
+# ── 이륙 후 제자리 360도 초기 관측 회전 (YAW_ROTATE_INIT) ──────────────
+# 이륙 직후에는 LiDAR 가 거의 아무것도 못 봐서 frontier 가 0개로 잡히고, 그대로
+# 탐사를 시작하면 첫 계획부터 갈 곳이 없다. 호버 지점을 유지한 채 한 바퀴 돌아
+# 주변을 먼저 관측한 뒤 탐사를 시작한다.
+# (EARLY_FINISH 가 같은 문제의 사후 구제라면 이쪽은 사전 예방이다)
+#
+# 흐름: TAKEOFF_HOVER -> YAW_ROTATE_INIT -> PLAN_TRAJ_EXP
+# false 면 예전처럼 TAKEOFF_HOVER 에서 곧바로 탐사로 간다.
+#
+# 완료 판정은 odom yaw 를 누적해서 실제로 360도를 돌았는지로만 한다. 타임아웃은
+# 의도적으로 없다 — 회전이 확인되지 않으면 탐사를 시작하지 않고 제자리 호버로
+# 남는 편이 안전하다. 기체가 못 돌면 계속 회전 명령을 낸다.
+# 상태 관측: /planning/yaw_rotate_init
+fsm/yaw_rotate_init_enable: true
+fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
+
 fsm/early_finish_enable: true
 fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
 fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH

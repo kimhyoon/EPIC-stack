@@ -56,7 +56,11 @@ struct FSMData;
 // EARLY_FINISH: 탐사가 너무 짧게 끝났을 때(누적 이동거리 < thresh), 현재 odom
 //               node 에서 가장 먼 도달 가능 topology node 까지의 기존 graph path 를
 //               global tour 로 설치한 뒤 PLAN_TRAJ_EXP 로 돌아간다.
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH };
+// YAW_ROTATE_INIT: 이륙 호버 지점을 유지한 채 제자리에서 360도 회전해 주변을 한
+//         바퀴 관측한 뒤 탐사를 시작한다. 이륙 직후 맵이 비어 frontier 가 0개로
+//         보이는 상황에 대한 사전 예방이다 (EARLY_FINISH 는 같은 문제의 사후 구제).
+//         새 enum 도 END 에 추가해 기존 인덱스를 건드리지 않는다.
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH, YAW_ROTATE_INIT };
 
 class FastExplorationFSM {
 private:
@@ -188,6 +192,18 @@ private:
   ros::Subscriber    mavros_state_sub_;      // /mavros/state (to confirm AUTO.LAND engaged)
   mavros_msgs::State px4_state_;
 
+  /* [YAW_ROTATE_INIT] 이륙 후 제자리 360도 초기 관측 회전.
+     완료 판정은 odom yaw 누적으로만 한다 — 명령만 적분하면 실제로 안 돌았는데
+     돌았다고 판단할 수 있다. 의도적으로 타임아웃이 없다: 회전이 확인되지 않으면
+     탐사를 시작하지 않고 제자리 호버로 남는 편이 안전하다. */
+  bool   yaw_rotate_init_enable_ = true;
+  double yaw_rotate_init_rate_ = 0.5;    // [rad/s] 회전 각속도
+  double yaw_rotate_accum_ = 0.0;        // 실제(odom) 누적 회전량 [rad]
+  double yaw_rotate_cmd_yaw_ = 0.0;      // 명령 yaw (매 틱 적분)
+  float  yaw_rotate_last_yaw_ = 0.0f;    // 직전 odom yaw (증분 계산용)
+  bool   yaw_rotate_valid_ = false;      // 직전 odom yaw 유효 여부
+  ros::Publisher yaw_rotate_state_pub_;  // /planning/yaw_rotate_init (진행률)
+
   /* 누적 이동거리. FINISH 가 "정말 다 봐서" 끝난 건지 "아직 못 돌아다녀서" 끝난
      건지 가르는 유일한 근거다. 직선변위가 아니라 경로 적분이어야 한다 —
      멀리 나갔다 원점으로 복귀해 끝나는 건 정상 종료인데 변위로는 0 이 된다. */
@@ -224,7 +240,8 @@ private:
                                 const string &detail = "");
   bool explorationReallyFinished();          // false during startup warmup, true once frontiers seen / timeout
   void mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg);
-  void pubHoldCmd(const Eigen::Vector3d &p, double yaw);  // stream a fixed-pose hover setpoint on /position_cmd
+  // yaw_dot 을 실어 보내면 px4_ctrl_bridge(use_yawrate=true)가 yawrate 로 회전시킨다.
+  void pubHoldCmd(const Eigen::Vector3d &p, double yaw, double yaw_dot = 0.0);
   int callExplorationPlanner();
   int callGoalPlanner();
   void transitState(EXPL_STATE new_state, string pos_call, bool red = false);
@@ -241,6 +258,11 @@ private:
   void avoidFlagCallback(const std_msgs::Int16ConstPtr &msg);
   void odometryCallback(const nav_msgs::OdometryConstPtr &msg);
   void stopTraj();
+  // TAKEOFF_HOVER 종료 공통 경로. yaw_rotate_init_enable_ 이면 YAW_ROTATE_INIT 를
+  // 거치고, 아니면 예전처럼 곧바로 탐사로 간다.
+  void leaveTakeoffHover(const std::string &why);
+  // 탐사 시작 직전 공통 처리 (누적 이동거리 리셋 후 PLAN_TRAJ_EXP).
+  void startExplorationFromHover(const std::string &why);
   void pubHoverCmd();  // stream the hover setpoint on /position_cmd during TAKEOFF_HOVER
 
   // void goal_cb(const geometry_msgs::PoseStamped::ConstPtr &msg);

@@ -360,12 +360,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         hover_stable_since_ = now;  // start the settle timer
       if ((now - hover_stable_since_).toSec() >= fp_->takeoff_settle_time_) {
         fd_->static_state_ = true;  // first exploration traj anchors to current pose
-        // 이륙 상승분(takeoff_height)이 누적거리에 섞이면 EARLY_FINISH 판정이 왜곡된다.
-        // 탐사가 실제로 시작되는 이 지점부터 0 에서 다시 적분한다.
-        traveled_distance_ = 0.0;
-        traveled_valid_ = false;
-        transitState(PLAN_TRAJ_EXP,
-                     "takeoff: altitude reached & stable -> explore");
+        leaveTakeoffHover("takeoff: altitude reached & stable");
         break;
       }
     } else {
@@ -384,9 +379,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         ROS_WARN("[takeoff] timeout %.1fs, near altitude (z_err=%.2f m, v=%.2f m/s) -> explore",
                  fp_->takeoff_timeout_, z_err, speed);
         fd_->static_state_ = true;
-        traveled_distance_ = 0.0;   // 위와 동일 — 탐사 시작점에서 적분 리셋
-        traveled_valid_ = false;
-        transitState(PLAN_TRAJ_EXP, "takeoff: timeout (near altitude) -> explore");
+        leaveTakeoffHover("takeoff: timeout (near altitude)");
       } else {
         ROS_ERROR_THROTTLE(2.0,
             "[takeoff] timeout %.1fs and NOT at altitude (z_err=%.2f m, v=%.2f m/s) -> "
@@ -829,6 +822,56 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     break;
   }
 
+  case YAW_ROTATE_INIT: {
+    // 이륙 호버 지점을 유지한 채 제자리에서 360도 돌아 주변을 한 바퀴 관측한다.
+    // 위치는 takeoff_anchor_ 로 고정하고 yaw 만 돌린다.
+    if (!fd_->have_odom_)
+      return;
+
+    // 완료 판정은 "실제로 돈 각도"(odom)로만 한다. 명령 yaw 를 적분해 판정하면
+    // 기체가 못 돌아도 다 돌았다고 보게 된다. 랩어라운드(+-pi)를 흡수하기 위해
+    // 매 틱 증분을 [-pi, pi] 로 접어서 누적한다.
+    if (yaw_rotate_valid_) {
+      double d = (double)fd_->odom_yaw_ - (double)yaw_rotate_last_yaw_;
+      while (d > M_PI)  d -= 2.0 * M_PI;
+      while (d < -M_PI) d += 2.0 * M_PI;
+      // 한 틱에 반 바퀴 넘게 튀면 odom 점프로 보고 버린다.
+      if (std::fabs(d) < M_PI)
+        yaw_rotate_accum_ += std::fabs(d);
+    }
+    yaw_rotate_last_yaw_ = fd_->odom_yaw_;
+    yaw_rotate_valid_ = true;
+
+    if (yaw_rotate_accum_ >= 2.0 * M_PI) {
+      char d[96];
+      snprintf(d, sizeof(d), "rotated %.0f deg at (%.2f, %.2f, %.2f)",
+               yaw_rotate_accum_ * 180.0 / M_PI, takeoff_anchor_.x(),
+               takeoff_anchor_.y(), takeoff_anchor_.z());
+      elog_.log("YAW_ROTATE_INIT", "initial 360 scan complete -> explore", d, 0.0,
+                EventLogger::L_INFO, true);
+      startExplorationFromHover("yaw rotate: 360 scan complete");
+      break;
+    }
+
+    // 명령 yaw 를 회전율만큼 적분해 보내고, yaw_dot 에 회전율을 실어준다.
+    // px4_ctrl_bridge 는 use_yawrate=true 이므로 yaw_dot 을 실제로 사용한다.
+    yaw_rotate_cmd_yaw_ += yaw_rotate_init_rate_ * 0.01;  // FSM 주기 100Hz
+    while (yaw_rotate_cmd_yaw_ > M_PI)  yaw_rotate_cmd_yaw_ -= 2.0 * M_PI;
+    while (yaw_rotate_cmd_yaw_ < -M_PI) yaw_rotate_cmd_yaw_ += 2.0 * M_PI;
+    pubHoldCmd(takeoff_anchor_, yaw_rotate_cmd_yaw_, yaw_rotate_init_rate_);
+
+    {
+      std_msgs::String m;
+      char b[128];
+      snprintf(b, sizeof(b), "ROTATING %.0f/360 deg (rate %.2f rad/s)",
+               yaw_rotate_accum_ * 180.0 / M_PI, yaw_rotate_init_rate_);
+      m.data = b;
+      yaw_rotate_state_pub_.publish(m);
+      ROS_INFO_THROTTLE(2.0, "\033[36m[yaw-rotate] %s\033[0m", b);
+    }
+    break;
+  }
+
   case LANDED: {
     // 미션 완전 종료 (착지 + disarm). record_on_goal 이 /planning/state 의 이 상태를
     // 보고 녹화를 마감한다. 여기서는 상태 발행(pubState)만 유지하며 대기.
@@ -839,7 +882,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 }
 
-void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw) {
+void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw,
+                                    double yaw_dot) {
   // Hold (p, yaw) as a position setpoint. px4_ctrl_bridge forwards this on
   // /position_cmd (it ignores the velocity field), so the drone holds pose. Yaw is
   // fixed (yaw_dot=0) -> no rotation. Mirrors traj_server's /position_cmd convention.
@@ -855,8 +899,39 @@ void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw) {
   cmd.acceleration.x = cmd.acceleration.y = cmd.acceleration.z = 0.0;
   cmd.jerk.x = cmd.jerk.y = cmd.jerk.z = 0.0;
   cmd.yaw = yaw;
-  cmd.yaw_dot = 0.0;
+  cmd.yaw_dot = yaw_dot;   // 0 이면 회전 없음(기존 동작), 비0 이면 yawrate 회전
   hover_cmd_pub_.publish(cmd);
+}
+
+// TAKEOFF_HOVER 를 벗어나는 유일한 경로. 초기 회전이 켜져 있으면 YAW_ROTATE_INIT
+// 를 한 번 거친다. 누적 이동거리 리셋은 "탐사가 실제로 시작되는" 시점에서 해야
+// 하므로 여기서 하지 않고 startExplorationFromHover() 로 미룬다 — 회전 중의 odom
+// 지터가 거리로 잡히면 EARLY_FINISH 판정이 왜곡된다.
+void FastExplorationFSM::leaveTakeoffHover(const std::string &why) {
+  if (yaw_rotate_init_enable_) {
+    yaw_rotate_accum_ = 0.0;
+    yaw_rotate_valid_ = false;
+    yaw_rotate_cmd_yaw_ = fd_->odom_yaw_;
+    char d[128];
+    snprintf(d, sizeof(d), "hold (%.2f, %.2f, %.2f), rate %.2f rad/s",
+             takeoff_anchor_.x(), takeoff_anchor_.y(), takeoff_anchor_.z(),
+             yaw_rotate_init_rate_);
+    elog_.log("YAW_ROTATE_INIT", "initial 360 scan started", d, 0.0,
+              EventLogger::L_INFO, true);
+    transitState(YAW_ROTATE_INIT, why + " -> initial 360 scan");
+    return;
+  }
+  startExplorationFromHover(why);
+}
+
+// 이륙 상승분/회전 중 지터가 누적거리에 섞이면 EARLY_FINISH 판정이 왜곡되므로
+// 탐사가 실제로 시작되는 이 지점에서 0 부터 다시 적분한다.
+void FastExplorationFSM::startExplorationFromHover(const std::string &why) {
+  traveled_distance_ = 0.0;
+  traveled_valid_ = false;
+  yaw_rotate_accum_ = 0.0;
+  yaw_rotate_valid_ = false;
+  transitState(PLAN_TRAJ_EXP, why + " -> explore");
 }
 
 void FastExplorationFSM::pubHoverCmd() {
@@ -927,6 +1002,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // EARLY_FINISH (조기 종료 구제). 기본값은 기존 동작과 같도록 잡되 enable 은 true —
   // 끄려면 fsm/early_finish_enable: false.
   nh.param("fsm/early_finish_enable", early_finish_enable_, true);
+  // [YAW_ROTATE_INIT] 이륙 후 제자리 360도 초기 관측 회전
+  nh.param("fsm/yaw_rotate_init_enable", yaw_rotate_init_enable_, true);
+  nh.param("fsm/yaw_rotate_init_rate", yaw_rotate_init_rate_, 0.5);
   nh.param("fsm/early_finish_dist_thresh", early_finish_dist_thresh_, 3.0);
   nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
   nh.param("fsm/early_finish_reach_tol", early_finish_reach_tol_, 0.5);
@@ -952,7 +1030,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // 순서는 EXPL_STATE enum 과 1:1 이어야 한다 (state_str_[int(state_)] 로 인덱싱).
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
                      "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
-                     "TAKEOFF_HOVER", "LANDED",   "EARLY_FINISH"};
+                     "TAKEOFF_HOVER", "LANDED",   "EARLY_FINISH",
+                     "YAW_ROTATE_INIT"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -1004,6 +1083,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   time_cost_pub_ = nh.advertise<std_msgs::Float32>("/time_cost", 10);
   static_pub_ = nh.advertise<std_msgs::Bool>("/planning/static", 10);
   state_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/state", 10);
+  yaw_rotate_state_pub_ =
+      nh.advertise<std_msgs::String>("/planning/yaw_rotate_init", 10, true);
   early_finish_state_pub_ =
       nh.advertise<std_msgs::String>("/planning/early_finish_state", 10, true);
   publishEarlyFinishStatus("IDLE");
