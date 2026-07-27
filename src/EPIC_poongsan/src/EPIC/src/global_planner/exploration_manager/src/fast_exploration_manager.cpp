@@ -234,7 +234,7 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   double dis2last_goal = 5e3;
   if (planner_manager_->lidar_map_interface_->getDisToOcc(
           ed_->next_goal_node_->center_) >
-      planner_manager_->parallel_path_finder_->safe_distance_ + 0.1) {
+      planner_manager_->parallel_path_finder_->safe_distance_) {
     dis2last_goal = getPathCost(planner_manager_->topo_graph_->odom_node_,
                                 Eigen::Vector3d::Zero(), curr_yaw,
                                 ed_->next_goal_node_, curr_yaw);

@@ -36,7 +36,6 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   nh.param("bubble_topo/init_region_size_x", init_region_size_x_, 0.0);
   nh.param("bubble_topo/init_region_size_y", init_region_size_y_, 0.0);
   nh.param("bubble_topo/init_region_size_z", init_region_size_z_, 0.0);
-  nh.param("bubble_topo/bubble_min_radius", bubble_min_radius_, 0.5);
   nh.param("bubble_topo/frontier_bubble_min_radius", frt_bubble_radius_, 0.5);
   nh.param("bubble_topo/cube_discrete_size", cube_discrete_size, 0.3);
   nh.param("bubble_topo/odom_node_distance", odom_node_distance_, 5.0);
@@ -984,7 +983,9 @@ void TopoGraph::updateSkeleton() {
         check_pt_flag[i] = true;
     }
     generateBubble(lb, hb, tmp_bubbles, check_pt_flag);
-    BubbleUnionSet::Ptr union_set_ = std::make_shared<BubbleUnionSet>(bubble_min_radius_); // TODO: 这个参数是topo节点2occ的最小距离
+    BubbleUnionSet::Ptr union_set_ =
+        std::make_shared<BubbleUnionSet>(
+            parallel_bubble_astar_->safe_distance_);
     vector<TopoNode::Ptr> new_nodes_region;
     Eigen::Vector3f region_center = (lb + hb) * 0.5;
     union_set_->unionSetCluster(tmp_bubbles, new_nodes_region, region_center);
@@ -1062,7 +1063,8 @@ void TopoGraph::updateSkeleton() {
     const double clearance =
         lidar_map_interface_->getDisToOcc(old_node->center_);
     const bool still_safe =
-        std::isfinite(clearance) && clearance >= bubble_min_radius_;
+        std::isfinite(clearance) &&
+        clearance >= parallel_bubble_astar_->safe_distance_;
     if (still_safe &&
         static_cast<int>(old_node->missed_update_count_) <
             std::max(0, node_miss_hysteresis_)) {

@@ -1093,11 +1093,11 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     snprintf(l, sizeof(l),
              "corridor | DilateRadiusSoft=%.2f DilateRadiusHard=%.2f "
              "MaxCorridorSize=%.1f MaxVelMag=%.1f max_traj_len=%.1f "
-             "astar_safe_distance=%.2f bubble_min_radius=%.2f",
+             "topology_safe_distance=%.2f",
              getd("DilateRadiusSoft", -1), getd("DilateRadiusHard", -1),
              getd("MaxCorridorSize", -1), getd("MaxVelMag", -1),
-             getd("max_traj_len", -1), getd("bubble_astar/safe_distance", -1),
-             getd("bubble_topo/bubble_min_radius", -1));
+             getd("max_traj_len", -1),
+             getd("bubble_astar/safe_distance", -1));
     param_lines_.push_back(l);
 
     snprintf(l, sizeof(l),
