@@ -19,8 +19,8 @@ cloud_crop/visualization_topic: /debug/cloud_crop/fov
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
-global_planning/w_vdir: 1.2          # Desktop 120-degree comparison value.
-global_planning/w_yawdir: 0.5        # Desktop 120-degree comparison value.
+global_planning/w_vdir: 0.0  # synced to real.yaml (was 1.2)
+global_planning/w_yawdir: 0.0  # synced to real.yaml (was 0.5)
 global_planning/w_firstnode: 0.2
 #viz
 # [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
@@ -28,15 +28,15 @@ view_graph: true
 FrontierManager/view_cluster: true
 FrontierManager/view_frt: true
 # graph
-bubble_topo/min_x: 0.6                # Desktop 120-degree comparison value.
-bubble_topo/min_y: 0.6                # Desktop 120-degree comparison value.
-bubble_topo/min_z: 0.3                # Desktop 120-degree comparison value.
-bubble_topo/bubble_min_radius: 0.61
-bubble_topo/init_region_size_x: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_y: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_z: 2.0
-bubble_topo/cube_discrete_size: 0.25  # Desktop YAML value; algorithm.xml overrides both runtimes to 0.3.
-bubble_topo/odom_node_distance: 1.0   # Desktop dense odom-trail spacing [m].
+bubble_topo/min_x: 1.11  # synced to real.yaml (was 0.6)
+bubble_topo/min_y: 1.11  # synced to real.yaml (was 0.6)
+bubble_topo/min_z: 0.51  # synced to real.yaml (was 0.3)
+bubble_topo/bubble_min_radius: 0.5  # synced to real.yaml (was 0.61)
+bubble_topo/init_region_size_x: 1.5  # synced to real.yaml (was 2.5)
+bubble_topo/init_region_size_y: 1.5  # synced to real.yaml (was 2.5)
+bubble_topo/init_region_size_z: 1.0  # synced to real.yaml (was 2.0)
+bubble_topo/cube_discrete_size: 0.4  # synced to real.yaml (was 0.25)
+bubble_topo/odom_node_distance: 1.5  # synced to real.yaml (was 1.0)
 bubble_astar/safe_distance: 0.6
 # map param
 max_update_region_num: 99999999
@@ -51,8 +51,8 @@ lidar_perception/fov_down: -15.0
 lidar_perception/lidar_pitch: 0.0
 lidar_perception/fov_viewpoint_up: 15.0
 lidar_perception/fov_viewpoint_down: -15.0
-lidar_perception/fov_viewpoint_horizontal: 120.0
-lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.
+lidar_perception/fov_viewpoint_horizontal: 100.0  # synced to real.yaml (was 120.0)
+lidar_perception/max_ray_length: 10  # synced to real.yaml (was 18)
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
 # from growing its flight corridor into space a limited-FOV sensor has not seen.
@@ -71,24 +71,27 @@ parallel_astar/update_connection_timeout: 0.002
 parallel_astar/insert_node_timeout: 0.002
 FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.8   # Desktop 120-degree comparison value.
-FrontierManager/good_observation_force_trust_length: 5.0
+FrontierManager/good_observation_direction_score: 0.6  # synced to real.yaml (was 0.8)
+FrontierManager/good_observation_force_trust_length: 4.5  # synced to real.yaml (was 5.0)
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
-FrontierManager/cluster_max_size: 3.0
-FrontierManager/cluster_min_size: 1.0
-FrontierManager/cluster_min_radius: 1.0 # Desktop 120-degree comparison value.
-FrontierManager/cluster_direction_radius: 0.75 # Desktop 120-degree comparison value.
-FrontierManager/cluster_minmum_point_num: 3
+FrontierManager/cluster_max_size: 5.0  # synced to real.yaml (was 3.0)
+FrontierManager/cluster_min_size: 0.5  # synced to real.yaml (was 1.0)
+FrontierManager/cluster_min_radius: 1.8  # synced to real.yaml (was 1.0)
+FrontierManager/cluster_direction_radius: -1.0  # synced to real.yaml (was 0.75)
+FrontierManager/cluster_minmum_point_num: 5  # synced to real.yaml (was 3)
 # Cylindrical viewpoint sampling.
-ViewpointManager/sample_pillar_min_height: -1.5  # Desktop 120-degree comparison value.
-ViewpointManager/sample_pillar_max_height: 1.5   # Desktop 120-degree comparison value.
+ViewpointManager/sample_pillar_min_height: -1.0  # synced to real.yaml (was -1.5)
+ViewpointManager/sample_pillar_max_height: 1.0  # synced to real.yaml (was 1.5)
 ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
-ViewpointManager/sample_pillar_min_radius: 0.3
-ViewpointManager/sample_pillar_max_radius: 9.0
+ViewpointManager/sample_pillar_min_radius: 0.8  # synced to real.yaml (was 0.3)
+ViewpointManager/sample_pillar_max_radius: 2.0  # synced to real.yaml (was 9.0)
 ViewpointManager/sample_pillar_radius_layer_num: 8
-ViewpointManager/sample_pillar_circle_sample_num: 12
-ViewpointManager/local_tsp_size: 20
+ViewpointManager/sample_pillar_circle_sample_num: 4  # synced to real.yaml (was 12)
+ViewpointManager/local_tsp_size: 12  # synced to real.yaml (was 20)
+# Viewpoint-to-obstacle clearance. Absent here until now, so the code default
+# 0.9 applied and corridors narrower than 1.8 m produced no viewpoint at all.
+ViewpointManager/min_obstacle_clearance: 0.5  # synced to real.yaml (was unset -> code default 0.9)
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
@@ -98,9 +101,9 @@ box_0/up: [182.0, 150.2, 2.5]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
-DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
-DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
-MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
+DilateRadiusSoft: 0.6  # synced to real.yaml (was 0.7)
+DilateRadiusHard: 0.45  # synced to real.yaml (was 0.4)
+MaxCorridorSize: 4.0  # synced to real.yaml (was 3.5)
 MaxVelMag: 2.0
 maxBdrMag: 10000.0
 MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
@@ -124,7 +127,7 @@ yaw_max_vel: 2.0    # Desktop 120-degree comparison value.
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 3.0   # Desktop 120-degree comparison value.
 # FSM param
-fsm/goal_tolerance: 0.2
+fsm/goal_tolerance: 0.1  # synced to real.yaml (was 0.2)
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz). Lower to simulate slow planning.
 
