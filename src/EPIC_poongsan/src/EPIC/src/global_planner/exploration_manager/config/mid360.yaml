@@ -209,6 +209,11 @@ FrontierManager/cluster_direction_radius: -1.0  # 표면 방향 유사도[-1~1]
 # 값 증가 시 적은 Frontier 입력은 클러스터링되지 않아 viewpoint가 생성되지 않고, 값 감소 시 적은 셀에서도 viewpoint가 생성되지만 노이즈 목표가 증가할 수 있다.
 FrontierManager/cluster_minmum_point_num: 4  # 신규 Frontier 최소 셀 수[개]
 
+# [탐사 박스 경계 Frontier 제거]
+# 탐사 허용 범위 끝부분의 해소할 수 없는 Frontier를 몇 칸까지 viewpoint 생성 대상에서 제외할지 결정한다.
+# 값 증가 시 박스 경계의 반복 viewpoint와 불필요한 탐사는 줄지만 경계 근처의 유효 viewpoint도 사라질 수 있고, 값 감소 시 경계 viewpoint는 늘지만 해소되지 않는 목표를 반복 방문할 수 있다.
+FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 0이면 비활성
+
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
 
@@ -384,6 +389,21 @@ fsm/takeoff_timeout: 20.0        # 타임아웃: 고도 근처면 탐색, 아니
 fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 후 그 자리 hold)
 fsm/finish_hover_duration: 1.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
 fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
+
+# ── 조기 종료(premature FINISH) 방지 ────────────────────────────────
+# NO_FRONTIER 는 "탐사 완료"와 "맵이 아직 안 참"을 구분하지 못한다. 이륙 직후엔
+# 맵/토포그래프가 덜 자라 frontier 가 0개로 보이기 쉬운데, 그대로 FINISH 로 가면
+# 3m 도 못 날고 미션이 끝난다. 두 겹으로 막는다.
+# 1단계: NO_FRONTIER 결론을 이 시간 동안 유예 (첫 NO_FRONTIER 기준 상한).
+#        어느 yaml 에도 없어서 전 프로파일이 코드 기본값 5.0초로 돌고 있었다.
+fsm/explore_warmup_timeout: 15.0  # [s] frontier 0개 결론 유예 시간
+# 2단계: 그래도 FINISH 면, 누적 비행거리가 짧을 때 가장 먼 reachable 토포 노드를
+#        global path 에 넣고 PLAN_TRAJ_EXP 로 되돌린다 (EARLY_FINISH).
+#        강제 발동: rosservice call /srv_early_finish
+#        상태 관측: /planning/early_finish{,_str}, /planning/traveled_distance
+fsm/early_finish_enable: true
+fsm/early_finish_min_dist: 3.0    # [m] 이 거리 미만 비행 중 FINISH 면 발동
+fsm/early_finish_max_count: 1     # 미션당 최대 발동 횟수 (핑퐁 방지)
 
 # fsm/* : 탐사 상태·재계획·이륙·복귀 끝
 # ====================================================================

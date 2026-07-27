@@ -393,5 +393,20 @@ fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 �
 fsm/finish_hover_duration: 1.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
 fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
 
+# ── 조기 종료(premature FINISH) 방지 ────────────────────────────────
+# NO_FRONTIER 는 "탐사 완료"와 "맵이 아직 안 참"을 구분하지 못한다. 이륙 직후엔
+# 맵/토포그래프가 덜 자라 frontier 가 0개로 보이기 쉬운데, 그대로 FINISH 로 가면
+# 3m 도 못 날고 미션이 끝난다. 두 겹으로 막는다.
+# 1단계: NO_FRONTIER 결론을 이 시간 동안 유예 (첫 NO_FRONTIER 기준 상한).
+#        어느 yaml 에도 없어서 전 프로파일이 코드 기본값 5.0초로 돌고 있었다.
+fsm/explore_warmup_timeout: 15.0  # [s] frontier 0개 결론 유예 시간
+# 2단계: 그래도 FINISH 면, 누적 비행거리가 짧을 때 가장 먼 reachable 토포 노드를
+#        global path 에 넣고 PLAN_TRAJ_EXP 로 되돌린다 (EARLY_FINISH).
+#        강제 발동: rosservice call /srv_early_finish
+#        상태 관측: /planning/early_finish{,_str}, /planning/traveled_distance
+fsm/early_finish_enable: true
+fsm/early_finish_min_dist: 3.0    # [m] 이 거리 미만 비행 중 FINISH 면 발동
+fsm/early_finish_max_count: 1     # 미션당 최대 발동 횟수 (핑퐁 방지)
+
 # fsm/* : 탐사 상태·재계획·이륙·복귀 끝
 # ====================================================================
