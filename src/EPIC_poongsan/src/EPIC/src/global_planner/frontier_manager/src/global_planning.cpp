@@ -55,14 +55,21 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   vector<float> distance_odom2cluster;
   vector<ClusterInfo::Ptr> old_clusters_within_consideration;
   int dormant_count = 0, unreachable_count = 0;
+  int retry_deferred_count = 0, retry_reactivated_count = 0;
   for (auto &cluster : cluster_list_) {
     if (cluster->is_dormant_) {
       dormant_count++;
       continue;
     }
     if (!cluster->is_reachable_) {
-      unreachable_count++;
-      continue;
+      if (shouldRetryViewpoint(cluster)) {
+        cluster->is_reachable_ = true;
+        retry_reactivated_count++;
+      } else {
+        unreachable_count++;
+        retry_deferred_count++;
+        continue;
+      }
     }
     if (revp_clusters_set.count(cluster))
       continue;
@@ -98,6 +105,8 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   vp_stats_.total = (int)cluster_list_.size();
   vp_stats_.dormant = dormant_count;
   vp_stats_.unreachable_pre = unreachable_count;
+  vp_stats_.retry_deferred = retry_deferred_count;
+  vp_stats_.retry_reactivated = retry_reactivated_count;
   vp_stats_.considered = (int)revp_clusters_vec.size();
 
   ros::Time t1 = ros::Time::now();
@@ -179,6 +188,13 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   vp_stats_.ok = (int)tsp_clusters.size();
   vp_stats_.no_visibility =
       std::max(0, (int)clusters_can_be_searched_.size() - vp_stats_.ok);
+  int retry_pending_count = 0;
+  for (const auto &cluster : cluster_list_) {
+    if (!cluster->is_dormant_ && !cluster->is_reachable_ &&
+        cluster->failure_reason_ != ViewpointFailureReason::ALREADY_VISITED)
+      retry_pending_count++;
+  }
+  vp_stats_.retry_deferred = retry_pending_count;
   // 重新topK
   vector<float> distance2odom2;
   vector<int> idx2;

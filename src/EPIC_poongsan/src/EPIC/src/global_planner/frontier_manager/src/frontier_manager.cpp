@@ -1071,6 +1071,65 @@ void FrontierManager::compute_cluster_info(
   if (cluster->cells_.size() < frtp_.cluster_min_size_)
     cluster->is_dormant_ = true;
   cluster->is_new_cluster_ = true;
+  cluster->failure_reason_ = ViewpointFailureReason::NONE;
+  cluster->consecutive_failure_count_ = 0;
+  cluster->last_failure_time_sec_ = 0.0;
+  cluster->last_failure_topology_revision_ = graph_->topologyRevision();
+  cluster->failure_odom_pos_ = graph_->odom_node_->center_;
+  cluster->failure_odom_yaw_ = graph_->odom_node_->yaw_;
+}
+
+void FrontierManager::markViewpointFailure(
+    ClusterInfo::Ptr &cluster, ViewpointFailureReason reason) {
+  if (cluster->failure_reason_ == reason) {
+    if (cluster->consecutive_failure_count_ <
+        std::numeric_limits<uint16_t>::max())
+      cluster->consecutive_failure_count_++;
+  } else {
+    cluster->failure_reason_ = reason;
+    cluster->consecutive_failure_count_ = 1;
+  }
+  cluster->is_reachable_ = false;
+  cluster->last_failure_time_sec_ = ros::Time::now().toSec();
+  cluster->last_failure_topology_revision_ = graph_->topologyRevision();
+  cluster->failure_odom_pos_ = graph_->odom_node_->center_;
+  cluster->failure_odom_yaw_ = graph_->odom_node_->yaw_;
+}
+
+void FrontierManager::markViewpointSuccess(ClusterInfo::Ptr &cluster) {
+  cluster->is_reachable_ = true;
+  cluster->failure_reason_ = ViewpointFailureReason::NONE;
+  cluster->consecutive_failure_count_ = 0;
+  cluster->last_failure_time_sec_ = 0.0;
+}
+
+bool FrontierManager::shouldRetryViewpoint(ClusterInfo::Ptr &cluster) const {
+  if (cluster->is_dormant_ ||
+      cluster->failure_reason_ == ViewpointFailureReason::ALREADY_VISITED)
+    return false;
+
+  if (cluster->last_failure_topology_revision_ != graph_->topologyRevision())
+    return true;
+
+  const float moved =
+      (graph_->odom_node_->center_ - cluster->failure_odom_pos_).norm();
+  float yaw_delta =
+      std::fabs(graph_->odom_node_->yaw_ - cluster->failure_odom_yaw_);
+  yaw_delta = std::min(yaw_delta,
+                       static_cast<float>(2.0 * M_PI) - yaw_delta);
+  if (moved >= 0.5f || yaw_delta >= static_cast<float>(15.0 * M_PI / 180.0))
+    return true;
+
+  double cooldown = 2.0;
+  if (cluster->failure_reason_ == ViewpointFailureReason::TOPO_TIMEOUT)
+    cooldown = 0.5;
+  else if (cluster->failure_reason_ ==
+               ViewpointFailureReason::TOPO_NO_NEIGHBOR ||
+           cluster->failure_reason_ == ViewpointFailureReason::TOPO_NO_PATH)
+    cooldown = 1.0;
+
+  return ros::Time::now().toSec() - cluster->last_failure_time_sec_ >=
+         cooldown;
 }
 
 bool FrontierManager::has_overlap(const Eigen::Vector3f &box_max_,
@@ -1266,18 +1325,19 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
   int best_vp_idx = std::distance(score.begin(),
                                   std::max_element(score.begin(), score.end()));
   if (score[best_vp_idx] == 0) {
-    cluster->is_reachable_ = false;
+    markViewpointFailure(cluster, ViewpointFailureReason::NO_VISIBILITY);
     cluster->vp_clusters_.clear();
   } else {
-    cluster->is_reachable_ = true;
     cluster->best_vp_yaw_ = yaw[best_vp_idx];
     cluster->best_vp_ = vps[best_vp_idx].getVector3fMap();
     if (((cluster->best_vp_ - graph_->odom_node_->center_).norm() < 1e-2) &&
         (fabs(cluster->best_vp_yaw_ - graph_->odom_node_->yaw_) < 1e-2)) {
-      cluster->is_reachable_ = false;
       cluster->is_dormant_ = true;
+      markViewpointFailure(cluster, ViewpointFailureReason::ALREADY_VISITED);
       cluster->vp_clusters_.clear();
+      return;
     }
+    markViewpointSuccess(cluster);
     int tmp_idx = best_vp_idx;
     for (auto &vpc : cluster->vp_clusters_) {
       if (tmp_idx < vpc.vps_.size()) {
@@ -1307,7 +1367,7 @@ void FrontierManager::initClusterViewpoints(ClusterInfo::Ptr &cluster) {
     vps_init.emplace_back(vp.x(), vp.y(), vp.z());
   }
   if (vps_init.empty()) {
-    cluster->is_reachable_ = false;
+    markViewpointFailure(cluster, ViewpointFailureReason::NO_CANDIDATE);
     return;
   }
   pcl::PointCloud<PointType>::Ptr vp_cloud(new pcl::PointCloud<PointType>);
@@ -1400,8 +1460,15 @@ void FrontierManager::initClusterViewpoints(ClusterInfo::Ptr &cluster) {
 
 void FrontierManager::removeUnreachableViewpoints(
     vector<ClusterInfo::Ptr> &clusters) {
-  if (graph_->odom_node_->neighbors_.empty())
+  if (graph_->odom_node_->neighbors_.empty()) {
+    for (auto &cluster : clusters) {
+      if (!cluster->vp_clusters_.empty())
+        markViewpointFailure(cluster,
+                             ViewpointFailureReason::TOPO_NO_NEIGHBOR);
+      cluster->vp_clusters_.clear();
+    }
     return;
+  }
   // 建立一张映射表，可以通过topo-node映射到要删除的vp_cluster
   vector<int> nodeidx2clusteridx;
   vector<int> nodeidx2vpclusteridx;
@@ -1411,6 +1478,7 @@ void FrontierManager::removeUnreachableViewpoints(
       nodeidx2clusteridx.push_back(i);
       nodeidx2vpclusteridx.push_back(j);
       TopoNode::Ptr vp_node = make_shared<TopoNode>();
+      vp_node->is_viewpoint_ = true;
       vp_node->center_ = clusters[i]->vp_clusters_[j].center_;
       nodes2insert.push_back(vp_node);
     }
@@ -1421,10 +1489,17 @@ void FrontierManager::removeUnreachableViewpoints(
   ros::Time t2 = ros::Time::now();
   vector<bool> vp_cluster_kept;
   vp_cluster_kept.resize(nodes2insert.size(), true);
+  vector<ViewpointFailureReason> vp_cluster_failure(
+      nodes2insert.size(), ViewpointFailureReason::TOPO_NO_PATH);
   // 可以并行
   for (int i = 0; i < nodes2insert.size(); i++) {
     if (nodes2insert[i]->neighbors_.empty()) {
       vp_cluster_kept[i] = false;
+      vp_cluster_failure[i] =
+          nodes2insert[i]->last_connection_result_ ==
+                  ParallelBubbleAstar::TIME_OUT
+              ? ViewpointFailureReason::TOPO_TIMEOUT
+              : ViewpointFailureReason::TOPO_NO_NEIGHBOR;
       continue;
     }
     vector<TopoNode::Ptr> topo_path;
@@ -1438,8 +1513,14 @@ void FrontierManager::removeUnreachableViewpoints(
         closest_node = hodom;
       }
     }
-    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path, 3e-4)) {
+    int search_result = ParallelBubbleAstar::NO_PATH;
+    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path, 3e-4,
+                             false, {}, &search_result)) {
       vp_cluster_kept[i] = false;
+      vp_cluster_failure[i] =
+          search_result == ParallelBubbleAstar::TIME_OUT
+              ? ViewpointFailureReason::TOPO_TIMEOUT
+              : ViewpointFailureReason::TOPO_NO_PATH;
     } else {
       clusters[nodeidx2clusteridx[i]]
           ->vp_clusters_[nodeidx2vpclusteridx[i]]
@@ -1449,21 +1530,31 @@ void FrontierManager::removeUnreachableViewpoints(
   graph_->removeNodes(nodes2insert);
   vector<unordered_set<int>> kept_vp_cluster;
   kept_vp_cluster.resize(clusters.size(), unordered_set<int>());
+  vector<ViewpointFailureReason> cluster_failure(
+      clusters.size(), ViewpointFailureReason::TOPO_NO_NEIGHBOR);
   for (int i = 0; i < vp_cluster_kept.size(); i++) {
-    if (!vp_cluster_kept[i])
+    if (!vp_cluster_kept[i]) {
+      const int cluster_idx = nodeidx2clusteridx[i];
+      if (vp_cluster_failure[i] == ViewpointFailureReason::TOPO_TIMEOUT ||
+          cluster_failure[cluster_idx] !=
+              ViewpointFailureReason::TOPO_TIMEOUT)
+        cluster_failure[cluster_idx] = vp_cluster_failure[i];
       continue;
+    }
     kept_vp_cluster[nodeidx2clusteridx[i]].insert(nodeidx2vpclusteridx[i]);
   }
   for (int i = 0; i < clusters.size(); i++) {
     vector<ViewpointCluster> tmp;
     tmp.swap(clusters[i]->vp_clusters_);
+    if (tmp.empty())
+      continue;
     for (int j = 0; j < tmp.size(); j++) {
       if (kept_vp_cluster[i].find(j) == kept_vp_cluster[i].end())
         continue;
       clusters[i]->vp_clusters_.push_back(tmp[j]);
     }
     if (clusters[i]->vp_clusters_.empty())
-      clusters[i]->is_reachable_ = false;
+      markViewpointFailure(clusters[i], cluster_failure[i]);
     else {
       clusters[i]->is_reachable_ = true;
       sort(clusters[i]->vp_clusters_.begin(), clusters[i]->vp_clusters_.end(),

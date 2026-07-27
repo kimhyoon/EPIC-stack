@@ -11,6 +11,7 @@ Panels:
         - /debug_info1/viewpoint_info1
         - /debug_info1/label_map1/well_observed1
         - /debug_info1/corridor_compare1
+        - /debug_info1/topology_stability1
         - /explore_env1/buffered_cloud1/Autocompute Value Bounds1
         - /topo_graph1
         - /topo_graph1/Namespaces1
@@ -357,6 +358,26 @@ Visualization Manager:
               Value: false
           Enabled: true
           Name: corridor_compare
+        - Class: rviz/Group
+          Displays:
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /debug/topology_stability_nodes
+              Name: stable_and_retained_nodes
+              Namespaces:
+                topology_stability_nodes: true
+              Queue Size: 10
+              Value: true
+            - Class: rviz/Marker
+              Enabled: true
+              Marker Topic: /debug/topology_failed_edges
+              Name: failed_edges_waiting_retry
+              Namespaces:
+                topology_failed_edges: true
+              Queue Size: 10
+              Value: true
+          Enabled: true
+          Name: topology_stability
       Enabled: true
       Name: debug_info
     - Class: rviz/Group

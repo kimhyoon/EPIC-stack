@@ -1,0 +1,49 @@
+<launch>
+  <arg name="bag" />
+  <arg name="output_bag" default="/tmp/topology_replay_validation.bag" />
+  <arg name="config_file" default="garage.yaml" />
+  <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
+  <arg name="cloud_topic"
+       default="/quad0_pcl_render_node/cloud_cropped" />
+  <arg name="rate" default="0.25" />
+  <arg name="rviz" default="true" />
+
+  <param name="/use_sim_time" value="true" />
+
+  <include file="$(find epic_planner)/launch/algorithm.xml">
+    <arg name="config_file" value="$(arg config_file)" />
+  </include>
+
+  <node pkg="sim_bringup" type="trigger_replay_when_ready.py"
+        name="trigger_replay_when_ready" output="screen">
+    <param name="odom_topic" value="$(arg odom_topic)" />
+    <param name="cloud_topic" value="$(arg cloud_topic)" />
+    <param name="minimum_samples" value="10" />
+  </node>
+
+  <group if="$(arg rviz)">
+    <node pkg="rviz" type="rviz" name="topology_replay_rviz"
+          args="-d $(find plan_manage)/config/traj.rviz" output="log" />
+  </group>
+
+  <node pkg="rosbag" type="record" name="topology_replay_recorder"
+        args="--lz4 -O $(arg output_bag)
+              $(arg odom_topic)
+              /planning/expl_diag_kv
+              /planning/expl_diag_str
+              /epic/events
+              /viz_graph_topic
+              /global_tour
+              /exploration_node/frt
+              /exploration_node/viewpoint_centers
+              /exploration_node/sf_cluster_marker
+              /debug/topo_edge_checks
+              /debug/topo_edge_updates
+              /debug/topology_stability_nodes
+              /debug/topology_failed_edges" />
+
+  <node pkg="rosbag" type="play" name="topology_input_replay"
+        args="--clock --delay=2.0 -r $(arg rate) $(arg bag)
+              --topics $(arg odom_topic) $(arg cloud_topic)"
+        required="true" output="screen" />
+</launch>

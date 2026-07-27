@@ -203,8 +203,13 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   ed_->diag_num_reachable_vp_ = 0;
 
   if (viewpoints.empty()) {
-    ed_->diag_result_ = "NO_VIEWPOINTS";
-    ed_->diag_reason_ = "NO_FRONTIER: 0 viewpoints (clusters=" +
+    const bool retry_pending =
+        frontier_manager_ptr_->vp_stats_.retry_deferred > 0;
+    ed_->diag_result_ = retry_pending ? "VIEWPOINT_RETRY_PENDING"
+                                     : "NO_VIEWPOINTS";
+    ed_->diag_reason_ =
+        std::string(retry_pending ? "RETRY_PENDING" : "NO_FRONTIER") +
+        ": 0 viewpoints (clusters=" +
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ") " +
         frontier_manager_ptr_->vp_stats_.str();

@@ -35,6 +35,46 @@ The manifest records the workspace commit/status, source PCD identity, and the
 topic list. The parameter dump captures the effective ROS parameter state at
 `WAIT_TRIGGER`.
 
+After the bag is closed, run the quality gate and topology evidence summary:
+
+```bash
+rosrun sim_bringup analyze_topology_stability_bag.py \
+  result/test_YYYYMMDD_HHMMSS/test_YYYYMMDD_HHMMSS_planner_debug.bag
+```
+
+The generated `summary.md` classifies odometry as `VALID`, `DEGRADED`, or
+`INVALID_FOR_ALGORITHM_COMPARISON`. A bag with SLAM position jumps, impossible
+derived speed, or backward timestamps must not be used for algorithm
+performance claims. It remains useful as a robustness stress test.
+
+## Replay Through the Updated Planner
+
+Analyzing a recorded output bag does not execute the updated algorithm. To feed
+the recorded odometry and cropped cloud through the current EPIC binary, run:
+
+```bash
+roslaunch sim_bringup topology_replay_validation.launch \
+  bag:=/absolute/path/to/test_planner_debug.bag \
+  output_bag:=/tmp/topology_replay_after_patch.bag \
+  config_file:=garage.yaml \
+  rviz:=true
+```
+
+The launch plays only the odometry and cropped-cloud input topics, starts EPIC
+after both inputs are available, records the newly generated diagnostics, and
+opens `traj.rviz`. It does not replay the old planner outputs into the updated
+planner.
+
+After replay finishes:
+
+```bash
+rosrun sim_bringup analyze_topology_stability_bag.py \
+  /tmp/topology_replay_after_patch.bag
+```
+
+Run the quality gate on the source bag first. If its odometry is invalid, use
+the replay only to test robustness, not to compare topology performance.
+
 ## Evidence Path
 
 The bag preserves the complete decision chain needed to separate four failure
@@ -121,15 +161,49 @@ edge frontier exists and no DENSE cell is found immediately outside it.
 Type: `std_msgs/Float64MultiArray`
 
 ```text
-[version=1, batch_seq, only_raycast, pair_count,
- success, start_x, start_y, start_z, end_x, end_y, end_z,
- path_point_count, path_cost, min_known_obstacle_distance,
- ...]
+[version=2, batch_seq, only_raycast, pair_count,
+success, result, start_x, start_y, start_z, end_x, end_y, end_z,
+path_point_count, path_cost, min_known_obstacle_distance,
+...]
 ```
 
 This records each topology node pair considered by `TopoGraph::insertNodes()`.
 The distance field is computed from the same EPIC lidar map after a successful
 path is returned. Failed pairs use `-1` for cost and distance.
+
+### `/debug/topo_edge_updates`
+
+Type: `std_msgs/Float64MultiArray`
+
+```text
+[version=1, batch_seq, pair_count,
+ success, result, was_connected,
+ start_x, start_y, start_z, end_x, end_y, end_z,
+ consecutive_failures,
+ ...]
+```
+
+This records periodic skeleton-edge validation. `result` uses the
+`ParallelBubbleAstar` values (`1=REACH_END`, `2=NO_PATH`, `3=START_FAIL`,
+`4=END_FAIL`, `5=TIME_OUT`) and `6=EDGE_COLLISION` for a path that was returned
+but failed the existing collision check. Failed edges are removed from the
+active graph and retried after a result-specific cooldown.
+
+### Topology stability RViz markers
+
+```text
+/debug/topology_stability_nodes
+  green  = node matched in the current topology update
+  yellow = node retained by the miss hysteresis
+
+/debug/topology_failed_edges
+  magenta = TIME_OUT
+  orange  = EDGE_COLLISION
+  red     = other failed connection results
+```
+
+Both markers are available under `debug_info/topology_stability` in
+`traj.rviz`. They affect visualization only.
 
 ### `/debug/trajectory_clearance`
 

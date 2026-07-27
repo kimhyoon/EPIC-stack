@@ -8,5 +8,7 @@ catkin_package()
 catkin_install_python(PROGRAMS
   scripts/sim_result_manager.py
   scripts/plot_tracking_accuracy_report.py
+  scripts/analyze_topology_stability_bag.py
+  scripts/trigger_replay_when_ready.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )

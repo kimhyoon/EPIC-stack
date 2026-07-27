@@ -604,6 +604,11 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                      "PLAN_TRAJ_EXP: retain EARLY_FINISH path", true);
         break;
       }
+      if (expl_manager_->frontier_manager_ptr_->vp_stats_.retry_deferred > 0) {
+        transitState(PLAN_TRAJ_EXP,
+                     "PLAN_TRAJ_EXP: viewpoint retry pending", true);
+        break;
+      }
       // if (planner_manager_->topo_graph_->global_view_points_.empty())
       if (explorationReallyFinished()) {
         explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
@@ -1289,6 +1294,12 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
       // the selected existing topology path and continue observing from it.
       restoreEarlyFinishPath();
     }
+    else if (expl_manager_->frontier_manager_ptr_->vp_stats_.retry_deferred >
+             0) {
+      elog_.log("GLOBAL", "viewpoint retry pending",
+                expl_manager_->frontier_manager_ptr_->vp_stats_.str(), 1.0,
+                EventLogger::L_WARN);
+    }
     // Only finish if the map/frontiers were actually ready (warmup elapsed or
     // frontiers seen before); otherwise this is a startup artifact -> wait.
     else if (explorationReallyFinished()) {
@@ -1432,6 +1443,8 @@ void FastExplorationFSM::publishExplDiag() {
        << ";pipe_total=" << ps.total
        << ";pipe_dormant=" << ps.dormant
        << ";pipe_unreachable_pre=" << ps.unreachable_pre
+       << ";pipe_retry_pending=" << ps.retry_deferred
+       << ";pipe_retry_reactivated=" << ps.retry_reactivated
        << ";pipe_considered=" << ps.considered
        << ";pipe_no_candidates=" << ps.no_candidates
        << ";pipe_topo_unreachable=" << ps.topo_unreachable

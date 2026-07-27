@@ -21,6 +21,16 @@ using namespace fast_planner;
 
 enum CELL_STATE { DENSE, SPARSE, UNKNOWN, FRONTIER_DIS, FRONTIER_DIR };
 
+enum class ViewpointFailureReason : uint8_t {
+  NONE = 0,
+  NO_CANDIDATE,
+  TOPO_NO_NEIGHBOR,
+  TOPO_TIMEOUT,
+  TOPO_NO_PATH,
+  NO_VISIBILITY,
+  ALREADY_VISITED
+};
+
 struct Vector3i_Hash {
   std::size_t operator()(const Eigen::Vector3i &v) const {
     std::size_t seed = 0;
@@ -198,9 +208,15 @@ struct ClusterInfo {
   float best_vp_yaw_;
   float distance_;
 
-  bool is_dormant_;
-  bool is_reachable_;
-  bool is_new_cluster_;
+  bool is_dormant_ = false;
+  bool is_reachable_ = true;
+  bool is_new_cluster_ = true;
+  ViewpointFailureReason failure_reason_ = ViewpointFailureReason::NONE;
+  uint16_t consecutive_failure_count_ = 0;
+  double last_failure_time_sec_ = 0.0;
+  uint64_t last_failure_topology_revision_ = 0;
+  Eigen::Vector3f failure_odom_pos_ = Eigen::Vector3f::Zero();
+  float failure_odom_yaw_ = 0.0f;
 
   // bbox
   Eigen::Vector3f box_max_;
@@ -219,6 +235,8 @@ struct VpPipelineStats {
   int total = 0;            // cluster_list_ 전체
   int dormant = 0;          // 휴면(is_dormant_) 스킵
   int unreachable_pre = 0;  // 이전 라운드에서 unreachable 판정 스킵
+  int retry_deferred = 0;   // 실패 cooldown/변화 대기 중인 cluster
+  int retry_reactivated = 0;// graph/pose 변화 또는 cooldown 후 재검사
   int considered = 0;       // 이번 라운드 뷰포인트 생성 대상(top-K + 신규)
   int no_candidates = 0;    // initClusterViewpoints: 후보 0 (clearance/box/topo-region)
   int topo_unreachable = 0; // removeUnreachableViewpoints: 토포그래프 도달 불가
@@ -226,12 +244,14 @@ struct VpPipelineStats {
   int ok = 0;               // 최종 살아남은 클러스터(=뷰포인트 수)
 
   std::string str() const {
-    char b[256];
+    char b[320];
     snprintf(b, sizeof(b),
-             "pipeline[total=%d dormant=%d prev_unreachable=%d evaluated=%d "
+             "pipeline[total=%d dormant=%d prev_unreachable=%d retry_pending=%d "
+             "retry_reactivated=%d evaluated=%d "
              "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d]",
-             total, dormant, unreachable_pre, considered, no_candidates,
-             topo_unreachable, no_visibility, ok);
+             total, dormant, unreachable_pre, retry_deferred,
+             retry_reactivated, considered, no_candidates, topo_unreachable,
+             no_visibility, ok);
     return b;
   }
 };
@@ -295,6 +315,10 @@ private:
   void selectBestViewpoint(ClusterInfo::Ptr &cluster);
   void initClusterViewpoints(ClusterInfo::Ptr &cluster);
   void removeUnreachableViewpoints(vector<ClusterInfo::Ptr> &clusters);
+  void markViewpointFailure(ClusterInfo::Ptr &cluster,
+                            ViewpointFailureReason reason);
+  void markViewpointSuccess(ClusterInfo::Ptr &cluster);
+  bool shouldRetryViewpoint(ClusterInfo::Ptr &cluster) const;
   bool isInBox(const PointType &pt);
   bool isInBox(const Eigen::Vector3f &pt);
   // [feature: box-margin] pt 가 탐사 박스 경계에서 margin*cell_size 이내인가 (6면 프로브)

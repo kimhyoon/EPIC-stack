@@ -301,6 +301,9 @@ class SimResultManager:
             "/debug/clipped_hpolys",
             "/debug/active_fov_faces",
             "/debug/topo_edge_checks",
+            "/debug/topo_edge_updates",
+            "/debug/topology_stability_nodes",
+            "/debug/topology_failed_edges",
             "/debug/trajectory_clearance",
         ]))
 
