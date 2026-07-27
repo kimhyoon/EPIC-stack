@@ -52,7 +52,10 @@ struct FSMData;
 // (used as indices into fd_->state_str_) stay unchanged.
 // LANDED: LAND(AUTO.LAND) 후 착지+disarm 이 확인된 최종 상태.
 //         record_on_goal 이 이 상태를 보고 녹화를 마감한다.
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED };
+// EARLY_FINISH: 탐사가 너무 짧게 끝났을 때(누적 이동거리 < thresh) 한 번만 들르는
+//               1-tick 상태. 가장 먼 도달 가능 topo node 를 probe 로 잡고 곧바로
+//               PLAN_TRAJ_EXP 로 돌아간다. 여기서 머무르지 않는다.
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH };
 
 class FastExplorationFSM {
 private:
@@ -174,7 +177,29 @@ private:
   ros::Subscriber    mavros_state_sub_;      // /mavros/state (to confirm AUTO.LAND engaged)
   mavros_msgs::State px4_state_;
 
+  /* 누적 이동거리. FINISH 가 "정말 다 봐서" 끝난 건지 "아직 못 돌아다녀서" 끝난
+     건지 가르는 유일한 근거다. 직선변위가 아니라 경로 적분이어야 한다 —
+     멀리 나갔다 원점으로 복귀해 끝나는 건 정상 종료인데 변위로는 0 이 된다. */
+  double traveled_distance_ = 0.0;                                  // [m] 탐사 시작 후 누적
+  Eigen::Vector3f last_traveled_pos_ = Eigen::Vector3f::Zero();     // 직전 적분 기준점
+  bool   traveled_valid_ = false;                                   // 기준점이 유효한가
+
+  /* EARLY_FINISH: 조기 종료로 판단되면 가장 먼 도달 가능 topo node 를 probe 로 잡고
+     탐사를 한 번 더 시도한다. probe 좌표는 ed_ 에 실어 planGlobalPath 가 읽는다. */
+  bool   early_finish_enable_ = true;
+  double early_finish_dist_thresh_ = 3.0;      // [m] 누적 이동거리가 이 미만이면 조기종료로 본다
+  int    early_finish_max_retry_ = 1;          // 재시도 횟수 상한 (무한루프 방지 래치)
+  double early_finish_reach_tol_ = 0.5;        // [m] probe 도착 판정
+  double early_finish_min_target_dist_ = 3.0;  // [m] probe 가 이보다 가까우면 시도할 의미가 없다
+  bool   early_finish_exclude_history_ = true; // history odom node 를 probe 후보에서 제외
+  int    early_finish_count_ = 0;              // 지금까지 소비한 재시도 횟수
+
   /* helper functions */
+  // odom_node_ 에서 Dijkstra 를 한 번 흘려 "가장 먼 도달 가능 노드" 를 고른다.
+  // 노드별 getPathCost 를 부르지 않는 이유: 도달 불가 시 2e3+거리를 돌려주므로
+  // 최댓값을 그냥 뽑으면 반드시 도달 불가 노드가 1등이 되고, topoSearch 의 10ms
+  // 타임아웃이 "먼 노드" 를 거짓 도달불가로 만든다. Dijkstra 는 둘 다 없다.
+  TopoNode::Ptr selectFarthestReachableNode(double &dist_out);
   bool explorationReallyFinished();          // false during startup warmup, true once frontiers seen / timeout
   void mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg);
   void pubHoldCmd(const Eigen::Vector3d &p, double yaw);  // stream a fixed-pose hover setpoint on /position_cmd

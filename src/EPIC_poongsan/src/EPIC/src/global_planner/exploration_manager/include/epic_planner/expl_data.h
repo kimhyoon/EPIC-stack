@@ -74,6 +74,15 @@ struct ExplorationData {
   // 짧은 결과 분류 (이벤트 dedup 키): OK / NO_VIEWPOINTS / NO_REACHABLE_VP /
   // RTH_PATH_OK / RTH_FALLBACK_FRONTIER / RTH_NO_FRONTIER / RTH_ASTAR_FAIL / RTH_FAIL
   std::string diag_result_ = "init";
+
+  // --- EARLY_FINISH probe (FSM 이 쓰고 planGlobalPath 가 읽는다) ---
+  // 이륙 직후 FOV 가 좁아 frontier 가 0개로 잡히면 탐사가 몇 m 만에 끝난다.
+  // 그럴 때 FSM 이 "가장 먼 도달 가능 topo node" 를 여기 실어두면, planGlobalPath 가
+  // 진짜 viewpoint 가 하나도 없을 때만 이 좌표를 viewpoint 로 한 개 끼워넣는다.
+  // 실제 frontier 가 생기는 순간 주입은 멈추고 정상 TSP 가 그대로 이긴다.
+  bool early_finish_probe_valid_ = false;
+  Eigen::Vector3f early_finish_probe_pos_ = Eigen::Vector3f::Zero();
+  float early_finish_probe_yaw_ = 0.0f;
 };
 
 struct ExplorationParam {

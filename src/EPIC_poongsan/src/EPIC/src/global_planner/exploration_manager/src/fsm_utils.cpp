@@ -195,6 +195,19 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   fd_->odom_pos_ = ld->lidar_pose_;
   fd_->odom_vel_ = ld->lidar_vel_;
 
+  // 누적 이동거리 적분. EARLY_FINISH 가 "정말 다 봐서 끝났나 / 아직 못 돌아다녔나" 를
+  // 가르는 유일한 근거다. 직선변위가 아니라 경로 적분이어야 한다 — 멀리 나갔다
+  // 원점으로 복귀해 끝나는 건 정상 종료인데 변위로 보면 0 이 되어 오판한다.
+  // 한 프레임(20Hz) 이동량 상한 1m = 20m/s 로, 정상 비행에서는 나올 수 없는 값이다.
+  // 이걸 넘으면 FAST-LIO/LIO-SAM 포즈 점프이므로 거리에 반영하지 않는다.
+  if (traveled_valid_) {
+    double step = (fd_->odom_pos_ - last_traveled_pos_).norm();
+    if (step < 1.0)
+      traveled_distance_ += step;
+  }
+  last_traveled_pos_ = fd_->odom_pos_;
+  traveled_valid_ = true;
+
   fd_->odom_yaw_ = (float)tf::getYaw(odom_->pose.pose.orientation);
   planner_manager_->local_data_.curr_pos_ = fd_->odom_pos_.cast<double>();
   planner_manager_->local_data_.curr_vel_ = fd_->odom_vel_.cast<double>();

@@ -149,3 +149,16 @@ fsm/takeoff_timeout: 20.0         # timeout [s]: explore if near height; otherwi
 fsm/auto_rth_land: false
 # Keep traj_server as the only /position_cmd publisher after FINISH.
 fsm/traj_server_owns_finish_cmd: true
+
+# Early-finish rescue. When exploration ends after travelling only a short
+# distance, the narrow LiDAR FOV most likely hid the remaining frontiers rather
+# than the map being complete. Fly once to the farthest reachable topology node
+# to gather more observations; if a real frontier reappears on the way, normal
+# exploration takes over immediately. Enabled here so the garage simulation
+# exercises the same path as the flight profiles.
+fsm/early_finish_enable: true
+fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
+fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
+fsm/early_finish_reach_tol: 0.5          # [m] probe target counts as reached within this range
+fsm/early_finish_min_target_dist: 3.0    # [m] skip the retry when the target is closer than this
+fsm/early_finish_exclude_history: true   # drop odom-trail nodes from target candidates only

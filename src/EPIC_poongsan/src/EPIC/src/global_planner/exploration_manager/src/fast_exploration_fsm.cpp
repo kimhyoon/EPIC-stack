@@ -12,6 +12,8 @@
 #include <epic_planner/fast_exploration_manager.h>
 #include <plan_manage/planner_manager.h>
 #include <cmath>
+#include <queue>
+#include <unordered_map>
 #include <std_msgs/Float32.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Int16.h>
@@ -37,6 +39,115 @@ bool FastExplorationFSM::explorationReallyFinished() {
   if (explore_start_time_.toSec() < 1e-6)
     explore_start_time_ = ros::Time::now();  // start the warmup clock on first attempt
   return (ros::Time::now() - explore_start_time_).toSec() > explore_warmup_timeout_;
+}
+
+// odom_node_ 를 시작점으로 토포 그래프에 Dijkstra 를 한 번 흘려, 그래프 경로거리가
+// 가장 먼 "쓸 수 있는" 노드를 고른다.
+//
+// 노드마다 getPathCost() 를 부르지 않는 이유:
+//   1) 도달 불가 시 2e3 + 직선거리를 돌려주므로(fast_exploration_manager.cpp), 비용
+//      최댓값을 그냥 뽑으면 반드시 "도달 불가 노드" 가 1등이 된다.
+//   2) 내부 topoSearch 는 10ms 타임아웃이라 먼 노드일수록 거짓 NO_PATH 가 난다.
+//      우리는 하필 가장 먼 노드를 찾는 중이라 이 함정에 정면으로 걸린다.
+// Dijkstra 는 둘 다 없다. 못 닿는 성분은 아예 방문되지 않고, 타임아웃 개념이 없다.
+// 엣지 가중치(weight_)는 calculatePathCost = 순수 유클리드 경로 길이[m] 이므로
+// dist_out 은 미터 단위로 그대로 해석된다.
+TopoNode::Ptr FastExplorationFSM::selectFarthestReachableNode(double &dist_out) {
+  dist_out = 0.0;
+  auto graph = planner_manager_->topo_graph_;
+  auto lidar_map = planner_manager_->lidar_map_interface_;
+  TopoNode::Ptr odom_node = graph->odom_node_;
+  if (!odom_node)
+    return nullptr;
+
+  // probe 로 쓸 수 있으려면 그 지점에 실제로 궤적 끝점을 놓고 도착 판정까지 받을 수
+  // 있어야 한다. 벽에 가까운 노드를 고르면 두 군데서 영원히 못 끝난다:
+  //   - getDisToOcc < bubble_min_radius_  -> callExplorationPlanner 가 매 사이클 FAIL
+  //   - getDisToOcc < dilateRadiusSoft    -> MINCO 가 그 지점에 끝점을 못 놓음
+  // 여기에 도착 판정 여유(reach_tol)까지 더해 두면 별도 타임아웃이 필요 없다.
+  const double need_clearance =
+      std::max(graph->bubble_min_radius_,
+               planner_manager_->gcopter_config_->dilateRadiusSoft) +
+      early_finish_reach_tol_;
+
+  auto insideExplorationBox = [&](const Eigen::Vector3f &p) -> bool {
+    const auto &lp = lidar_map->lp_;  // unique_ptr — 반드시 참조로 받는다
+    if (lp->box_num_ <= 0)
+      return true;  // 박스 제한이 없으면 통과
+    for (int i = 0; i < lp->box_num_; i++) {
+      const Eigen::Vector3f &lo = lp->global_box_min_boundary_vec_[i];
+      const Eigen::Vector3f &hi = lp->global_box_max_boundary_vec_[i];
+      if ((p.array() >= lo.array()).all() && (p.array() <= hi.array()).all())
+        return true;
+    }
+    return false;
+  };
+
+  auto isValidTarget = [&](const TopoNode::Ptr &n) -> bool {
+    if (n == odom_node || n == expl_manager_->ed_->next_goal_node_)
+      return false;
+    // history odom node = 이미 지나온 자취. probe 로 삼으면 "가장 먼 곳" 이 그냥
+    // "가장 오래전에 지나온 곳" 이 되기 쉬워 새 관측을 못 만든다.
+    // ※ 후보에서만 빼고 Dijkstra 확장에서는 반드시 남겨야 한다 — 이 노드들이
+    //   그래프 연결의 다리 역할을 하므로 확장에서 빼면 그래프가 끊긴다.
+    if (early_finish_exclude_history_ && n->is_history_odom_node_)
+      return false;
+    if (!insideExplorationBox(n->center_))
+      return false;
+    if (lidar_map->getDisToOcc(n->center_) < need_clearance)
+      return false;
+    return true;
+  };
+
+  std::unordered_map<TopoNode::Ptr, double> dist;
+  std::priority_queue<std::pair<double, TopoNode::Ptr>,
+                      std::vector<std::pair<double, TopoNode::Ptr>>,
+                      std::greater<std::pair<double, TopoNode::Ptr>>>
+      pq;
+  dist[odom_node] = 0.0;
+  pq.push({0.0, odom_node});
+
+  TopoNode::Ptr best_node = nullptr;
+  double best_dist = -1.0;
+  int visited = 0;
+
+  while (!pq.empty()) {
+    double d = pq.top().first;
+    TopoNode::Ptr n = pq.top().second;
+    pq.pop();
+    if (d > dist[n] + 1e-6)
+      continue;  // stale entry
+    visited++;
+
+    if (isValidTarget(n) && d > best_dist) {
+      best_dist = d;
+      best_node = n;
+    }
+
+    for (auto &nbr : n->neighbors_) {
+      if (!nbr)
+        continue;
+      // 도달 실패 이력이 쌓인 엣지는 신뢰하지 않는다.
+      if (n->unreachable_nbrs_.count(nbr))
+        continue;
+      auto w_it = n->weight_.find(nbr);
+      if (w_it == n->weight_.end())
+        continue;
+      double nd = d + w_it->second;
+      auto it = dist.find(nbr);
+      if (it == dist.end() || nd < it->second) {
+        dist[nbr] = nd;
+        pq.push({nd, nbr});
+      }
+    }
+  }
+
+  ROS_INFO("[EARLY_FINISH] dijkstra visited %d nodes, best_dist=%.2fm, clearance>=%.2fm",
+           visited, best_dist, need_clearance);
+  if (!best_node)
+    return nullptr;
+  dist_out = best_dist;
+  return best_node;
 }
 
 void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
@@ -135,6 +246,10 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         hover_stable_since_ = now;  // start the settle timer
       if ((now - hover_stable_since_).toSec() >= fp_->takeoff_settle_time_) {
         fd_->static_state_ = true;  // first exploration traj anchors to current pose
+        // 이륙 상승분(takeoff_height)이 누적거리에 섞이면 EARLY_FINISH 판정이 왜곡된다.
+        // 탐사가 실제로 시작되는 이 지점부터 0 에서 다시 적분한다.
+        traveled_distance_ = 0.0;
+        traveled_valid_ = false;
         transitState(PLAN_TRAJ_EXP,
                      "takeoff: altitude reached & stable -> explore");
         break;
@@ -155,6 +270,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         ROS_WARN("[takeoff] timeout %.1fs, near altitude (z_err=%.2f m, v=%.2f m/s) -> explore",
                  fp_->takeoff_timeout_, z_err, speed);
         fd_->static_state_ = true;
+        traveled_distance_ = 0.0;   // 위와 동일 — 탐사 시작점에서 적분 리셋
+        traveled_valid_ = false;
         transitState(PLAN_TRAJ_EXP, "takeoff: timeout (near altitude) -> explore");
       } else {
         ROS_ERROR_THROTTLE(2.0,
@@ -168,6 +285,22 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case FINISH: {
+    // 조기 종료 구제: 탐사가 끝났다고 하는데 실제로 몇 m 도 못 움직였다면, 좁은
+    // FOV 때문에 frontier 가 아예 안 잡힌 상태일 가능성이 높다. 가장 먼 도달 가능
+    // topo node 로 한 번 날아가 관측을 늘려보고, 그래도 frontier 가 없으면 그때
+    // 정상 RTH 로 간다. (스냅샷/호버/MISSION 이벤트보다 먼저 판단해야 이벤트가
+    // 두 번 찍히거나 불필요한 호버를 거치지 않는다.)
+    // - explore_finished_ 조건 필수: 수동 /srv_rth 로 온 FINISH 는 구제 대상이 아니다.
+    // - max_retry 래치 필수: 구제 후 또 짧게 끝나면 무한 반복이 된다.
+    if (early_finish_enable_ && explore_finished_ &&
+        early_finish_count_ < early_finish_max_retry_ &&
+        traveled_distance_ < early_finish_dist_thresh_) {
+      transitState(EARLY_FINISH, "FINISH: traveled " +
+                   to_string(traveled_distance_) + "m < " +
+                   to_string(early_finish_dist_thresh_) + "m -> probe farthest node");
+      break;
+    }
+
     // Snapshot the finish pose once, and stop extending the old trajectory so the
     // drone locks where it IS now (traj_server would otherwise keep holding the last
     // trajectory ENDPOINT, which may be a viewpoint ahead of the drone). This snapshot
@@ -240,11 +373,86 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     break;
   }
 
+  // 1-tick 상태. probe 를 고르고 곧바로 PLAN_TRAJ_EXP 로 나간다 — 여기 머무르면
+  // updateTopoAndGlobalPath() 의 상태 화이트리스트에 걸려 글로벌 계획이 멈춘다.
+  case EARLY_FINISH: {
+    if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty()) {
+      // 토포 그래프가 아직 안 붙었다 -> 이번 tick 은 넘기고 다시 시도.
+      ROS_WARN_THROTTLE(1.0, "[EARLY_FINISH] odom node has no topo neighbors, waiting");
+      break;
+    }
+    double probe_dist = 0.0;
+    TopoNode::Ptr target = selectFarthestReachableNode(probe_dist);
+    if (!target || probe_dist < early_finish_min_target_dist_) {
+      // 갈 만큼 먼 후보가 없다 -> 구제 포기. 래치를 소진시켜 FINISH 가 곧장
+      // 정상 RTH 로 빠지게 한다 (여기로 되돌아오는 무한 루프 방지).
+      early_finish_count_ = early_finish_max_retry_;
+      char d[128];
+      snprintf(d, sizeof(d), "best_dist=%.2fm min_required=%.2fm",
+               probe_dist, early_finish_min_target_dist_);
+      elog_.log("EARLY_FINISH", "no valid probe target -> normal RTH", d, 0.0,
+                EventLogger::L_WARN);
+      transitState(FINISH, "EARLY_FINISH: no valid target -> normal RTH");
+      break;
+    }
+
+    early_finish_count_++;
+    auto ed = expl_manager_->ed_;
+    ed->early_finish_probe_pos_ = target->center_;
+    // probe 노드의 yaw_ 는 viewpoint 가 아닌 이상 의미가 없다. 접근 방향을 보게
+    // 해야 도착 시점에 새 영역이 FOV 안에 들어온다.
+    Eigen::Vector3f dir = target->center_ - fd_->odom_pos_;
+    ed->early_finish_probe_yaw_ =
+        (dir.head<2>().norm() > 1e-3) ? std::atan2(dir.y(), dir.x()) : fd_->odom_yaw_;
+    ed->early_finish_probe_valid_ = true;
+
+    // planGlobalPath 는 insertNodes 직후 updateGoalNode() 를 부르는데, 그때 참조하는
+    // global_tour_ 는 아직 "이전 사이클" 것이다. 그대로 두면 첫 사이클에
+    // callExplorationPlanner() 가 FINISH 직전의 낡은 목표로 궤적을 만든다.
+    ed->next_goal_node_->center_ = target->center_;
+    ed->next_goal_node_->is_viewpoint_ = true;
+
+    explore_finished_ = false;   // 구제 시도 중 -> 아직 종료 아님
+    fd_->static_state_ = true;   // 첫 궤적은 현재 자세 기준
+    global_path_update_timer_.start();
+
+    char d[192];
+    snprintf(d, sizeof(d),
+             "traveled=%.2fm probe=(%.2f, %.2f, %.2f) graph_dist=%.2fm retry=%d/%d",
+             traveled_distance_, target->center_.x(), target->center_.y(),
+             target->center_.z(), probe_dist, early_finish_count_,
+             early_finish_max_retry_);
+    elog_.log("EARLY_FINISH", "probe injected -> retry exploration", d, 0.0,
+              EventLogger::L_WARN, true);
+    ROS_WARN("\033[33m[EARLY_FINISH] traveled %.2fm -> probe farthest node "
+             "(%.2f, %.2f, %.2f), graph dist %.2fm\033[0m",
+             traveled_distance_, target->center_.x(), target->center_.y(),
+             target->center_.z(), probe_dist);
+
+    transitState(PLAN_TRAJ_EXP, "EARLY_FINISH: probe injected");
+    break;
+  }
+
   case PLAN_TRAJ_EXP: {
     if (!fd_->trigger_)
       return;
     if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty())
       return;
+
+    // probe 도착 판정. 기존 종료 조건(global_tour_.size()==2 && dist<0.1m)은 실기체
+    // 에서 사실상 도달 불가라, probe 뒤에 frontier 가 없는 우리 케이스에서는 그
+    // 자리를 영원히 맴돌게 된다. 넉넉한 tol 로 따로 끊는다.
+    if (expl_manager_->ed_->early_finish_probe_valid_ &&
+        (expl_manager_->ed_->early_finish_probe_pos_ - fd_->odom_pos_).norm() <
+            early_finish_reach_tol_) {
+      expl_manager_->ed_->early_finish_probe_valid_ = false;
+      elog_.log("EARLY_FINISH", "probe reached -> resume normal finish check", "", 0.0);
+      ROS_WARN("\033[33m[EARLY_FINISH] probe reached (tol %.2fm)\033[0m",
+               early_finish_reach_tol_);
+      // 주입이 멈추므로, 진짜 frontier 가 없으면 다음 사이클에 NO_FRONTIER -> FINISH.
+      // 그때는 traveled_distance_ 가 충분히 늘어 정상 RTH 로 간다.
+    }
+
     ros::Time start = ros::Time::now();
     // 要报min-step的case
     LocalTrajData *info = &planner_manager_->local_data_;
@@ -597,6 +805,14 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
+  // EARLY_FINISH (조기 종료 구제). 기본값은 기존 동작과 같도록 잡되 enable 은 true —
+  // 끄려면 fsm/early_finish_enable: false.
+  nh.param("fsm/early_finish_enable", early_finish_enable_, true);
+  nh.param("fsm/early_finish_dist_thresh", early_finish_dist_thresh_, 3.0);
+  nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
+  nh.param("fsm/early_finish_reach_tol", early_finish_reach_tol_, 0.5);
+  nh.param("fsm/early_finish_min_target_dist", early_finish_min_target_dist_, 3.0);
+  nh.param("fsm/early_finish_exclude_history", early_finish_exclude_history_, true);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
   local_planning_min_period_ = 1.0 / local_planning_max_hz_;
   // 이벤트 로깅 관련: verbose_console=true 면 기존 타이밍 cout 유지(개발용),
@@ -616,9 +832,10 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
 
   state_ = EXPL_STATE::INIT;
   fd_->have_odom_ = false;
+  // 순서는 EXPL_STATE enum 과 1:1 이어야 한다 (state_str_[int(state_)] 로 인덱싱).
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
                      "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
-                     "TAKEOFF_HOVER", "LANDED"};
+                     "TAKEOFF_HOVER", "LANDED",   "EARLY_FINISH"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -857,8 +1074,11 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   // (launch 직후 빈 토포그래프에서 odom_node 이웃이 없어 CAUTION으로 전이 -> flyToSafeRegion
   //  MINCO 최적화가 계속 실패("optimize failed")하는 것을 막음.) 트리거 후 TAKEOFF_HOVER ->
   //  PLAN_TRAJ_EXP 부터 planning 시작. WAIT_TRIGGER 에서는 viz만 한다.
+  // EARLY_FINISH 는 1-tick 이지만, 토포 그래프가 아직 안 붙어 그 상태에 머무는
+  // 경우가 있다. 화이트리스트에서 빠지면 그 동안 토포 갱신과 글로벌 계획이 통째로
+  // 멈춰 영영 probe 를 못 고른다.
   if (!(state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
-        state_ == EXEC_TRAJ || state_ == FINISH)) {
+        state_ == EXEC_TRAJ || state_ == FINISH || state_ == EARLY_FINISH)) {
     global_path_update_timer_.stop();
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
