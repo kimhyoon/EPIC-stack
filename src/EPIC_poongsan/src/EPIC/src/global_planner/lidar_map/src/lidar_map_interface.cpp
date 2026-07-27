@@ -137,11 +137,19 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   } else if (frame_mode == "sensor") {
     // The cloud is raw sensor-frame data. Transform every synchronized scan by
     // T_map_body(odom) * T_body_cloud(configured mount extrinsic).
-    double mount_pitch_deg = 0.0;
-    double mount_yaw_deg = 0.0;
+    // [feature: single-mount-source] 장착 회전의 단일 출처는 lidar_pitch/lidar_yaw 다.
+    //
+    // 예전에는 sensor_mount_pitch_deg / sensor_mount_yaw_deg 를 따로 받았지만,
+    // 이 분기(cloud_frame_mode=sensor)의 변환이 T_map_body(odom) * T_body_cloud
+    // 이므로 여기서는 odom 이 곧 body 다. 그리고 lidar_pitch 의 정의가 "odom
+    // 프레임 대비 회전"이라, 이 모드에서는 lidar_pitch == mount pitch 가 항상
+    // 성립한다 — 둘이 정당하게 달라질 수 있는 상황이 없다.
+    // 같은 물리량을 두 곳에 적으면 한쪽만 고쳤을 때 점군 변환과 FOV 모델이 서로
+    // 다른 자세를 가정하게 되므로, 회전은 lidar_pitch/lidar_yaw 하나만 쓴다.
+    // (병진 offset 은 대응물이 없어 그대로 별도 파라미터로 유지)
+    const double mount_pitch_deg = lp_->lidar_pitch_;
+    const double mount_yaw_deg = lp_->lidar_yaw_;
     std::vector<double> mount_offset;
-    nh.param("lidar_perception/sensor_mount_pitch_deg", mount_pitch_deg, 0.0);
-    nh.param("lidar_perception/sensor_mount_yaw_deg", mount_yaw_deg, 0.0);
     nh.param("lidar_perception/sensor_mount_offset", mount_offset,
              std::vector<double>());
 
@@ -158,8 +166,9 @@ void LIOInterface::init(ros::NodeHandle &nh) {
           Eigen::Vector3f(mount_offset[0], mount_offset[1], mount_offset[2]);
     }
     needs_transform_ = true;
-    ROS_WARN("[LIOInterface] cloud_frame_mode=sensor: applying configured "
-             "body->cloud mount transform pitch=%.2fdeg yaw=%.2fdeg offset=[%.3f %.3f %.3f]",
+    ROS_WARN("[LIOInterface] cloud_frame_mode=sensor: applying body->cloud mount "
+             "transform from lidar_pitch/lidar_yaw pitch=%.2fdeg yaw=%.2fdeg "
+             "offset=[%.3f %.3f %.3f]",
              mount_pitch_deg, mount_yaw_deg,
              mount_offset.size() == 3 ? mount_offset[0] : 0.0,
              mount_offset.size() == 3 ? mount_offset[1] : 0.0,

@@ -7,6 +7,58 @@
  * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
  */
 #include "pointcloud_topo/parallel_bubble_astar.h"
+#include <chrono>
+#include <cstdio>
+
+// [feature: astar-profile] parallel_astar/*_timeout 튜닝용 계측.
+AstarProfile ParallelBubbleAstar::profile_;
+
+void AstarProfile::record(double ms, bool hit_timeout) {
+  std::lock_guard<std::mutex> lk(mtx_);
+  // 한 창(window)에 담을 표본 상한. 0.2s 주기 x 수십 탐색이라 금방 쌓인다.
+  if (samples_.size() < 200000)
+    samples_.push_back((float)ms);
+  sum_ms_ += ms;
+  if (ms > max_ms_)
+    max_ms_ = ms;
+  if (hit_timeout)
+    timeouts_++;
+}
+
+std::string AstarProfile::report(bool reset) {
+  std::lock_guard<std::mutex> lk(mtx_);
+  if (samples_.empty())
+    return "astar: no samples";
+  std::vector<float> s = samples_;
+  std::sort(s.begin(), s.end());
+  auto q = [&](double p) { return s[std::min(s.size() - 1, (size_t)(p * s.size()))]; };
+  char b[256];
+  snprintf(b, sizeof(b),
+           "astar n=%zu  mean=%.2f p50=%.2f p90=%.2f p99=%.2f max=%.2f ms  "
+           "timeout_hit=%zu (%.1f%%)",
+           s.size(), sum_ms_ / (double)s.size(), q(0.50), q(0.90), q(0.99),
+           max_ms_, timeouts_, 100.0 * (double)timeouts_ / (double)s.size());
+  if (reset) {
+    samples_.clear();
+    timeouts_ = 0;
+    sum_ms_ = 0.0;
+    max_ms_ = 0.0;
+  }
+  return b;
+}
+
+// 계측 래퍼. 소요시간은 steady_clock(벽시계)으로 잰다 — 탐색 내부의 타임아웃
+// 비교는 ros::Time::now() 라서 use_sim_time(bag 재생) 에서는 재생 배속에 따라
+// 실제 연산 예산이 달라진다. 프로파일은 "CPU 를 실제로 얼마나 썼나"를 봐야
+// 하므로 sim time 을 쓰면 안 된다.
+int ParallelBubbleAstar::search(const Eigen::Vector3f &start, const Eigen::Vector3f &goal, vector<Eigen::Vector3f> &path, double timeout,
+                                bool best_result, bool only_raycast, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max) {
+  auto t0 = std::chrono::steady_clock::now();
+  int res = searchImpl(start, goal, path, timeout, best_result, only_raycast, bbox_min, bbox_max);
+  double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+  profile_.record(ms, res == ParallelBubbleAstar::TIME_OUT);
+  return res;
+}
 
 void ParallelBubbleAstar::init(ros::NodeHandle &nh, const LIOInterface::Ptr &lidar_map) {
   nh.param("bubble_astar/resolution_astar", resolution_, 0.1);
@@ -56,8 +108,8 @@ bool ParallelBubbleAstar::isNodeSafe(Node::Ptr node, const Eigen::Vector3f &bbox
   return false;
 }
 
-int ParallelBubbleAstar::search(const Eigen::Vector3f &start, const Eigen::Vector3f &goal, vector<Eigen::Vector3f> &path, double timeout,
-                                bool best_result, bool only_raycast, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max) {
+int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::Vector3f &goal, vector<Eigen::Vector3f> &path, double timeout,
+                                    bool best_result, bool only_raycast, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max) {
   // step 1 one-shot
   vector<Eigen::Vector3f>().swap(path);
   double goal_r;
