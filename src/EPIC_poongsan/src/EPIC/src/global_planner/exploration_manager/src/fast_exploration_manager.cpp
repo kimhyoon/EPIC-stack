@@ -193,32 +193,6 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   frontier_manager_ptr_->generateTSPViewpoints(
       planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
 
-  // --- EARLY_FINISH probe ---
-  // 진짜 frontier viewpoint 가 하나도 없을 때만, FSM 이 골라둔 "가장 먼 도달 가능
-  // topo node" 를 viewpoint 한 개로 끼워넣는다. 아래 파이프라인(insertNodes ->
-  // 도달성 필터 -> size()==1 분기)이 그대로 처리하므로 별도 경로가 필요 없다.
-  //
-  // viewpoints 가 비어있지 않다 = 이동 중에 진짜 frontier 가 되살아났다는 뜻이다.
-  // 그 순간 probe 를 버려야 한다. 안 그러면 새 frontier 를 다 탐사한 뒤 다시
-  // viewpoints 가 비는 순간 이미 지나쳤을 수도 있는 옛 좌표가 재주입된다.
-  if (!viewpoints.empty()) {
-    if (ed_->early_finish_probe_valid_) {
-      ROS_WARN("[EARLY_FINISH] real frontier reappeared (%lu viewpoints) -> drop probe",
-               viewpoints.size());
-      ed_->early_finish_probe_valid_ = false;
-    }
-  } else if (ed_->early_finish_probe_valid_) {
-    TopoNode::Ptr probe = make_shared<TopoNode>();
-    probe->is_viewpoint_ = true;
-    probe->center_ = ed_->early_finish_probe_pos_;
-    probe->yaw_ = ed_->early_finish_probe_yaw_;
-    viewpoints.push_back(probe);
-    ROS_WARN_THROTTLE(2.0,
-                      "[EARLY_FINISH] no frontier -> inject probe viewpoint "
-                      "(%.2f, %.2f, %.2f)",
-                      probe->center_.x(), probe->center_.y(), probe->center_.z());
-  }
-
   // --- debug diagnostics: cluster / viewpoint counts ---
   ed_->diag_num_clusters_ = (int)frontier_manager_ptr_->cluster_list_.size();
   ed_->diag_num_clusters_reachable_ = 0;

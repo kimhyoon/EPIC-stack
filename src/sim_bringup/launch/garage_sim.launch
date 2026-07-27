@@ -9,11 +9,14 @@
   <!-- Map configuration -->
   <arg name="map_name" value="garage" />
   <arg name="config_file" default="$(arg map_name).yaml" />
-  <!-- The unmodified source map used by MARSIM rendering and evaluation. -->
-  <arg name="map_pcd" default="$(find map_generator)/resource/garage_original.pcd" />
-  <!-- A derived visual-only asset. Generate it from map_pcd with
-       pcd_voxel_downsample; it never feeds MARSIM, EPIC, or evaluation. -->
-  <arg name="rviz_map_pcd" default="$(find map_generator)/resource/garage_original_rviz_0p20m.pcd" />
+  <!-- The Poongsan garage scan used by MARSIM rendering and evaluation.
+       garage.pcd has SHA256
+       873398fb0a9339edb0a506d20636e5e408024fa50cd79d2ae81a14584f6577fd
+       and spans x -0.09..38.91, y -9.62..18.31. -->
+  <arg name="map_pcd" default="$(find map_generator)/resource/garage.pcd" />
+  <!-- RViz-only input. The Poongsan scan is small enough to publish directly
+       and this path never feeds MARSIM sensing or EPIC. -->
+  <arg name="rviz_map_pcd" default="$(find map_generator)/resource/garage.pcd" />
 
   <!-- Sensor publish rate control -->
   <arg name="odom_publish_rate" default="10.0" />
@@ -23,9 +26,11 @@
   <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
 
   <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. The
-       original garage floor is z=0; keep 0.5 m body clearance before takeoff. -->
-  <arg name="init_x_" default="0.0" />
-  <arg name="init_y_" default="0.0" />
+       Poongsan garage floor is z=0; keep 0.5 m body clearance before takeoff.
+       The map begins near x=0, so use an interior free-space column instead
+       of spawning directly on the scan boundary. -->
+  <arg name="init_x_" default="3.0" />
+  <arg name="init_y_" default="8.0" />
   <arg name="init_z_" default="0.5" />
   <arg name="init_yaw" default="0.0" />
 
@@ -42,6 +47,8 @@
   <arg name="record_results" default="true" />
   <!-- After FINISH, seal all result artifacts and stop the complete roslaunch. -->
   <arg name="shutdown_on_finish" default="true" />
+  <!-- Ignore transient FINISH states that immediately enter EARLY_FINISH. -->
+  <arg name="finish_confirm_delay" default="0.25" />
   <!-- Root-cause recording is intentionally opt-in because full cloud and
        planner evidence topics can perturb timing measurements. -->
   <arg name="record_planner_debug" default="false" />
@@ -151,6 +158,7 @@
       <param name="position_cmd_topic" value="/planning/pos_cmd" />
       <param name="planner_debug_enabled" value="$(arg record_planner_debug)" />
       <param name="shutdown_on_finish" value="$(arg shutdown_on_finish)" />
+      <param name="finish_confirm_delay" value="$(arg finish_confirm_delay)" />
       <param name="config_path" value="$(find epic_planner)/config/$(arg config_file)" />
       <param name="use_cloud_crop_bridge" value="$(arg use_cloud_crop_bridge)" />
       <param name="enable_avoidance" value="$(arg enable_avoidance)" />

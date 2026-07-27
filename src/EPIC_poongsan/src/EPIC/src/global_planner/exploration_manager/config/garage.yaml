@@ -1,3 +1,4 @@
+planner_debug/enable: true
 #topic param:
 # [SIM only] Do not switch this to real.yaml topics (/Odometry, /cloud_registered);
 # MARSIM publishes the simulation odometry/cloud topics below.
@@ -98,8 +99,8 @@ ViewpointManager/local_tsp_size: 20
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
 box_num: 1
-box_0/down: [-10.0, -6.0, 0.55]
-box_0/up: [182.0, 150.2, 2.5]
+box_0/down: [-1.0, -9.0, 0.55]
+box_0/up: [38.5, 18.0, 2.5]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
@@ -172,6 +173,4 @@ fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
 fsm/early_finish_enable: true
 fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
 fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
-fsm/early_finish_reach_tol: 0.5          # [m] probe target counts as reached within this range
-fsm/early_finish_min_target_dist: 3.0    # [m] skip the retry when the target is closer than this
-fsm/early_finish_exclude_history: true   # drop odom-trail nodes from target candidates only
+fsm/early_finish_reach_tol: 0.5          # [m] topology target counts as reached within this range
