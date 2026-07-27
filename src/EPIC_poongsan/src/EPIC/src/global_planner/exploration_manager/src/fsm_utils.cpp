@@ -133,6 +133,14 @@ int FastExplorationFSM::callExplorationPlanner() {
 bool FastExplorationFSM::startMission(const std::string &source) {
   if (state_ != WAIT_TRIGGER)
     return false;
+  early_finish_count_ = 0;
+  early_finish_force_requested_ = false;
+  clearEarlyFinishPath("IDLE");
+  traveled_distance_ = 0.0;
+  traveled_valid_ = false;
+  frontiers_ever_seen_ = false;
+  explore_start_time_ = ros::Time(0);
+  finish_hover_start_ = ros::Time(0);
   fd_->trigger_ = true;
   total_time_ = ros::Time::now().toSec();
   // 미션 t0 재설정(+상대시간이 트리거 기준이 됨) + 파라미터 스냅샷 재발행

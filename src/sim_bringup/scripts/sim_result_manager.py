@@ -36,6 +36,8 @@ class SimResultManager:
         self.test_prefix = rospy.get_param("~test_prefix", "test")
         self.experiment_name = rospy.get_param("~experiment_name", "epic_planning")
         self.eval_flush_timeout = float(rospy.get_param("~eval_flush_timeout", 15.0))
+        self.finish_confirm_delay = float(
+            rospy.get_param("~finish_confirm_delay", 0.25))
         self.shutdown_on_finish = bool(
             rospy.get_param("~shutdown_on_finish", True))
         self.planner_debug_enabled = bool(
@@ -129,6 +131,12 @@ class SimResultManager:
 
         self.children = []
         self.prev_state = ""
+        self.current_state = ""
+        self.pending_finish_timer = None
+        self.pending_finish_msg = None
+        self.pending_finish_ros_time = None
+        self.pending_finish_monotonic = None
+        self.pending_finish_datetime = None
         self.wait_trigger_seen = False
         self.test_active = False
         self.finish_seen = False
@@ -284,6 +292,7 @@ class SimResultManager:
             "/FSM_flag_avoidance",
             "/target_avoidance",
             "/planning/state",
+            "/planning/early_finish_state",
             "/planning/expl_diag_str",
             "/epic/events",
             "/debug/local_planner_obstacle_points",
@@ -372,14 +381,22 @@ class SimResultManager:
         if not state:
             return
 
+        self.current_state = state
+        if state != "FINISH" and self.pending_finish_timer is not None:
+            self.pending_finish_timer.cancel()
+            self.pending_finish_timer = None
+            self.pending_finish_msg = None
+
         if state == "WAIT_TRIGGER":
             self.wait_trigger_seen = True
             self._start_planner_debug_bag()
 
         # Keep TAKEOFF_HOVER out of the evaluator's legacy state stream. The
         # latched publisher also preserves WAIT_TRIGGER while the evaluator
-        # finishes loading the PCD and subscribes.
-        if not (state == "TAKEOFF_HOVER" and not self.test_active):
+        # finishes loading the PCD and subscribes. FINISH is held until it is
+        # confirmed so a FINISH -> EARLY_FINISH recovery does not seal metrics.
+        if (state != "FINISH" and
+                not (state == "TAKEOFF_HOVER" and not self.test_active)):
             self.eval_state_pub.publish(msg)
 
         if state == self.prev_state:
@@ -396,22 +413,46 @@ class SimResultManager:
             self._start_tracking_bag()
             rospy.loginfo("[SimResult] test measurement started")
 
-        if self.test_active and state == "FINISH" and not self.finish_seen:
-            self.finish_seen = True
+        if (self.test_active and state == "FINISH" and not self.finish_seen and
+                self.pending_finish_timer is None):
             stamp = msg.header.stamp.to_sec()
-            self.test_finish_ros_time = (
+            self.pending_finish_ros_time = (
                 stamp if stamp > 0.0 else rospy.Time.now().to_sec())
-            self.test_finish_monotonic = time.monotonic()
-            self.test_finish_datetime = datetime.now().astimezone()
-            rospy.loginfo("[SimResult] FINISH received; sealing metrics before plotting")
-            threading.Thread(
-                target=self._finalize,
-                args=("COMPLETE",),
-                name="sim_result_finalize",
-                daemon=False,
-            ).start()
+            self.pending_finish_monotonic = time.monotonic()
+            self.pending_finish_datetime = datetime.now().astimezone()
+            self.pending_finish_msg = msg
+            self.pending_finish_timer = threading.Timer(
+                self.finish_confirm_delay, self._confirm_finish)
+            self.pending_finish_timer.daemon = True
+            self.pending_finish_timer.start()
+            rospy.loginfo(
+                "[SimResult] FINISH received; confirming for %.2fs",
+                self.finish_confirm_delay)
 
         self.prev_state = state
+
+    def _confirm_finish(self):
+        self.pending_finish_timer = None
+        if (self.current_state != "FINISH" or self.finish_seen or
+                not self.test_active):
+            self.pending_finish_msg = None
+            return
+
+        self.finish_seen = True
+        self.test_finish_ros_time = self.pending_finish_ros_time
+        self.test_finish_monotonic = self.pending_finish_monotonic
+        self.test_finish_datetime = self.pending_finish_datetime
+        if self.pending_finish_msg is not None:
+            self.eval_state_pub.publish(self.pending_finish_msg)
+        self.pending_finish_msg = None
+        rospy.loginfo(
+            "[SimResult] FINISH confirmed; sealing metrics before plotting")
+        threading.Thread(
+            target=self._finalize,
+            args=("COMPLETE",),
+            name="sim_result_finalize",
+            daemon=False,
+        ).start()
 
     def _wait_for_evaluation(self):
         summary = self.eval_iter_dir / "summary.csv"
@@ -614,7 +655,9 @@ class SimResultManager:
             stream.write("\n## Duration Definition\n\n")
             stream.write(
                 "Elapsed time is measured from the first `PLAN_TRAJ_EXP` "
-                "after `WAIT_TRIGGER` to the first `FINISH`. ROS elapsed time "
+                "after `WAIT_TRIGGER` to the confirmed final `FINISH`. "
+                "Transient `FINISH -> EARLY_FINISH` transitions are excluded. "
+                "ROS elapsed time "
                 "is the primary simulation duration; wall elapsed time is "
                 "recorded as a runtime diagnostic.\n\n")
             stream.write("## Result Integrity\n\n")
@@ -644,7 +687,7 @@ class SimResultManager:
         header = (
             "# Finished Simulation Test Cases\n\n"
             "Durations are measured from the first `PLAN_TRAJ_EXP` after "
-            "`WAIT_TRIGGER` to the first `FINISH`.\n\n"
+            "`WAIT_TRIGGER` to the confirmed final `FINISH`.\n\n"
             "| Test case | ROS time (min) | Wall time (min) | Summary | Config |\n"
             "|---|---:|---:|---|---|\n"
         )
@@ -802,6 +845,9 @@ class SimResultManager:
                 rospy.signal_shutdown("FINISH result finalized")
 
     def _on_shutdown(self):
+        if self.pending_finish_timer is not None:
+            self.pending_finish_timer.cancel()
+            self.pending_finish_timer = None
         if self.finalized:
             return
         if self.test_active:
