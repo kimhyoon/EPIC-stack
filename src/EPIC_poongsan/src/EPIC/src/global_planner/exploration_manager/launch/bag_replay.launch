@@ -50,6 +50,11 @@
   <arg name="auto_trigger" default="true"
        doc="FSM 이 WAIT_TRIGGER 에 오면 /srv_start 자동 호출. bag 의 트리거는 1개뿐이라
             그 시점에 FSM 이 아직 INIT 이면 유실되므로 기본 on"/>
+  <arg name="takeoff_height" default=""
+       doc="이륙 목표고도 [m] 직접 지정. 비우면 skip_takeoff 로 결정한다.
+            리플레이는 odom 이 녹화분이라 실제 고도가 프로파일 목표에 못 미치는 일이
+            흔하다 (예: 0.85m 인데 real.yaml 목표는 1.25m). TAKEOFF_HOVER 이후 경로를
+            시험하려면 bag 이 실제로 도달하는 값으로 낮춰 지정한다."/>
   <arg name="skip_takeoff" default="true"
        doc="이륙 게이트를 건너뛰고 바로 PLAN_TRAJ_EXP 로. 리플레이는 기체를 제어하지
             않으므로(odom 은 녹화분 재생) TAKEOFF_HOVER 의 고도 도달 조건이 충족되지
@@ -76,7 +81,7 @@
   <!-- takeoff_height <= 0 이면 startMission 이 TAKEOFF_HOVER 를 건너뛰고 곧바로
        탐사를 시작한다 (fsm_utils.cpp startMission 의 분기). -->
   <param name="/exploration_node/fsm/takeoff_height"
-         value="$(eval -1.0 if arg('skip_takeoff') else 1.25)"/>
+         value="$(eval float(arg('takeoff_height')) if arg('takeoff_height') != '' else (-1.0 if arg('skip_takeoff') else 1.25))"/>
 
   <!-- 2) TF 가 없는 bag 을 위한 identity 브릿지 (기본 off).
           FAST-LIO 계열 bag(camera_init/body 프레임)을 돌릴 때 쓴다. -->
