@@ -1,0 +1,116 @@
+<launch>
+  <!-- ===================================================================
+       Bag 기반 EPIC 재계획 테스트  (비행 없음, 한 줄 실행)
+
+         roslaunch epic_planner bag_replay.launch \
+             bag:=/bags/3회차/1970-01-01-09-09-33.bag minimal:=true
+
+       하는 일:
+         1) bag 안의 토픽을 분류해 EPIC "입력"만 재생한다
+              /lio_sam/mapping/cloud_registered_raw, /mavros/odometry/in,
+              /mavros/state|battery, /tf, /tf_static, 트리거 ...
+            EPIC 이 스스로 발행하는 "결과"는 재생하지 않는다
+              /planning/*, /position_cmd, /visualizer/*, /global_tour, 마커류 ...
+            제외하지 않으면 녹화된 결과와 실시간 결과가 같은 토픽에 동시에 올라와
+            rviz 에서 어느 쪽이 새로 계획된 경로인지 구분할 수 없다.
+         2) 실비행과 "완전히 같은" 스택을 띄운다 = real_flight.launch 를 그대로 include
+            (exploration_node + traj_server + px4_ctrl_bridge + waypoint_generator
+             + crop 브릿지 + odom_visualization). config 도 real.yaml 그대로.
+         3) rviz 를 함께 띄운다.
+
+       분류 결과는 실행 시 표로 출력된다. 인식하지 못한 토픽은 기본적으로 재생하되
+       경고로 표시하므로, EPIC 출력이 섞여 있으면 deny:= 로 빼면 된다.
+       minimal:=true 면 인식된 입력만 재생한다 (ML-X 카메라 스트림 등 제외 —
+       실비행 bag 은 대부분 용량이 이미지가 차지한다).
+
+       TF: 실비행 bag 에는 /tf(map->odom->base_link, odom->lidar_link) 와
+       /tf_static 이 이미 들어 있어 그대로 재생하면 된다. real.rviz 의
+       Fixed Frame 도 odom 이라 추가 static TF 가 필요 없다. TF 가 없는 bag 이면
+       static_tf:=true 로 identity 브릿지를 켠다.
+
+       주의: px4_ctrl_bridge 는 함께 뜨지만 mavros 가 없으므로 setpoint 는
+       아무 데도 가지 않는다 (재생 목록에서도 /mavros/setpoint_raw/* 는 제외된다).
+       =================================================================== -->
+
+  <arg name="bag"          doc="재생할 flight bag 경로 (필수)"/>
+  <arg name="config_file"  default="real.yaml"  doc="EPIC 파라미터 yaml (실비행과 동일)"/>
+  <arg name="rate"         default="1.0"        doc="재생 배속"/>
+  <arg name="start"        default="0.0"        doc="시작 오프셋 [s]"/>
+  <arg name="duration"     default=""           doc="재생 길이 [s], 비우면 끝까지"/>
+  <arg name="delay"        default="5.0"        doc="플래너가 뜰 때까지 대기 [s]"/>
+  <arg name="loop"         default="false"/>
+  <arg name="minimal"      default="true"
+       doc="인식된 플래너 입력만 재생 (카메라/텔레메트리 제외)"/>
+  <arg name="dry_run"      default="false"      doc="true 면 분류표만 출력하고 종료"/>
+  <arg name="allow"        default=""           doc="강제로 재생할 토픽/글롭 (쉼표 구분)"/>
+  <arg name="deny"         default=""           doc="추가로 제외할 토픽/글롭 (쉼표 구분)"/>
+  <arg name="rviz"         default="true"       doc="rviz 자동 실행 (real.yaml 값을 덮어씀)"/>
+  <arg name="record"       default="false"
+       doc="재생 중 녹화. 기본 false — 리플레이 결과가 records 폴더를 오염시키지 않게"/>
+  <arg name="auto_trigger" default="true"
+       doc="FSM 이 WAIT_TRIGGER 에 오면 /srv_start 자동 호출. bag 의 트리거는 1개뿐이라
+            그 시점에 FSM 이 아직 INIT 이면 유실되므로 기본 on"/>
+  <arg name="skip_takeoff" default="true"
+       doc="이륙 게이트를 건너뛰고 바로 PLAN_TRAJ_EXP 로. 리플레이는 기체를 제어하지
+            않으므로(odom 은 녹화분 재생) TAKEOFF_HOVER 의 고도 도달 조건이 충족되지
+            않으면 takeoff_timeout 까지 묶여 재계획을 볼 수 없다"/>
+  <arg name="static_tf"    default="false"
+       doc="bag 에 TF 가 없을 때만 true. identity odom/world/camera_init 브릿지"/>
+
+  <!-- bag 을 clock 플래그 으로 재생하므로 sim time. 노드보다 먼저 설정해야 한다. -->
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- 1) 실비행과 동일한 스택 -->
+  <include file="$(find epic_planner)/launch/real_flight.launch">
+    <arg name="config_file" value="$(arg config_file)"/>
+    <arg name="auto_arm"    value="false"/>
+  </include>
+
+  <!-- 1.5) 리플레이용 오버라이드.
+       real.yaml 은 rviz/enable=false, record/enable=true 로 실비행에 맞춰져 있다.
+       roslaunch 는 노드를 띄우기 전에 파라미터를 모두 서버에 올리고, 나중에 선언된
+       <param> 이 앞의 rosparam 로드를 덮으므로 여기서 리플레이용 값으로 바꾼다.
+       (두 스크립트 모두 절대 이름 /exploration_node/... 로 읽는다) -->
+  <param name="/exploration_node/rviz/enable"   value="$(arg rviz)"/>
+  <param name="/exploration_node/record/enable" value="$(arg record)"/>
+  <!-- takeoff_height <= 0 이면 startMission 이 TAKEOFF_HOVER 를 건너뛰고 곧바로
+       탐사를 시작한다 (fsm_utils.cpp startMission 의 분기). -->
+  <param name="/exploration_node/fsm/takeoff_height"
+         value="$(eval -1.0 if arg('skip_takeoff') else 1.25)"/>
+
+  <!-- 2) TF 가 없는 bag 을 위한 identity 브릿지 (기본 off).
+          FAST-LIO 계열 bag(camera_init/body 프레임)을 돌릴 때 쓴다. -->
+  <group if="$(arg static_tf)">
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_camera_init_world"
+          args="0 0 0 0 0 0 camera_init world"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_odom_camera_init"
+          args="0 0 0 0 0 0 odom camera_init"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_body_base_link"
+          args="0 0 0 0 0 0 body base_link"/>
+  </group>
+
+  <!-- 2.5) 자동 트리거. bag 에 녹화된 /waypoint_generator/waypoints 는 메시지가
+       1개뿐이라, 그 순간 FSM 이 아직 INIT(odom 대기) 이면 startMission 이 false 를
+       돌려주고 트리거가 그대로 유실된다(재발행 없음). 그래서 10Hz 로 계속 쏜다.
+       startMission 은 WAIT_TRIGGER 에서만 동작하므로 이미 시작한 뒤의 반복 발행은
+       전부 no-op 이다. triggerCallback 은 poses 가 비어있거나 z < -0.1 이면 무시하므로
+       pose 를 하나 채워 보낸다 (내용은 그 외엔 쓰이지 않는다). -->
+  <node if="$(arg auto_trigger)"
+        pkg="rostopic" type="rostopic" name="auto_trigger" output="screen"
+        args="pub -r 10 /waypoint_generator/waypoints nav_msgs/Path '{poses: [{pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}]}'"/>
+
+  <!-- 3) bag 재생 (입력 토픽만). required=true 라 재생이 끝나면 launch 도 종료. -->
+  <node pkg="epic_planner" type="bag_replay.py" name="bag_replay"
+        output="screen" required="true"
+        args="--bag $(arg bag)
+              --rate $(arg rate)
+              --start $(arg start)
+              --duration=$(arg duration)
+              --delay $(arg delay)
+              --allow=$(arg allow)
+              --deny=$(arg deny)
+              --loop $(arg loop)
+              --minimal $(arg minimal)
+              --dry-run $(arg dry_run)"/>
+
+</launch>
