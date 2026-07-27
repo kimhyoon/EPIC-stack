@@ -52,7 +52,10 @@ struct FSMData;
 // (used as indices into fd_->state_str_) stay unchanged.
 // LANDED: LAND(AUTO.LAND) 후 착지+disarm 이 확인된 최종 상태.
 //         record_on_goal 이 이 상태를 보고 녹화를 마감한다.
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED };
+// EARLY_FINISH: 이동거리가 너무 짧은데 FINISH 로 들어간 경우(맵이 아직 안 차서
+//         frontier 가 0개로 보이는 것이 대부분) RTH 대신 가장 먼 reachable 토포
+//         노드로 한 번 더 나가보게 하는 상태. 새 enum 도 END 에 추가한다.
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH };
 
 class FastExplorationFSM {
 private:
@@ -173,6 +176,53 @@ private:
   ros::ServiceClient set_mode_client_;       // /mavros/set_mode (for AUTO.LAND)
   ros::Subscriber    mavros_state_sub_;      // /mavros/state (to confirm AUTO.LAND engaged)
   mavros_msgs::State px4_state_;
+
+  /* ---- EARLY_FINISH -------------------------------------------------------
+     문제: NO_FRONTIER 는 "탐사 끝"과 "맵이 아직 안 참"을 구분하지 못한다.
+     explore_warmup_timeout_(기본 5s)만으로는 이륙 직후 토포그래프가 덜 자란
+     경우를 못 막아서, 3m 도 못 날고 FINISH -> RTH -> LAND 로 끝나 버린다.
+     대응: FINISH 진입 시 누적 이동거리가 early_finish_min_dist_ 미만이면
+     EARLY_FINISH 로 우회해, 가장 먼 reachable 토포 노드를 global path 에 넣고
+     PLAN_TRAJ_EXP 로 복귀한다. 거기까지 날아가는 동안 맵이 차면서 frontier 가
+     다시 잡히면 정상 탐사로 자연 복귀한다. */
+  bool   early_finish_enable_ = true;
+  double early_finish_min_dist_ = 3.0;    // [m] 이 거리 미만 비행 중 FINISH 면 발동
+  int    early_finish_max_count_ = 1;     // 미션당 최대 발동 횟수 (핑퐁 방지)
+  int    early_finish_count_ = 0;
+  // 여정 진행 중 래치. 시간이 아니라 "사건"으로만 풀린다:
+  //   (1) 목표 도달            -> PLAN_TRAJ_EXP 의 global_tour_.size()==2 검사
+  //   (2) 목표가 도달 불가로 판명 -> 매 전역 주기에 getPathCost 로 확인
+  //   (3) 진짜 도달 가능한 뷰포인트 등장 -> planGlobalPath SUCCEED
+  // 예전에는 explore_warmup_timeout(5s)에 기대어 여정 수명을 정했는데, 그건
+  // "맵이 찰 시간"을 재는 값이지 "이 여정이 끝났는가"와 무관하다. 5초가 지나면
+  // 목표를 향해 잘 가고 있어도 FINISH 로 떨어졌다.
+  bool   early_finish_active_ = false;
+  TopoNode::Ptr early_finish_node_;       // 삽입한 목표 노드 (도달성 재확인용)
+  Eigen::Vector3f early_finish_target_ = Eigen::Vector3f::Zero();
+  float  early_finish_target_yaw_ = 0.0f;
+  double early_finish_target_cost_ = 0.0; // 토포 그래프 상 경로 길이 [m]
+  ros::ServiceServer srv_early_finish_;
+  ros::Publisher early_finish_pub_, early_finish_str_pub_, traveled_dist_pub_;
+  bool earlyFinishServiceCallback(std_srvs::Trigger::Request &req,
+                                  std_srvs::Trigger::Response &res);
+  // 가장 먼 reachable 토포 노드를 찾아 global_tour_ 에 삽입. 실패 시 false.
+  bool insertFarthestReachableNode();
+  void pubEarlyFinishStatus();
+  // 미션 시작마다 warmup / early-finish 래치를 초기화한다. 이게 없으면 같은
+  // 프로세스에서 두 번째 미션을 돌릴 때 explore_start_time_/frontiers_ever_seen_
+  // 가 첫 미션 값 그대로라 warmup 보호가 통째로 사라진다.
+  void resetMissionLatches();
+  /* [feature: astar-profile] A* 탐색 소요시간 분포 발행 (/planning/timing/astar_profile).
+     parallel_astar/*_timeout 을 올릴지 말지 판단하는 근거. */
+  ros::Publisher astar_profile_pub_;
+  double astar_profile_period_ = 5.0;   // [s] 벽시계 기준 발행 주기
+  // 리포트에 현재 상한을 같이 찍어 비교가 가능하게 (TopoGraph 쪽은 private).
+  double astar_conn_timeout_ms_ = 0.0, astar_insert_timeout_ms_ = 0.0;
+
+  /* 누적 이동거리 (미션 시작 이후) [m] */
+  double traveled_dist_ = 0.0;
+  bool   have_last_odom_ = false;
+  Eigen::Vector3f last_odom_pos_ = Eigen::Vector3f::Zero();
 
   /* helper functions */
   bool explorationReallyFinished();          // false during startup warmup, true once frontiers seen / timeout

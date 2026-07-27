@@ -135,6 +135,9 @@ bool FastExplorationFSM::startMission(const std::string &source) {
     return false;
   fd_->trigger_ = true;
   total_time_ = ros::Time::now().toSec();
+  // warmup / early-finish 래치를 미션 단위로 초기화 (두 번째 미션에서 보호가
+  // 사라지는 것을 막는다 — 자세한 이유는 resetMissionLatches() 주석 참고).
+  resetMissionLatches();
   // 미션 t0 재설정(+상대시간이 트리거 기준이 됨) + 파라미터 스냅샷 재발행
   // (레코더가 이벤트 스트림을 받는 시점 이후에 남도록)
   elog_.markMissionStart();
@@ -194,6 +197,16 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   auto& ld = planner_manager_->lidar_map_interface_->ld_;
   fd_->odom_pos_ = ld->lidar_pose_;
   fd_->odom_vel_ = ld->lidar_vel_;
+
+  // [EARLY_FINISH] 누적 이동거리. 트리거 이후에만 적산해서, "미션 시작 후 실제로
+  // 얼마나 날았는가"가 early-finish 판정 기준이 되게 한다 (이륙 전 대기 중의
+  // odom 지터가 거리로 쌓이면 판정이 무의미해진다).
+  if (fd_->trigger_) {
+    if (have_last_odom_)
+      traveled_dist_ += (double)(fd_->odom_pos_ - last_odom_pos_).norm();
+    last_odom_pos_ = fd_->odom_pos_;
+    have_last_odom_ = true;
+  }
 
   fd_->odom_yaw_ = (float)tf::getYaw(odom_->pose.pose.orientation);
   planner_manager_->local_data_.curr_pos_ = fd_->odom_pos_.cast<double>();

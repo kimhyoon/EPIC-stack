@@ -62,6 +62,12 @@ public:
   void surfaceFrtCalllback(const ros::TimerEvent &e);
   void goalCallback(const geometry_msgs::PoseStampedConstPtr &msg);
   void updateGoalNode();
+  // [EARLY_FINISH] odom 노드에서 토포 그래프를 Dijkstra 로 한 번 훑어 도달
+  // 가능한 노드 중 경로 비용이 가장 큰 노드를 돌려준다. 노드마다 graphSearch 를
+  // 부르면 O(N) 번의 탐색이 되므로 한 번의 전방향 확장으로 대체한다.
+  // 히스토리 odom 노드(이미 지나온 궤적)는 제외한다 — 다시 가봐야 새로 관측될
+  // 것이 없어 early-finish 의 목적(새 영역 관측)에 맞지 않는다.
+  TopoNode::Ptr findFarthestReachableNode(double &cost_out);
 };
 
 } // namespace fast_planner

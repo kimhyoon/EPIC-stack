@@ -16,6 +16,8 @@
 #include <lkh_tsp_solver/lkh_interface.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <queue>
+#include <unordered_map>
 #include <plan_manage/planner_manager.h>
 #include <std_msgs/Float32.h>
 #include <sys/types.h>
@@ -208,7 +210,22 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ") " +
         frontier_manager_ptr_->vp_stats_.str();
-    planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아 있으면
+    // 지우지 말고 MAGNA(자홍)로 그린다. 예전처럼 빈 tour 로 덮으면, 실제로는 그
+    // 목표를 향해 날아가고 있는데 rviz 에서는 경로가 사라져 버린다.
+    //
+    // MAGNA 의 의미는 "EARLY_FINISH"가 아니라 "이 경로는 이번 주기에 갱신되지
+    // 않았다"이다. 두 경우가 여기로 들어온다:
+    //   - EARLY_FINISH 가 삽입한 합성 목표 (뷰포인트가 아닌 토포 노드)
+    //   - 전역 계획 실패(NO_VIEWPOINTS / NO_REACHABLE_VP)로 남아 있는 직전 tour
+    // 둘 중 무엇인지는 같은 시점의 진단 문자열(diag_result_)과 이벤트 로그
+    // (EARLY_FINISH engaged)로 구분한다.
+    //   BLUE=정상 탐사 tour / ORANGE=RTH / MAGNA=갱신 안 된 tour / (없으면 미표시)
+    if (ed_->global_tour_.size() >= 2)
+      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
+                                                   VizColor::MAGNA, "global");
+    else
+      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
@@ -318,7 +335,22 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ")";
     planner_manager_->topo_graph_->removeNodes(viewpoints);
-    planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아 있으면
+    // 지우지 말고 MAGNA(자홍)로 그린다. 예전처럼 빈 tour 로 덮으면, 실제로는 그
+    // 목표를 향해 날아가고 있는데 rviz 에서는 경로가 사라져 버린다.
+    //
+    // MAGNA 의 의미는 "EARLY_FINISH"가 아니라 "이 경로는 이번 주기에 갱신되지
+    // 않았다"이다. 두 경우가 여기로 들어온다:
+    //   - EARLY_FINISH 가 삽입한 합성 목표 (뷰포인트가 아닌 토포 노드)
+    //   - 전역 계획 실패(NO_VIEWPOINTS / NO_REACHABLE_VP)로 남아 있는 직전 tour
+    // 둘 중 무엇인지는 같은 시점의 진단 문자열(diag_result_)과 이벤트 로그
+    // (EARLY_FINISH engaged)로 구분한다.
+    //   BLUE=정상 탐사 tour / ORANGE=RTH / MAGNA=갱신 안 된 tour / (없으면 미표시)
+    if (ed_->global_tour_.size() >= 2)
+      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
+                                                   VizColor::MAGNA, "global");
+    else
+      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
     return NO_FRONTIER;
   }
 
@@ -659,7 +691,9 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   }
 
   // Visualize the tour
-  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::BLUE, "goal");
+  // RTH(원점복귀/좌표이동) 경로. 탐사 경로(BLUE)와 색으로 구분한다 — 예전엔 둘 다
+  // BLUE 라 ns(global_path / goal_path)로만 갈렸고 화면에서는 분간이 안 됐다.
+  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::ORANGE, "goal");
 
   ros::Time end = ros::Time::now();
   ROS_DEBUG("[Goal Planning] Total planning time: %.2f ms",
@@ -815,6 +849,73 @@ void FastExplorationManager::solveLHK(Eigen::MatrixXd &cost_mat,
   }
 
   res_file.close();
+}
+
+// [EARLY_FINISH] odom 노드 기준 Dijkstra 로 도달 가능한 토포 노드 전체의 경로
+// 비용을 한 번에 구하고, 그중 가장 먼 노드를 돌려준다.
+// 가중치는 TopoNode::weight_ (그래프가 이미 들고 있는 간선 비용)를 쓰고, 없으면
+// 유클리드 거리로 대체한다. 반환 nullptr = 도달 가능한 노드 없음.
+//
+// 그래프에 저장된 것은 "간선" 비용뿐이라(이웃까지), odom -> 임의 노드의 경로
+// 비용은 어차피 탐색으로만 얻는다. 기존 코드처럼 노드마다 graphSearch 를 부르면
+// N 번 탐색이 되므로, 여기서는 odom 에서 한 번만 확장해 전 노드 거리를 얻는다.
+// graphSearch 와 같은 weight_ 를 쓰므로 도달성 판단이 플래너와 일관된다.
+// (주의: topo_skeleton_graph.cpp:982 에서 odom_node_ 의 간선 weight 는 0 으로
+//  세팅된다 — 첫 홉이 공짜로 취급되는 것은 그래프의 기존 규약 그대로다.)
+TopoNode::Ptr FastExplorationManager::findFarthestReachableNode(double &cost_out) {
+  cost_out = 0.0;
+  auto start = planner_manager_->topo_graph_->odom_node_;
+  if (!start || start->neighbors_.empty())
+    return nullptr;
+
+  using Item = std::pair<double, TopoNode::Ptr>; // (cost, node)
+  struct Cmp {
+    bool operator()(const Item &a, const Item &b) const { return a.first > b.first; }
+  };
+  std::priority_queue<Item, std::vector<Item>, Cmp> pq;
+  std::unordered_map<TopoNode::Ptr, double> dist;
+
+  dist[start] = 0.0;
+  pq.push({0.0, start});
+
+  TopoNode::Ptr best = nullptr;
+  double best_cost = -1.0;
+
+  while (!pq.empty()) {
+    auto [d, node] = pq.top();
+    pq.pop();
+    auto it = dist.find(node);
+    if (it == dist.end() || d > it->second + 1e-9)
+      continue; // stale queue entry
+
+    // 출발 노드와 히스토리 odom 노드는 목표 후보에서 제외 (이미 지나온 곳).
+    if (node != start && !node->is_history_odom_node_ && d > best_cost) {
+      best_cost = d;
+      best = node;
+    }
+
+    for (auto &nbr : node->neighbors_) {
+      if (!nbr)
+        continue;
+      auto w_it = node->weight_.find(nbr);
+      double w = (w_it != node->weight_.end())
+                     ? (double)w_it->second
+                     : (double)(node->center_ - nbr->center_).norm();
+      if (w < 0.0)
+        continue;
+      double nd = d + w;
+      auto d_it = dist.find(nbr);
+      if (d_it == dist.end() || nd < d_it->second) {
+        dist[nbr] = nd;
+        pq.push({nd, nbr});
+      }
+    }
+  }
+
+  if (!best)
+    return nullptr;
+  cost_out = best_cost;
+  return best;
 }
 
 void FastExplorationManager::updateGoalNode() {

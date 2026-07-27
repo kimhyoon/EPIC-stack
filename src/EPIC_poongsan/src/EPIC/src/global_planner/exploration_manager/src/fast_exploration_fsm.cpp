@@ -168,6 +168,20 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case FINISH: {
+    // [EARLY_FINISH] 아직 제대로 날지도 않았는데 FINISH 로 들어왔다면, 그건
+    // "탐사 완료"가 아니라 "맵이 아직 안 차서 frontier 가 0개로 보인 것"일
+    // 가능성이 훨씬 높다. RTH 로 내려보내는 대신 가장 먼 reachable 토포 노드로
+    // 한 번 더 나가본다. 수동 /srv_rth 로 온 FINISH(explore_finished_==false)는
+    // 조종자의 의도이므로 건드리지 않는다.
+    const bool short_flight = traveled_dist_ < early_finish_min_dist_;
+    if (early_finish_enable_ && explore_finished_ && short_flight &&
+        early_finish_count_ < early_finish_max_count_) {
+      transitState(EARLY_FINISH, "FINISH: traveled only " +
+                                     to_string(traveled_dist_).substr(0, 4) +
+                                     "m -> try farthest reachable node", true);
+      break;
+    }
+
     // Snapshot the finish pose once, and stop extending the old trajectory so the
     // drone locks where it IS now (traj_server would otherwise keep holding the last
     // trajectory ENDPOINT, which may be a viewpoint ahead of the drone). This snapshot
@@ -253,6 +267,14 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if (expl_manager_->ed_->global_tour_.size() == 2) {
       Eigen::Vector3f goal = expl_manager_->ed_->global_tour_[1];
       if ((goal - fd_->odom_pos_).norm() < 1e-1) {
+        // 조건 (1): EARLY_FINISH 목표에 도달했다면 여정은 여기서 끝난다.
+        // (도달했으면 그만큼 이동했으므로 진입 조건인 traveled<min_dist 도
+        //  대개 더 이상 성립하지 않아 재발동하지 않는다)
+        if (early_finish_active_) {
+          early_finish_active_ = false;
+          elog_.log("EARLY_FINISH", "target reached -> excursion done", "", 0.0,
+                    EventLogger::L_INFO, true);
+        }
         explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
         transitState(FINISH, "fsm");
         return;
@@ -278,7 +300,23 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     }
 
     if (res == SUCCEED) {
-      frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
+      // res 는 callExplorationPlanner() = "로컬 궤적 계획"의 결과다. 궤적이
+      // 만들어졌다는 사실만으로는 frontier 가 존재한다고 볼 수 없다 —
+      // EARLY_FINISH 가 넣은 목표는 뷰포인트가 아니라 평범한 토포 노드이므로,
+      // 그쪽으로 궤적이 잘 나와도 frontier 는 여전히 0개일 수 있다.
+      // 여기서 무조건 latch 하면 EARLY_FINISH 직후 로컬 계획이 성공하는 순간
+      // warmup 보호가 풀려, 다음 NO_FRONTIER 한 번에 곧바로 FINISH 로 떨어진다
+      // (관측: EARLY_FINISH 발동 0.1초 만에 EXEC_TRAJ -> FINISH).
+      // 기준은 "뷰포인트가 존재하는가"가 아니라 "도달 가능한 뷰포인트가 있었는가"다.
+      // diag_num_viewpoints_ 로 판정하면 부족하다 — 실측 사례:
+      //   viewpoints=1(path_reachable 0) ... GLOBAL result=NO_REACHABLE_VP
+      // 뷰포인트는 1개 살아 있지만 토포 그래프로 갈 수가 없어 전역 계획은 계속
+      // 실패하는데, 개수만 보면 게이트를 통과해 warmup 보호가 풀리고 다음
+      // NO_REACHABLE_VP 한 번에 FINISH 로 떨어진다 (EARLY_FINISH 가 목표를 넣은
+      // 지 0.6초 만에 무력화됐다). 실제로 경로가 나온 적이 있어야 "탐사가
+      // 진행 중"이라고 볼 수 있다.
+      if (expl_manager_->ed_->diag_num_reachable_vp_ > 0)
+        frontiers_ever_seen_ = true;  // reachable viewpoint seen -> warmup done
       poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
       poly_traj_pub_.publish(fd_->newest_traj_);
       fd_->static_state_ = false;
@@ -509,7 +547,163 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
               EventLogger::L_INFO);
     break;
   }
+
+  case EARLY_FINISH: {
+    // 과도(transient) 상태: 가장 먼 reachable 토포 노드를 global path 에 넣고
+    // 곧바로 PLAN_TRAJ_EXP 로 빠져나간다. 그 뒤로는 평범한 탐사 흐름이다 —
+    // callExplorationPlanner() 가 삽입된 global_tour_ 로 로컬 궤적을 만든다.
+    //
+    // 이동 중 재-FINISH 는 아래의 warmup 래치 리셋이 막는다. 별도 상태나
+    // 래치를 두지 않는 이유: explore_warmup_timeout 이 이미 "NO_FRONTIER 결론을
+    // 유예하는" 장치라, 그걸 재무장하면 목표로 날아가는 동안 맵이 차오를 시간이
+    // 그대로 확보된다. 그 사이 frontier 가 잡히면 그냥 정상 탐사로 흘러간다.
+    if (!insertFarthestReachableNode()) {
+      // 도달 가능한 노드가 하나도 없다 = 토포 그래프 자체가 안 자란 상태.
+      // 더 해볼 것이 없으므로 원래대로 FINISH 를 진행시킨다.
+      early_finish_count_ = early_finish_max_count_; // 재시도 차단
+      elog_.log("EARLY_FINISH", "aborted: no reachable topo node",
+                "graph not grown yet -> fall back to FINISH", 0.0,
+                EventLogger::L_WARN, true);
+      transitState(FINISH, "EARLY_FINISH: no reachable node -> finish", true);
+      break;
+    }
+
+    early_finish_count_++;
+    early_finish_active_ = true;   // 여정 시작 — 위 (1)(2)(3) 중 하나로만 풀린다
+    // FINISH 가 이미 잡아둔 호버 스냅샷을 무효화해서, 다시 FINISH 로 오면
+    // 그 시점 자세로 새로 잡게 한다.
+    finish_hover_start_ = ros::Time();
+    explore_finished_ = false;   // 이번 FINISH 는 취소된 것으로 간주
+    fd_->static_state_ = true;   // 현재 자세에서 새로 궤적을 시작
+    frontiers_ever_seen_ = false;      // warmup 래치 재무장 (위 주석 참고)
+    explore_start_time_ = ros::Time();
+
+    char d[200];
+    snprintf(d, sizeof(d),
+             "traveled=%.2fm target=(%.2f, %.2f, %.2f) topo_cost=%.1fm try=%d/%d",
+             traveled_dist_, early_finish_target_.x(), early_finish_target_.y(),
+             early_finish_target_.z(), early_finish_target_cost_,
+             early_finish_count_, early_finish_max_count_);
+    elog_.log("EARLY_FINISH", "engaged (premature FINISH suppressed)", d, 0.0,
+              EventLogger::L_WARN, true);
+
+    global_path_update_timer_.start();
+    transitState(PLAN_TRAJ_EXP, "EARLY_FINISH: farthest node inserted");
+    break;
   }
+  }
+
+  pubEarlyFinishStatus();
+}
+
+// [EARLY_FINISH] 가장 먼 reachable 토포 노드를 global_tour_ 에 삽입한다.
+// callExplorationPlanner() 는 planGlobalPath() 를 다시 부르지 않고 기존
+// global_tour_ / next_goal_node_ 를 그대로 쓰므로, 여기서 채워 넣으면 다음
+// PLAN_TRAJ_EXP 틱이 그 목표로 로컬 궤적을 만든다.
+bool FastExplorationFSM::insertFarthestReachableNode() {
+  double cost = 0.0;
+  auto node = expl_manager_->findFarthestReachableNode(cost);
+  if (!node)
+    return false;
+
+  auto ed = expl_manager_->ed_;
+  ed->global_tour_.clear();
+  ed->global_tour_.push_back(fd_->odom_pos_);
+  ed->global_tour_.push_back(node->center_);
+  // 뷰포인트가 아닌 일반 토포 노드는 목표 yaw 가 의미 없으므로 현재 yaw 유지
+  // (불필요한 제자리 회전 방지).
+  planner_manager_->local_data_.end_yaw_ =
+      node->is_viewpoint_ ? node->yaw_ : fd_->odom_yaw_;
+  expl_manager_->updateGoalNode();
+
+  early_finish_target_ = node->center_;
+  early_finish_target_yaw_ = node->yaw_;
+  early_finish_target_cost_ = cost;
+  early_finish_node_ = node;   // 도달성 재확인(조건 2)용으로 보관
+
+  // 삽입 즉시 그린다 (다음 planGlobalPath 주기까지 기다리지 않도록).
+  // 색: 정상 탐사=BLUE / RTH=ORANGE / EARLY_FINISH=MAGNA 로 구분한다.
+  planner_manager_->graph_visualizer_->vizTour(ed->global_tour_, VizColor::MAGNA,
+                                               "global");
+  return true;
+}
+
+// [EARLY_FINISH] 상태 관측용 토픽.
+//   /planning/early_finish      (std_msgs/Bool)   지금 EARLY_FINISH 상태인가
+//   /planning/early_finish_str  (std_msgs/String) 사람이 읽는 상세 상태
+//   /planning/traveled_distance (std_msgs/Float32) 미션 누적 이동거리 [m]
+void FastExplorationFSM::pubEarlyFinishStatus() {
+  std_msgs::Bool in_state;
+  in_state.data = early_finish_active_ || (state_ == EARLY_FINISH);
+  early_finish_pub_.publish(in_state);
+
+  std_msgs::Float32 td;
+  td.data = (float)traveled_dist_;
+  traveled_dist_pub_.publish(td);
+
+  char b[256];
+  if (early_finish_count_ > 0) {
+    snprintf(b, sizeof(b),
+             "used=%d/%d traveled=%.2fm last_target=(%.2f, %.2f, %.2f) "
+             "topo_cost=%.1fm",
+             early_finish_count_, early_finish_max_count_, traveled_dist_,
+             early_finish_target_.x(), early_finish_target_.y(),
+             early_finish_target_.z(), early_finish_target_cost_);
+  } else {
+    snprintf(b, sizeof(b), "unused traveled=%.2fm threshold=%.1fm%s",
+             traveled_dist_, early_finish_min_dist_,
+             early_finish_enable_ ? "" : " (disabled)");
+  }
+  std_msgs::String s;
+  s.data = b;
+  early_finish_str_pub_.publish(s);
+}
+
+// 강제 발동: rosservice call /srv_early_finish
+// 비행 중 아무 때나 불러서 "지금 당장 가장 먼 노드로 가라"를 시킬 수 있다.
+bool FastExplorationFSM::earlyFinishServiceCallback(
+    std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res) {
+  if (!fd_->trigger_) {
+    res.success = false;
+    res.message = "mission not started yet";
+    return true;
+  }
+  // FINISH 를 거치지 않고 여기서 바로 목표를 넣고 탐사 상태로 보낸다.
+  if (!insertFarthestReachableNode()) {
+    res.success = false;
+    res.message = "no reachable topo node (graph not grown yet)";
+    return true;
+  }
+  early_finish_count_++;
+  early_finish_active_ = true;   // 여정 시작 (서비스 경로)
+  fd_->static_state_ = true;
+  finish_hover_start_ = ros::Time();
+  char b[192];
+  snprintf(b, sizeof(b),
+           "forced: target=(%.2f, %.2f, %.2f) topo_cost=%.1fm traveled=%.2fm",
+           early_finish_target_.x(), early_finish_target_.y(),
+           early_finish_target_.z(), early_finish_target_cost_, traveled_dist_);
+  elog_.log("EARLY_FINISH", "engaged (service /srv_early_finish)", b, 0.0,
+            EventLogger::L_WARN, true);
+  global_path_update_timer_.start();
+  transitState(PLAN_TRAJ_EXP, "/srv_early_finish: farthest node inserted");
+  res.success = true;
+  res.message = b;
+  return true;
+}
+
+// 미션 시작마다 호출. 이 리셋이 없으면 같은 프로세스에서 두 번째 미션을 돌릴 때
+// explore_start_time_ / frontiers_ever_seen_ 가 첫 미션 값 그대로 남아
+// explorationReallyFinished() 가 즉시 true 를 돌려주고, warmup 보호가 사라진다.
+void FastExplorationFSM::resetMissionLatches() {
+  explore_start_time_ = ros::Time();
+  frontiers_ever_seen_ = false;
+  traveled_dist_ = 0.0;
+  have_last_odom_ = false;
+  early_finish_count_ = 0;
+  early_finish_active_ = false;
+  early_finish_node_.reset();
+  early_finish_target_cost_ = 0.0;
 }
 
 void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw) {
@@ -602,6 +796,11 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // 이벤트 로깅 관련: verbose_console=true 면 기존 타이밍 cout 유지(개발용),
   // battery_warn_voltage 미만이면 BATT 이벤트가 WARN 으로 격상.
   nh.param("fsm/verbose_console", verbose_console_, false);
+  // [EARLY_FINISH] 조기 종료 방지. explore_warmup_timeout 은 여태 어느 yaml 에도
+  // 없어 전 프로파일이 하드코딩 5초로 돌고 있었다 -> 명시적으로 노출한다.
+  nh.param("fsm/early_finish_enable", early_finish_enable_, true);
+  nh.param("fsm/early_finish_min_dist", early_finish_min_dist_, 3.0);
+  nh.param("fsm/early_finish_max_count", early_finish_max_count_, 1);
   nh.param("fsm/battery_warn_voltage", battery_warn_voltage_, 21.0);
   // reactive local avoidance 마스터 스위치 (real.yaml). false 면 avoid 플래그 무시.
   nh.param("local_avoidance/enable", avoidance_enabled_, true);
@@ -618,7 +817,7 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   fd_->have_odom_ = false;
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
                      "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
-                     "TAKEOFF_HOVER", "LANDED"};
+                     "TAKEOFF_HOVER", "LANDED",   "EARLY_FINISH"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -648,6 +847,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   srv_start_ = nh.advertiseService("/srv_start", &FastExplorationFSM::startServiceCallback, this);
   // 원터치 홈복귀+착륙: rosservice call /srv_rth (인자 없음)
   srv_rth_home_ = nh.advertiseService("/srv_rth", &FastExplorationFSM::rthServiceCallback, this);
+  // [EARLY_FINISH] 강제 발동: rosservice call /srv_early_finish
+  srv_early_finish_ = nh.advertiseService(
+      "/srv_early_finish", &FastExplorationFSM::earlyFinishServiceCallback, this);
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
   // AUTO.LAND at the end of the auto return-home sequence (and /mavros/state to
@@ -668,6 +870,23 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   static_pub_ = nh.advertise<std_msgs::Bool>("/planning/static", 10);
   state_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/state", 10);
   rth_metrics_pub_ = nh.advertise<std_msgs::Float32>("/planning/rth_distance", 10);
+  // [EARLY_FINISH] 상태 관측 토픽
+  early_finish_pub_ = nh.advertise<std_msgs::Bool>("/planning/early_finish", 10);
+  early_finish_str_pub_ =
+      nh.advertise<std_msgs::String>("/planning/early_finish_str", 10);
+  traveled_dist_pub_ =
+      nh.advertise<std_msgs::Float32>("/planning/traveled_distance", 10);
+  // [feature: astar-profile]
+  astar_profile_pub_ =
+      nh.advertise<std_msgs::String>("/planning/timing/astar_profile", 10);
+  nh.param("fsm/astar_profile_period", astar_profile_period_, 5.0);
+  {
+    double t = 0.0;
+    nh.param("parallel_astar/update_connection_timeout", t, 0.0);
+    astar_conn_timeout_ms_ = t * 1000.0;
+    nh.param("parallel_astar/insert_node_timeout", t, 0.0);
+    astar_insert_timeout_ms_ = t * 1000.0;
+  }
   // exploration debug HUD (rviz text marker) + machine-readable string (bag/log)
   diag_pub_ = nh.advertise<visualization_msgs::Marker>("/planning/expl_diag", 10);
   diag_str_pub_ = nh.advertise<std_msgs::String>("/planning/expl_diag_str", 10);
@@ -862,6 +1081,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     global_path_update_timer_.stop();
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
+    expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
     global_path_update_timer_.start();
     return;
   }
@@ -925,6 +1145,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     }
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
+    expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
     global_path_update_timer_.start();
     return;
   }
@@ -957,6 +1178,29 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   if (verbose_console_)
     cout << "total time cost: " << time_cost_now << "ms" << endl;
   if (res == NO_FRONTIER && state_ != WAIT_TRIGGER) {
+    // [EARLY_FINISH] 여정 중이면, 시간이 아니라 "목표가 아직 유효한가"로 판단한다.
+    // 조건 (2): 목표 노드가 도달 불가로 판명되면 여정을 접고 원래 흐름에 맡긴다.
+    // 그렇지 않으면 목표를 global_tour_ 에 유지한 채 FINISH 를 억제한다
+    // (planGlobalPath 는 NO_FRONTIER 시 global_tour_ 를 건드리지 않지만,
+    //  여기서 명시적으로 되살려 두어야 중간에 덮인 경우에도 안전하다).
+    if (early_finish_active_) {
+      bool still_ok = false;
+      if (early_finish_node_) {
+        float yaw = fd_->odom_yaw_;
+        auto odom_node = planner_manager_->topo_graph_->odom_node_;
+        const double c = expl_manager_->getPathCost(
+            odom_node, Eigen::Vector3d::Zero(), yaw, early_finish_node_, yaw);
+        still_ok = (c < 2e3);
+      }
+      if (still_ok) {
+        insertFarthestReachableNode();  // tour 유지 (목표는 그대로)
+        publishExplDiag();
+        return;                          // FINISH 억제
+      }
+      early_finish_active_ = false;
+      elog_.log("EARLY_FINISH", "target became unreachable -> give up excursion",
+                "", 0.0, EventLogger::L_WARN, true);
+    }
     // Only finish if the map/frontiers were actually ready (warmup elapsed or
     // frontiers seen before); otherwise this is a startup artifact -> wait.
     if (explorationReallyFinished()) {
@@ -964,6 +1208,12 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
       transitState(FINISH, "planGlobalPath: no frontier");
     }
   } else if (res == SUCCEED && state_ != WAIT_TRIGGER) {
+    // 조건 (3): 진짜 도달 가능한 뷰포인트가 나왔다 -> 여정 목적 달성, 정상 복귀.
+    if (early_finish_active_) {
+      early_finish_active_ = false;
+      elog_.log("EARLY_FINISH", "reachable viewpoint appeared -> normal exploration",
+                "", 0.0, EventLogger::L_INFO, true);
+    }
     frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
     transitState(PLAN_TRAJ_EXP, "planGlobalPath: succeed");
   }
@@ -973,6 +1223,25 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
 
   expl_manager_->frontier_manager_ptr_->viz_pocc();
   expl_manager_->frontier_manager_ptr_->visfrtcluster();
+  expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
+
+  // [feature: astar-profile] parallel_astar/*_timeout 튜닝 근거를 주기적으로 발행.
+  // 타임아웃은 걸렸을 때만 시간을 먹으므로, 상한을 올리는 비용은
+  // (timeout_hit 비율) x (늘린 시간) 이다. 그 비율을 여기서 볼 수 있다.
+  {
+    static ros::WallTime t_prof = ros::WallTime::now();
+    if ((ros::WallTime::now() - t_prof).toSec() > astar_profile_period_ &&
+        ParallelBubbleAstar::profile_.count() > 0) {
+      t_prof = ros::WallTime::now();
+      const std::string rep = ParallelBubbleAstar::profile_.report(true);
+      std_msgs::String m;
+      m.data = rep;
+      astar_profile_pub_.publish(m);
+      ROS_INFO("[astar-profile] %s (caps: conn=%.1fms insert=%.1fms)",
+               rep.c_str(), astar_conn_timeout_ms_, astar_insert_timeout_ms_);
+    }
+  }
+
   static ros::Time t_p = ros::Time::now();
   if ((ros::Time::now() - t_p).toSec() > 5.0) {
     expl_manager_->frontier_manager_ptr_->printMemoryCost();
