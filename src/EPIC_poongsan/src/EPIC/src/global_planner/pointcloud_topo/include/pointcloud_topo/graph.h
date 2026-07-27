@@ -110,13 +110,24 @@ public:
 class TopoNode {
 public:
   typedef std::shared_ptr<TopoNode> Ptr;
+  struct EdgeFailureState {
+    uint16_t consecutive_failures = 0;
+    int last_result = ParallelBubbleAstar::NO_PATH;
+    ros::Time last_failure_time;
+  };
+
   bool is_viewpoint_ = false;
   bool is_history_odom_node_ = false;
+  uint64_t stable_id_ = 0;
+  uint8_t missed_update_count_ = 0;
+  uint32_t connection_attempt_count_ = 0;
+  int last_connection_result_ = ParallelBubbleAstar::NO_PATH;
   float yaw_;
   Eigen::Vector3f center_;
   vector<BubbleNode::Ptr> bubbles_; // 过程量，计算出topoNode后会清空
   unordered_set<TopoNode::Ptr> neighbors_;
   unordered_map<TopoNode::Ptr, uint8_t> unreachable_nbrs_;
+  unordered_map<TopoNode::Ptr, EdgeFailureState> edge_failures_;
   unordered_map<TopoNode::Ptr, vector<Eigen::Vector3f>> paths_;
   unordered_map<TopoNode::Ptr, float> weight_;
 };
@@ -144,6 +155,8 @@ struct PtrPair {
     TopoNode::Ptr p1;
     TopoNode::Ptr p2;
     bool insert;
+    bool was_connected;
+    int result;
     vector<Eigen::Vector3f> path;
   };
 
@@ -151,7 +164,8 @@ struct PtrPair {
     flatten_data.clear();
     for (auto it = map.begin(); it != map.end(); it++) {
       for (auto it2 = it->second.begin(); it2 != it->second.end(); it2++) {
-        flatten_data.push_back(iter_elem{it->first, *it2, true, {}});
+        flatten_data.push_back(iter_elem{
+            it->first, *it2, true, false, ParallelBubbleAstar::NO_PATH, {}});
       }
     }
   }
@@ -170,7 +184,10 @@ public:
 
 class BubbleUnionSet {
 public:
-  BubbleUnionSet(double min_topobubble_radius) : min_topobubble_radius_(min_topobubble_radius) {};
+  BubbleUnionSet(double min_topobubble_radius,
+                 double clearance_tie_tolerance)
+      : min_topobubble_radius_(min_topobubble_radius),
+        clearance_tie_tolerance_(clearance_tie_tolerance) {};
   typedef std::shared_ptr<BubbleUnionSet> Ptr;
   void updateRegionNode(RegionNode::Ptr region_ptr, const Eigen::Vector3f &region_center_);
   void unionSetCluster(const vector<BubbleNode::Ptr> &bubbles, vector<TopoNode::Ptr> &topos, Eigen::Vector3f &center);
@@ -181,6 +198,7 @@ private:
   std::vector<BubbleNode::Ptr> clusters;
   std::vector<BubbleNode::Ptr> bubbles;
   double min_topobubble_radius_;
+  double clearance_tie_tolerance_;
   std::unordered_map<BubbleNode::Ptr, TopoNode::Ptr> topo_map;
   void init(const std::vector<BubbleNode::Ptr> &bubbles_);
   BubbleNode::Ptr find(BubbleNode::Ptr b);
@@ -200,7 +218,7 @@ public:
   ParallelBubbleAstar::Ptr parallel_bubble_astar_;
   std::ofstream log;
   void removeNodes(vector<TopoNode::Ptr> &nodes);
-  void updateRemainedConnections(vector<TopoNode::Ptr> &nodes);
+  bool updateRemainedConnections(vector<TopoNode::Ptr> &nodes);
   void insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast = false);
   void insertNode(TopoNode::Ptr &new_node, vector<TopoNode::Ptr> &nbr_nodes, vector<vector<Eigen::Vector3f>> &paths);
   // void getUnreachableLocalNodes(vector<TopoNode::Ptr> &nodes_unreachable);
@@ -233,7 +251,9 @@ public:
   bool index2boundary(const Eigen::Vector3i &region_idx_, Eigen::Vector3f &low_bd, Eigen::Vector3f &high_bd);
   RegionNode::Ptr getRegionNode(const Eigen::Vector3i &region_idx_);
   bool graphSearch(const TopoNode::Ptr &start_node, const TopoNode::Ptr &end_node, std::vector<TopoNode::Ptr> &path, double time_out,
-                   bool kino = false, std::unordered_set<pair<TopoNode::Ptr, TopoNode::Ptr>, PairPtrHash> last_path = {});
+                   bool kino = false, std::unordered_set<pair<TopoNode::Ptr, TopoNode::Ptr>, PairPtrHash> last_path = {},
+                   int *result_code = nullptr);
+  uint64_t topologyRevision() const { return topology_revision_; }
   void init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, ParallelBubbleAstar::Ptr &parallel_bubble_astar);
   void cauculateMemoryConsumption();
   double getPathLength(const vector<TopoNode::Ptr> &topo_path);
@@ -259,9 +279,21 @@ public:
   ros::Publisher bubble_astar_search_cost_pub_;
 
 private:
+  static constexpr int EDGE_COLLISION = 6;
   bool planner_debug_enabled_ = false;
   uint64_t topo_debug_batch_seq_ = 0;
   ros::Publisher topo_edge_debug_pub_;
+  ros::Publisher topo_edge_update_debug_pub_;
+  ros::Publisher topology_node_updates_pub_;
+  ros::Publisher topology_stability_nodes_pub_;
+  ros::Publisher topology_failed_edges_pub_;
+  double node_match_tolerance_ = 0.05;
+  int node_miss_hysteresis_ = 2;
+  double node_insert_margin_ = 0.0;
+  double node_clearance_tie_tolerance_ = 0.0;
+  bool node_admission_logged_ = false;
+  uint64_t next_node_id_ = 1;
+  uint64_t topology_revision_ = 0;
   PointVector check_pts_;
   pcl::octree::OctreePointCloudSearch<pcl::PointXYZ> check_pts_octree_;
   int max_update_region_num_;
@@ -278,4 +310,5 @@ private:
   bool isCubeCoveredByBubble(const Eigen::Vector3f &low_bd, const Eigen::Vector3f &high_bd, const vector<BubbleNode::Ptr> &bubble_node_vec);
 
   int searchPathWithBoundary(const Eigen::Vector3f &start, const Eigen::Vector3f &end, double &time_out, vector<Eigen::Vector3f> &path);
+  void publishStabilityDebug();
 };

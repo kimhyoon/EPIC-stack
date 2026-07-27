@@ -42,7 +42,7 @@ int FastExplorationFSM::callExplorationPlanner() {
     return NO_FRONTIER;
 
   // debug
-  if (planner_manager_->lidar_map_interface_->getDisToOcc(expl_manager_->ed_->next_goal_node_->center_) <
+  if (planner_manager_->lidar_map_interface_->getDisToOcc(expl_manager_->ed_->next_goal_node_->center_) <=
       planner_manager_->parallel_path_finder_->safe_distance_) {
     local_reason_ = "next goal too close to occupancy -> re-run global";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());

@@ -12,6 +12,26 @@
 #include <cmath>
 #include <limits>
 
+namespace {
+enum TopologyNodeUpdateAction {
+  NODE_MATCHED = 1,
+  NODE_RETAINED_BY_HYSTERESIS = 2,
+  NODE_REMOVED_UNSAFE = 3,
+  NODE_REMOVED_MISS_EXPIRED = 4,
+  NODE_INSERTED = 5,
+  NODE_REJECTED_ADMISSION = 6,
+};
+
+struct TopologyNodeUpdateEvent {
+  int action;
+  TopoNode::Ptr node;
+  double clearance;
+  int missed_before;
+  double nearest_new_distance;
+  size_t neighbor_count;
+};
+} // namespace
+
 void debug_exit(const std::string &location) {
   std::cout << "\033[1;31m Terminating process at location: " << location << "\033[0m" << std::endl;
   exit(0);
@@ -26,6 +46,7 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   parallel_bubble_astar_ = parallel_bubble_astar;
   odom_node_ = make_shared<TopoNode>();
   odom_node_->is_viewpoint_ = true;
+  odom_node_->stable_id_ = next_node_id_++;
   // 分区，初始化regions_arr_
   // 10m * 10m * 2m ==> 0.315 * 0.315 * 0.5
   nh = nh;
@@ -38,6 +59,23 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   nh.param("bubble_topo/frontier_bubble_min_radius", frt_bubble_radius_, 0.5);
   nh.param("bubble_topo/cube_discrete_size", cube_discrete_size, 0.3);
   nh.param("bubble_topo/odom_node_distance", odom_node_distance_, 5.0);
+  nh.param("bubble_topo/node_match_tolerance", node_match_tolerance_, 0.05);
+  nh.param("bubble_topo/node_miss_hysteresis", node_miss_hysteresis_, 2);
+  nh.param("bubble_topo/node_insert_margin", node_insert_margin_, 0.0);
+  nh.param("bubble_topo/node_clearance_tie_tolerance",
+           node_clearance_tie_tolerance_, 0.0);
+  if (node_insert_margin_ < 0.0) {
+    ROS_WARN("[TopoGraph] bubble_topo/node_insert_margin must be non-negative; "
+             "clamping %.3f to 0.0",
+             node_insert_margin_);
+    node_insert_margin_ = 0.0;
+  }
+  if (node_clearance_tie_tolerance_ < 0.0) {
+    ROS_WARN("[TopoGraph] bubble_topo/node_clearance_tie_tolerance must be "
+             "non-negative; clamping %.3f to 0.0",
+             node_clearance_tie_tolerance_);
+    node_clearance_tie_tolerance_ = 0.0;
+  }
   nh.param("planner_debug/enable", planner_debug_enabled_, false);
 
   nh.getParam("parallel_astar/update_connection_timeout", update_connection_timeout);
@@ -80,6 +118,14 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   if (planner_debug_enabled_) {
     topo_edge_debug_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
         "/debug/topo_edge_checks", 10);
+    topo_edge_update_debug_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/topo_edge_updates", 10);
+    topology_node_updates_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
+        "/debug/topology_node_updates", 10);
+    topology_stability_nodes_pub_ = nh.advertise<visualization_msgs::Marker>(
+        "/debug/topology_stability_nodes", 1, true);
+    topology_failed_edges_pub_ = nh.advertise<visualization_msgs::Marker>(
+        "/debug/topology_failed_edges", 1, true);
     ROS_WARN("[PlannerDebug] topology edge evidence publisher enabled");
   }
 }
@@ -168,7 +214,10 @@ void BubbleUnionSet::getClusters() {
 }
 
 bool TopoGraph::graphSearch(const TopoNode::Ptr &start_node, const TopoNode::Ptr &end_node, std::vector<TopoNode::Ptr> &path, double time_out,
-                            bool kino, std::unordered_set<pair<TopoNode::Ptr, TopoNode::Ptr>, PairPtrHash> last_path) {
+                            bool kino, std::unordered_set<pair<TopoNode::Ptr, TopoNode::Ptr>, PairPtrHash> last_path,
+                            int *result_code) {
+  if (result_code)
+    *result_code = ParallelBubbleAstar::NO_PATH;
   ros::Time search_start = ros::Time::now();
   
   path.clear();
@@ -202,10 +251,14 @@ bool TopoGraph::graphSearch(const TopoNode::Ptr &start_node, const TopoNode::Ptr
     close_set.insert(cur_node);
     if (cur_node == end_node) {
       backtrack();
+      if (result_code)
+        *result_code = ParallelBubbleAstar::REACH_END;
       return true;
     }
     if ((ros::Time::now() - t1).toSec() > time_out) {
       // ROS_ERROR("topo a* timeout");
+      if (result_code)
+        *result_code = ParallelBubbleAstar::TIME_OUT;
       return false;
     }
     for (auto &neighbor : cur_node->neighbors_) {
@@ -343,20 +396,37 @@ void BubbleUnionSet::unionSetCluster(const vector<BubbleNode::Ptr> &bubbles, vec
     auto node = tpair.second;
     if (node->bubbles_.empty())
       continue;
-    BubbleNode::Ptr max_raduis_bubble = node->bubbles_[0];
-    BubbleNode::Ptr center_big_bubble = node->bubbles_[0];
-    double dis2center = (center_big_bubble->center_ - center).norm();
+    BubbleNode::Ptr max_radius_bubble = node->bubbles_[0];
+    BubbleNode::Ptr max_admissible_bubble;
     for (auto &b : node->bubbles_) {
-      if (b->radius_ > max_raduis_bubble->radius_)
-        max_raduis_bubble = b; // 半径最大的bubble
-      double dis2center_now = (b->center_ - center).norm();
-      if (dis2center_now < dis2center && b->radius_ > min_topobubble_radius_)
-        center_big_bubble = b; // 半径大于阈值，距离中心最近的bubble
+      if (b->radius_ > max_radius_bubble->radius_)
+        max_radius_bubble = b;
+      if (b->radius_ >= min_topobubble_radius_ &&
+          (!max_admissible_bubble ||
+           b->radius_ > max_admissible_bubble->radius_))
+        max_admissible_bubble = b;
     }
-    if (center_big_bubble->radius_ > min_topobubble_radius_)
-      node->center_ = center_big_bubble->center_;
-    else
-      node->center_ = max_raduis_bubble->center_;
+
+    BubbleNode::Ptr selected_bubble = max_radius_bubble;
+    if (max_admissible_bubble) {
+      const double equivalent_clearance_min =
+          max_admissible_bubble->radius_ - clearance_tie_tolerance_;
+      double selected_distance =
+          std::numeric_limits<double>::infinity();
+      for (auto &b : node->bubbles_) {
+        if (b->radius_ < min_topobubble_radius_ ||
+            b->radius_ < equivalent_clearance_min)
+          continue;
+
+        const double distance = (b->center_ - center).norm();
+        if (distance < selected_distance) {
+          selected_bubble = b;
+          selected_distance = distance;
+        }
+      }
+    }
+
+    node->center_ = selected_bubble->center_;
     node->is_viewpoint_ = false;
     topos.push_back(node);
     vector<BubbleNode::Ptr>().swap(node->bubbles_);
@@ -424,145 +494,211 @@ void TopoGraph::removeNodes(vector<TopoNode::Ptr> &nodes) {
       nbr->paths_.erase(node);
       nbr->weight_.erase(node);
       nbr->unreachable_nbrs_.erase(node);
+      nbr->edge_failures_.erase(node);
     }
+    for (auto &entry : node->edge_failures_)
+      entry.first->edge_failures_.erase(node);
     node->unreachable_nbrs_.clear();
+    node->edge_failures_.clear();
     node->neighbors_.clear();
     node->weight_.clear();
     node->paths_.clear();
   }
 }
 
-void TopoGraph::updateRemainedConnections(vector<TopoNode::Ptr> &nodes) {
+bool TopoGraph::updateRemainedConnections(vector<TopoNode::Ptr> &nodes) {
+  auto retryDelay = [](int result) {
+    if (result == ParallelBubbleAstar::TIME_OUT)
+      return 0.2;
+    if (result == ParallelBubbleAstar::START_FAIL ||
+        result == ParallelBubbleAstar::END_FAIL)
+      return 0.5;
+    return 1.0;
+  };
 
-  // 处理已有的邻居：检查，如果不行就重新搜索
   auto checkNbr = [&](PtrPair::iter_elem &elem) {
-    auto node = elem.p1;
-    auto nbr = elem.p2;
-
-    vector<Eigen::Vector3f> path = node->paths_[nbr];
-    bool safe = parallel_bubble_astar_->collisionCheck_shortenPath(path);
-    if (safe) {
+    vector<Eigen::Vector3f> path = elem.p1->paths_[elem.p2];
+    if (parallel_bubble_astar_->collisionCheck_shortenPath(path)) {
       elem.insert = true;
+      elem.result = ParallelBubbleAstar::REACH_END;
       elem.path = path;
       return;
     }
-    // 并不安全：重新搜路
 
     path.clear();
-    // int res =
-    // parallel_bubble_astar_->search(node->center_, nbr->center_, path, update_connection_timeout);
-    int res = searchPathWithBoundary(node->center_, nbr->center_, update_connection_timeout, path);
+    int result = searchPathWithBoundary(elem.p1->center_, elem.p2->center_,
+                                        update_connection_timeout, path);
+    if (result == ParallelBubbleAstar::REACH_END &&
+        parallel_bubble_astar_->collisionCheck_shortenPath(path)) {
+      elem.insert = true;
+      elem.result = ParallelBubbleAstar::REACH_END;
+      elem.path = path;
+    } else {
+      elem.insert = false;
+      elem.result = result == ParallelBubbleAstar::REACH_END
+                        ? EDGE_COLLISION
+                        : result;
+    }
+  };
 
-    if (res == ParallelBubbleAstar::REACH_END && parallel_bubble_astar_->collisionCheck_shortenPath(path)) {
-      elem.insert = true;
-      elem.path = path;
-    } else {
-      elem.insert = false;
-    }
-  };
-  // 处理可能的邻居：搜一条路看看
   auto testPreNbr = [&](PtrPair::iter_elem &elem) {
-    auto node = elem.p1;
-    auto pre_nbr = elem.p2;
-    // if ((node->center_ - pre_nbr->center_).norm() > 3.0) {
-    //   elem.insert = false;
-    //   return;
-    // }
     vector<Eigen::Vector3f> path;
-    int res = searchPathWithBoundary(node->center_, pre_nbr->center_, update_connection_timeout, path);
-    if (res == ParallelBubbleAstar::REACH_END && parallel_bubble_astar_->collisionCheck_shortenPath(path)) {
+    int result = searchPathWithBoundary(elem.p1->center_, elem.p2->center_,
+                                        update_connection_timeout, path);
+    if (result == ParallelBubbleAstar::REACH_END &&
+        parallel_bubble_astar_->collisionCheck_shortenPath(path)) {
       elem.insert = true;
+      elem.result = ParallelBubbleAstar::REACH_END;
       elem.path = path;
     } else {
       elem.insert = false;
+      elem.result = result == ParallelBubbleAstar::REACH_END
+                        ? EDGE_COLLISION
+                        : result;
     }
   };
+
   PtrPair edge2test, edge2check;
+  const ros::Time now = ros::Time::now();
   for (auto &node : nodes) {
     vector<TopoNode::Ptr> pre_nbrs;
     getPreNbrs(node, pre_nbrs);
-    unordered_set<TopoNode::Ptr> pre_nbrs_set(pre_nbrs.begin(), pre_nbrs.end());
+    unordered_set<TopoNode::Ptr> pre_nbrs_set(pre_nbrs.begin(),
+                                              pre_nbrs.end());
     for (auto &nbr : node->neighbors_) {
-      if (nbr->is_history_odom_node_)
-        continue;
-      pre_nbrs_set.insert(nbr);
+      if (!nbr->is_history_odom_node_)
+        pre_nbrs_set.insert(nbr);
     }
-    unordered_set<TopoNode::Ptr> pre_nbrs_set_tmp;
+
     unordered_map<TopoNode::Ptr, uint8_t> unreachable_nbrs_tmp;
-    for (auto &pre_nbr : pre_nbrs_set) {
-      if (node->unreachable_nbrs_.count(pre_nbr) && node->unreachable_nbrs_[pre_nbr] > 2) {
-        continue;
-      }
-      pre_nbrs_set_tmp.insert(pre_nbr);
+    unordered_map<TopoNode::Ptr, TopoNode::EdgeFailureState>
+        edge_failures_tmp;
+    for (auto &entry : node->unreachable_nbrs_) {
+      if (pre_nbrs_set.count(entry.first) && entry.first != odom_node_)
+        unreachable_nbrs_tmp.insert(entry);
     }
-    for (auto &pre_nbr : node->unreachable_nbrs_) {
-      if (pre_nbrs_set.count(pre_nbr.first) && pre_nbr.first != odom_node_)
-        unreachable_nbrs_tmp.insert(pre_nbr);
+    for (auto &entry : node->edge_failures_) {
+      if (pre_nbrs_set.count(entry.first) && entry.first != odom_node_)
+        edge_failures_tmp.insert(entry);
     }
-    pre_nbrs_set_tmp.swap(pre_nbrs_set);
     node->unreachable_nbrs_.swap(unreachable_nbrs_tmp);
+    node->edge_failures_.swap(edge_failures_tmp);
+
     for (auto &pre_nbr : pre_nbrs_set) {
-      if (node->neighbors_.find(pre_nbr) == node->neighbors_.end()) {
-        edge2test.insert(node, pre_nbr);
-        // testPreNbr(node, pre_nbr);
-      } else {
-        // checkNbr(node, pre_nbr);
-        edge2check.insert(node, pre_nbr);
+      const bool connected = node->neighbors_.count(pre_nbr) > 0;
+      if (!connected && node->edge_failures_.count(pre_nbr)) {
+        const auto &failure = node->edge_failures_.at(pre_nbr);
+        if ((now - failure.last_failure_time).toSec() <
+            retryDelay(failure.last_result))
+          continue;
       }
+      if (connected)
+        edge2check.insert(node, pre_nbr);
+      else
+        edge2test.insert(node, pre_nbr);
     }
   }
+
   edge2test.flatten();
   edge2check.flatten();
+  for (auto &elem : edge2test.flatten_data)
+    elem.was_connected = false;
+  for (auto &elem : edge2check.flatten_data)
+    elem.was_connected = true;
+
   omp_set_num_threads(6);
   // clang-format off
   #pragma omp parallel for
   // clang-format on
-  for (auto &elem : edge2test.flatten_data) {
+  for (auto &elem : edge2test.flatten_data)
     testPreNbr(elem);
-  }
   // clang-format off
   #pragma omp parallel for
   // clang-format on
-  for (auto &elem : edge2check.flatten_data) {
+  for (auto &elem : edge2check.flatten_data)
     checkNbr(elem);
+
+  edge2test.flatten_data.insert(edge2test.flatten_data.end(),
+                                edge2check.flatten_data.begin(),
+                                edge2check.flatten_data.end());
+
+  std_msgs::Float64MultiArray debug_msg;
+  const bool publish_debug =
+      planner_debug_enabled_ &&
+      topo_edge_update_debug_pub_.getNumSubscribers() > 0;
+  if (publish_debug) {
+    // Schema v1: [version, batch_seq, pair_count,
+    //             success, result, was_connected, start_xyz, end_xyz,
+    //             consecutive_failures, ...].
+    debug_msg.data.reserve(3 + edge2test.flatten_data.size() * 10);
+    debug_msg.data.push_back(1.0);
+    debug_msg.data.push_back(static_cast<double>(++topo_debug_batch_seq_));
+    debug_msg.data.push_back(
+        static_cast<double>(edge2test.flatten_data.size()));
   }
-  edge2test.flatten_data.insert(edge2test.flatten_data.end(), edge2check.flatten_data.begin(), edge2check.flatten_data.end());
+
+  bool graph_changed = false;
   for (auto &elem : edge2test.flatten_data) {
+    auto node1 = elem.p1;
+    auto node2 = elem.p2;
+    uint16_t failure_count = 0;
     if (elem.insert) {
-      auto node1 = elem.p1;
-      auto node2 = elem.p2;
       node1->paths_[node2] = elem.path;
-      std::reverse(elem.path.begin(), elem.path.end());
-      node2->paths_[node1] = elem.path;
+      vector<Eigen::Vector3f> reverse_path = elem.path;
+      std::reverse(reverse_path.begin(), reverse_path.end());
+      node2->paths_[node1] = reverse_path;
       double cost;
       parallel_bubble_astar_->calculatePathCost(elem.path, cost);
       node1->unreachable_nbrs_.erase(node2);
       node2->unreachable_nbrs_.erase(node1);
+      node1->edge_failures_.erase(node2);
+      node2->edge_failures_.erase(node1);
       node1->neighbors_.insert(node2);
       node2->neighbors_.insert(node1);
       node1->weight_[node2] = cost;
       node2->weight_[node1] = cost;
+      if (!elem.was_connected)
+        graph_changed = true;
     } else {
-      auto node1 = elem.p1;
-      auto node2 = elem.p2;
+      if (elem.was_connected)
+        graph_changed = true;
       node1->neighbors_.erase(node2);
       node2->neighbors_.erase(node1);
       node1->weight_.erase(node2);
       node2->weight_.erase(node1);
       node1->paths_.erase(node2);
       node2->paths_.erase(node1);
-      if (node1->unreachable_nbrs_.count(node2)) {
-        node1->unreachable_nbrs_[node2]++;
-      } else {
-        node1->unreachable_nbrs_[node2] = 1;
-      }
-      if (node2->unreachable_nbrs_.count(node1)) {
-        node2->unreachable_nbrs_[node1]++;
-      } else {
-        node2->unreachable_nbrs_[node1] = 1;
-      }
+
+      auto recordFailure = [&](TopoNode::Ptr &from, TopoNode::Ptr &to) {
+        auto &failure = from->edge_failures_[to];
+        if (failure.consecutive_failures <
+            std::numeric_limits<uint16_t>::max())
+          failure.consecutive_failures++;
+        failure.last_result = elem.result;
+        failure.last_failure_time = now;
+        auto &legacy_count = from->unreachable_nbrs_[to];
+        if (legacy_count < std::numeric_limits<uint8_t>::max())
+          legacy_count++;
+        return failure.consecutive_failures;
+      };
+      failure_count = recordFailure(node1, node2);
+      recordFailure(node2, node1);
+    }
+
+    if (publish_debug) {
+      debug_msg.data.push_back(elem.insert ? 1.0 : 0.0);
+      debug_msg.data.push_back(static_cast<double>(elem.result));
+      debug_msg.data.push_back(elem.was_connected ? 1.0 : 0.0);
+      for (int axis = 0; axis < 3; ++axis)
+        debug_msg.data.push_back(node1->center_[axis]);
+      for (int axis = 0; axis < 3; ++axis)
+        debug_msg.data.push_back(node2->center_[axis]);
+      debug_msg.data.push_back(static_cast<double>(failure_count));
     }
   }
+  if (publish_debug)
+    topo_edge_update_debug_pub_.publish(debug_msg);
+  return graph_changed;
 }
 
 void TopoGraph::getPreNbrs(TopoNode::Ptr &node, vector<TopoNode::Ptr> &nbrs) {
@@ -653,6 +789,10 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
   for (auto &node : nodes) {
     if (node == nullptr)
       continue;
+    if (!node->is_viewpoint_ && node->stable_id_ == 0)
+      node->stable_id_ = next_node_id_++;
+    node->connection_attempt_count_ = 0;
+    node->last_connection_result_ = ParallelBubbleAstar::NO_PATH;
     Eigen::Vector3i region_idx;
     getIndex(node->center_, region_idx);
     // else
@@ -683,6 +823,7 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
   // 获得节点对的vector
   vector<vector<Eigen::Vector3f>> path_vec; // 初始是start和end两个点, 算完是path+一个zero/one表示成功/失败
   path_vec.resize(pair_vector.size());
+  vector<int> result_vec(pair_vector.size(), ParallelBubbleAstar::NO_PATH);
 
   // 并行A*搜索路径并写入结果
   omp_set_num_threads(6);
@@ -714,11 +855,14 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
       bool safe = parallel_bubble_astar_->collisionCheck_shortenPath(path);
       if (safe)
         path.push_back(Eigen::Vector3f::Ones());
-      else
+      else {
+        res = EDGE_COLLISION;
         path.push_back(Eigen::Vector3f::Zero());
+      }
     } else {
       path.push_back(Eigen::Vector3f::Ones()); // 1表示安全，0表示危险
     }
+    result_vec[i] = res;
     path_vec[i].swap(path);
   }
 
@@ -727,11 +871,11 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
   const bool publish_debug =
       planner_debug_enabled_ && topo_edge_debug_pub_.getNumSubscribers() > 0;
   if (publish_debug) {
-    // Schema v1: [version, batch_seq, only_raycast, pair_count,
-    //             success, start_xyz, end_xyz, path_point_count,
+    // Schema v2: [version, batch_seq, only_raycast, pair_count,
+    //             success, result, start_xyz, end_xyz, path_point_count,
     //             path_cost, min_known_obstacle_distance, ...].
-    debug_msg.data.reserve(4 + pair_vector.size() * 10);
-    debug_msg.data.push_back(1.0);
+    debug_msg.data.reserve(4 + pair_vector.size() * 11);
+    debug_msg.data.push_back(2.0);
     debug_msg.data.push_back(static_cast<double>(++topo_debug_batch_seq_));
     debug_msg.data.push_back(only_raycast ? 1.0 : 0.0);
     debug_msg.data.push_back(static_cast<double>(pair_vector.size()));
@@ -741,6 +885,7 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
         !path_vec[i].empty() && path_vec[i].back().norm() >= 0.5;
     if (publish_debug) {
       debug_msg.data.push_back(success ? 1.0 : 0.0);
+      debug_msg.data.push_back(static_cast<double>(result_vec[i]));
       for (int axis = 0; axis < 3; ++axis)
         debug_msg.data.push_back(pair_vector[i].first->center_[axis]);
       for (int axis = 0; axis < 3; ++axis)
@@ -749,15 +894,25 @@ void TopoGraph::insertNodes(vector<TopoNode::Ptr> &nodes, bool only_raycast) {
           path_vec[i].empty() ? 0 : path_vec[i].size() - 1;
       debug_msg.data.push_back(static_cast<double>(path_point_count));
     }
+    auto node1 = pair_vector[i].first;
+    auto node2 = pair_vector[i].second;
+    node1->connection_attempt_count_++;
+    node2->connection_attempt_count_++;
     if (!success) {
+      if (node1->last_connection_result_ != ParallelBubbleAstar::REACH_END)
+        node1->last_connection_result_ = result_vec[i];
+      if (node2->last_connection_result_ != ParallelBubbleAstar::REACH_END)
+        node2->last_connection_result_ = result_vec[i];
       if (publish_debug) {
         debug_msg.data.push_back(-1.0);
         debug_msg.data.push_back(-1.0);
       }
       continue;
     }
-    auto node1 = pair_vector[i].first;
-    auto node2 = pair_vector[i].second;
+    node1->last_connection_result_ = ParallelBubbleAstar::REACH_END;
+    node2->last_connection_result_ = ParallelBubbleAstar::REACH_END;
+    node1->edge_failures_.erase(node2);
+    node2->edge_failures_.erase(node1);
     node1->neighbors_.insert(node2);
     node2->neighbors_.insert(node1);
     path_vec[i].pop_back();
@@ -857,7 +1012,17 @@ void TopoGraph::getRegionsToUpdate() {
 
 void TopoGraph::updateSkeleton() {
   parallel_bubble_astar_->reset();
+  if (!node_admission_logged_) {
+    ROS_INFO("[TopoGraph] node admission: safe_distance=%.3f, "
+             "insert_margin=%.3f, insert_threshold=%.3f, "
+             "clearance_tie_tolerance=%.3f",
+             parallel_bubble_astar_->safe_distance_, node_insert_margin_,
+             parallel_bubble_astar_->safe_distance_ + node_insert_margin_,
+             node_clearance_tie_tolerance_);
+    node_admission_logged_ = true;
+  }
   vector<TopoNode::Ptr> nodes2insert, nodes_remained, nodes2remove, new_nodes, old_nodes;
+  vector<TopologyNodeUpdateEvent> node_update_events;
   mutex new_nodes_mtx;
   ros::Time t0 = ros::Time::now();
   for (auto &region : toponodes_update_region_arr_) {
@@ -884,7 +1049,8 @@ void TopoGraph::updateSkeleton() {
     generateBubble(lb, hb, tmp_bubbles, check_pt_flag);
     BubbleUnionSet::Ptr union_set_ =
         std::make_shared<BubbleUnionSet>(
-            parallel_bubble_astar_->safe_distance_);
+            parallel_bubble_astar_->safe_distance_ + node_insert_margin_,
+            node_clearance_tie_tolerance_);
     vector<TopoNode::Ptr> new_nodes_region;
     Eigen::Vector3f region_center = (lb + hb) * 0.5;
     union_set_->unionSetCluster(tmp_bubbles, new_nodes_region, region_center);
@@ -905,6 +1071,27 @@ void TopoGraph::updateSkeleton() {
   vector<MatchCandidate> match_candidates;
   vector<int> new_match(new_nodes.size(), -1);
   vector<int> old_match(old_nodes.size(), -1);
+  vector<float> nearest_new_distance(
+      old_nodes.size(), std::numeric_limits<float>::infinity());
+  vector<double> old_clearance(old_nodes.size(), 0.0);
+  vector<char> old_clearance_ready(old_nodes.size(), 0);
+  auto getOldClearance = [&](const size_t old_idx) {
+    if (!old_clearance_ready[old_idx]) {
+      old_clearance[old_idx] =
+          lidar_map_interface_->getDisToOcc(old_nodes[old_idx]->center_);
+      old_clearance_ready[old_idx] = 1;
+    }
+    return old_clearance[old_idx];
+  };
+  if (planner_debug_enabled_) {
+    for (size_t old_idx = 0; old_idx < old_nodes.size(); ++old_idx) {
+      for (const auto &new_node : new_nodes) {
+        nearest_new_distance[old_idx] =
+            std::min(nearest_new_distance[old_idx],
+                     (new_node->center_ - old_nodes[old_idx]->center_).norm());
+      }
+    }
+  }
   unordered_map<Eigen::Vector3i, vector<size_t>, Vector3iHash> old_buckets;
   const float match_resolution =
       std::max(0.001, node_match_tolerance_);
@@ -949,8 +1136,19 @@ void TopoGraph::updateSkeleton() {
     if (new_match[candidate.new_idx] >= 0 ||
         old_match[candidate.old_idx] >= 0)
       continue;
+    const double clearance = getOldClearance(candidate.old_idx);
+    if (!std::isfinite(clearance) ||
+        clearance <= parallel_bubble_astar_->safe_distance_)
+      continue;
     new_match[candidate.new_idx] = candidate.old_idx;
     old_match[candidate.old_idx] = candidate.new_idx;
+    if (planner_debug_enabled_) {
+      auto &old_node = old_nodes[candidate.old_idx];
+      node_update_events.push_back(TopologyNodeUpdateEvent{
+          NODE_MATCHED, old_node, clearance,
+          static_cast<int>(old_node->missed_update_count_),
+          candidate.distance, old_node->neighbors_.size()});
+    }
     old_nodes[candidate.old_idx]->missed_update_count_ = 0;
     nodes_remained.push_back(old_nodes[candidate.old_idx]);
   }
@@ -959,35 +1157,203 @@ void TopoGraph::updateSkeleton() {
     if (old_match[old_idx] >= 0)
       continue;
     auto &old_node = old_nodes[old_idx];
-    const double clearance =
-        lidar_map_interface_->getDisToOcc(old_node->center_);
+    const double clearance = getOldClearance(old_idx);
     const bool still_safe =
         std::isfinite(clearance) &&
-        clearance >= parallel_bubble_astar_->safe_distance_;
+        clearance > parallel_bubble_astar_->safe_distance_;
+    const int missed_before =
+        static_cast<int>(old_node->missed_update_count_);
+    const double nearest_distance =
+        std::isfinite(nearest_new_distance[old_idx])
+            ? nearest_new_distance[old_idx]
+            : -1.0;
     if (still_safe &&
-        static_cast<int>(old_node->missed_update_count_) <
+        missed_before <
             std::max(0, node_miss_hysteresis_)) {
+      if (planner_debug_enabled_) {
+        node_update_events.push_back(TopologyNodeUpdateEvent{
+            NODE_RETAINED_BY_HYSTERESIS, old_node, clearance, missed_before,
+            nearest_distance, old_node->neighbors_.size()});
+      }
       old_node->missed_update_count_++;
       nodes_remained.push_back(old_node);
     } else {
+      if (planner_debug_enabled_) {
+        const int action =
+            still_safe ? NODE_REMOVED_MISS_EXPIRED : NODE_REMOVED_UNSAFE;
+        node_update_events.push_back(TopologyNodeUpdateEvent{
+            action, old_node, clearance, missed_before, nearest_distance,
+            old_node->neighbors_.size()});
+        ROS_WARN(
+            "[TopoNodeLifecycle] action=%s id=%lu center=(%.3f,%.3f,%.3f) "
+            "clearance=%.3f safe_distance=%.3f missed=%d hysteresis=%d "
+            "nearest_new=%.3f match_tolerance=%.3f neighbors=%zu",
+            still_safe ? "REMOVED_MISS_EXPIRED" : "REMOVED_UNSAFE",
+            static_cast<unsigned long>(old_node->stable_id_),
+            old_node->center_.x(), old_node->center_.y(),
+            old_node->center_.z(), clearance,
+            parallel_bubble_astar_->safe_distance_, missed_before,
+            node_miss_hysteresis_, nearest_distance, node_match_tolerance_,
+            old_node->neighbors_.size());
+      }
       nodes2remove.push_back(old_node);
     }
   }
+  const double node_insert_clearance =
+      parallel_bubble_astar_->safe_distance_ + node_insert_margin_;
   for (size_t new_idx = 0; new_idx < new_nodes.size(); ++new_idx) {
-    if (new_match[new_idx] < 0)
-      nodes2insert.push_back(new_nodes[new_idx]);
+    if (new_match[new_idx] >= 0)
+      continue;
+
+    auto &new_node = new_nodes[new_idx];
+    const double clearance =
+        lidar_map_interface_->getDisToOcc(new_node->center_);
+    if (std::isfinite(clearance) && clearance >= node_insert_clearance) {
+      nodes2insert.push_back(new_node);
+      continue;
+    }
+
+    if (planner_debug_enabled_) {
+      node_update_events.push_back(TopologyNodeUpdateEvent{
+          NODE_REJECTED_ADMISSION, new_node, clearance, 0, -1.0, 0});
+    }
   }
 
   ros::Time t1 = ros::Time::now();
   removeNodes(nodes2remove);
   ros::Time t2 = ros::Time::now();
-  updateRemainedConnections(nodes_remained);
+  const bool edges_changed = updateRemainedConnections(nodes_remained);
   ros::Time t3 = ros::Time::now();
   insertNodes(nodes2insert);
+  if (planner_debug_enabled_) {
+    for (const auto &node : nodes2insert) {
+      node_update_events.push_back(TopologyNodeUpdateEvent{
+          NODE_INSERTED, node,
+          lidar_map_interface_->getDisToOcc(node->center_), 0, -1.0,
+          node->neighbors_.size()});
+    }
+  }
   ros::Time t4 = ros::Time::now();
+  if (!nodes2remove.empty() || !nodes2insert.empty() || edges_changed)
+    topology_revision_++;
+  if (planner_debug_enabled_) {
+    std_msgs::Float64MultiArray message;
+    // Header: version, topology revision, event count, match tolerance,
+    // safe distance, miss hysteresis, node insertion margin. Each event has:
+    // action, stable id, x, y, z, clearance, missed count before update,
+    // nearest regenerated-node distance, neighbor count.
+    message.data.reserve(7 + node_update_events.size() * 9);
+    message.data.push_back(2.0);
+    message.data.push_back(static_cast<double>(topology_revision_));
+    message.data.push_back(static_cast<double>(node_update_events.size()));
+    message.data.push_back(node_match_tolerance_);
+    message.data.push_back(parallel_bubble_astar_->safe_distance_);
+    message.data.push_back(static_cast<double>(node_miss_hysteresis_));
+    message.data.push_back(node_insert_margin_);
+    for (const auto &event : node_update_events) {
+      message.data.push_back(static_cast<double>(event.action));
+      message.data.push_back(static_cast<double>(event.node->stable_id_));
+      message.data.push_back(event.node->center_.x());
+      message.data.push_back(event.node->center_.y());
+      message.data.push_back(event.node->center_.z());
+      message.data.push_back(event.clearance);
+      message.data.push_back(static_cast<double>(event.missed_before));
+      message.data.push_back(event.nearest_new_distance);
+      message.data.push_back(static_cast<double>(event.neighbor_count));
+    }
+    topology_node_updates_pub_.publish(message);
+  }
+  publishStabilityDebug();
   vector<TopoNode::Ptr> unreachable_nodes;
 
 
+}
+
+void TopoGraph::publishStabilityDebug() {
+  if (!planner_debug_enabled_)
+    return;
+
+  visualization_msgs::Marker nodes_marker;
+  nodes_marker.header.frame_id = "world";
+  nodes_marker.header.stamp = ros::Time::now();
+  nodes_marker.ns = "topology_stability_nodes";
+  nodes_marker.id = 0;
+  nodes_marker.type = visualization_msgs::Marker::SPHERE_LIST;
+  nodes_marker.action = visualization_msgs::Marker::ADD;
+  nodes_marker.pose.orientation.w = 1.0;
+  nodes_marker.scale.x = 0.22;
+  nodes_marker.scale.y = 0.22;
+  nodes_marker.scale.z = 0.22;
+
+  visualization_msgs::Marker failed_edges_marker;
+  failed_edges_marker.header = nodes_marker.header;
+  failed_edges_marker.ns = "topology_failed_edges";
+  failed_edges_marker.id = 0;
+  failed_edges_marker.type = visualization_msgs::Marker::LINE_LIST;
+  failed_edges_marker.action = visualization_msgs::Marker::ADD;
+  failed_edges_marker.pose.orientation.w = 1.0;
+  failed_edges_marker.scale.x = 0.05;
+
+  unordered_set<TopoNode::Ptr> visited_nodes;
+  for (const auto &region_entry : reg_map_idx2ptr_) {
+    for (const auto &node : region_entry.second->topo_nodes_) {
+      if (!node || node->is_viewpoint_ || !visited_nodes.insert(node).second)
+        continue;
+
+      geometry_msgs::Point point;
+      point.x = node->center_.x();
+      point.y = node->center_.y();
+      point.z = node->center_.z();
+      nodes_marker.points.push_back(point);
+      std_msgs::ColorRGBA node_color;
+      node_color.a = 0.95;
+      if (node->missed_update_count_ == 0) {
+        node_color.r = 0.1;
+        node_color.g = 0.9;
+        node_color.b = 0.2;
+      } else {
+        node_color.r = 1.0;
+        node_color.g = 0.75;
+        node_color.b = 0.0;
+      }
+      nodes_marker.colors.push_back(node_color);
+
+      for (const auto &failure_entry : node->edge_failures_) {
+        const auto &other = failure_entry.first;
+        if (!other ||
+            !std::less<const TopoNode *>()(node.get(), other.get()))
+          continue;
+        geometry_msgs::Point other_point;
+        other_point.x = other->center_.x();
+        other_point.y = other->center_.y();
+        other_point.z = other->center_.z();
+        failed_edges_marker.points.push_back(point);
+        failed_edges_marker.points.push_back(other_point);
+
+        std_msgs::ColorRGBA edge_color;
+        edge_color.a = 0.9;
+        if (failure_entry.second.last_result ==
+            ParallelBubbleAstar::TIME_OUT) {
+          edge_color.r = 0.8;
+          edge_color.g = 0.1;
+          edge_color.b = 1.0;
+        } else if (failure_entry.second.last_result == EDGE_COLLISION) {
+          edge_color.r = 1.0;
+          edge_color.g = 0.45;
+          edge_color.b = 0.0;
+        } else {
+          edge_color.r = 1.0;
+          edge_color.g = 0.1;
+          edge_color.b = 0.1;
+        }
+        failed_edges_marker.colors.push_back(edge_color);
+        failed_edges_marker.colors.push_back(edge_color);
+      }
+    }
+  }
+
+  topology_stability_nodes_pub_.publish(nodes_marker);
+  topology_failed_edges_pub_.publish(failed_edges_marker);
 }
 
 void TopoGraph::updateOdomNode(Eigen::Vector3f &odom_pos, float &yaw) {
@@ -1046,11 +1412,13 @@ void TopoGraph::updateOdomNode(Eigen::Vector3f &odom_pos, float &yaw) {
     nei->weight_.erase(odom_node_);
     nei->paths_.erase(odom_node_);
     nei->unreachable_nbrs_.erase(odom_node_);
+    nei->edge_failures_.erase(odom_node_);
   }
   odom_node_->neighbors_.clear();
   odom_node_->weight_.clear();
   odom_node_->paths_.clear();
   odom_node_->unreachable_nbrs_.clear();
+  odom_node_->edge_failures_.clear();
   for (auto &edge : edge2insert) {
     odom_node_->neighbors_.insert(edge.first.second);
     odom_node_->paths_.insert({edge.first.second, edge.second});
@@ -1085,8 +1453,12 @@ void TopoGraph::removeNode(TopoNode::Ptr &node) {
     nbr->paths_.erase(node);
     nbr->weight_.erase(node);
     nbr->unreachable_nbrs_.erase(node);
+    nbr->edge_failures_.erase(node);
   }
+  for (auto &entry : node->edge_failures_)
+    entry.first->edge_failures_.erase(node);
   node->unreachable_nbrs_.clear();
+  node->edge_failures_.clear();
   node->neighbors_.clear();
   node->weight_.clear();
   node->paths_.clear();

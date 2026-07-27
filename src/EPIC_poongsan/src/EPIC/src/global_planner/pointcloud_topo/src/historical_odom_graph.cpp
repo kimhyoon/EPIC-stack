@@ -181,7 +181,7 @@ void TopoGraph::updateHistoricalOdoms() {
   getIndex(odom_node_->center_, idx);
   if (getRegionNode(idx) == nullptr) {
     insert = false;
-  } else if (lidar_map_interface_->getDisToOcc(odom_node_->center_) < parallel_bubble_astar_->safe_distance_) {
+  } else if (lidar_map_interface_->getDisToOcc(odom_node_->center_) <= parallel_bubble_astar_->safe_distance_) {
     insert = false;
   }
   if (insert) {

@@ -86,9 +86,27 @@ bubble_topo/odom_node_distance: 1.5  # 이동 경로에 추가하는 이력 연�
 # [Topology 노드·경로 공통 장애물 안전거리]
 # topology 노드 생성·유지, 이동 이력 노드, 엣지 A*, 이전 목표 재사용 및 일반 Local Bubble A* 노드 판정이 모두 이 값을 사용한다.
 # 값 증가 시 안전 여유는 커지지만 좁은 통로의 경로를 찾지 못할 수 있고, 값 감소 시 좁은 통로를 통과할 가능성은 커지지만 충돌 위험이 증가한다.
-# 이전 구현은 별도 bubble_min_radius와 일부 코드의 하드코딩 +0.1 m 때문에 최종 안전거리 보장은 달라지지 않은 채 노드·엣지 판정만 불일치하여 연결과 설정 해석을 방해했다.
+# 이전 구현은 별도 bubble_min_radius, 하드코딩 +0.1 m 및 goal 반경의 추가 0.01 m 판정 때문에 노드·엣지 판정이 달라져 연결과 설정 해석을 방해했다.
 # 현재는 이 값 하나로 통일했으며 최종 MINCO 궤적 안전거리는 DilateRadiusHard/Soft 및 실제 기체 크기와 별도로 확인한다.
 bubble_astar/safe_distance: 0.2  # topology 노드와 경로가 장애물에서 확보할 공통 최소 거리[m]
+
+# [기존 Topology 노드 위치 매칭 허용거리]
+# 갱신 전후 node 중심이 이 거리 이내이고 기존 node가 safe_distance를 만족하면 같은 연결점으로 유지한다.
+# 값 증가 시 node·edge의 생성과 삭제 반복은 줄지만 가까운 별도 연결점을 같은 node로 볼 수 있고, 값 감소 시 위치 구분은 정밀하지만 작은 점군 변화에도 graph가 흔들릴 수 있다.
+# 기존 node가 safe_distance를 만족하지 않으면 위치 차이와 관계없이 매칭하지 않고 제거하므로 장애물 안전거리를 완화하는 값이 아니다.
+bubble_topo/node_match_tolerance: 0.10  # 갱신 전후 같은 node로 인정할 최대 중심 위치 차이[m]
+
+# [신규 Topology 노드 생성 안정화 여유거리]
+# 새 경로 연결점은 공통 안전거리보다 이 값만큼 더 멀리 있을 때만 topology graph에 처음 추가한다.
+# 값 증가 시 안전거리 경계의 node 생성·삭제 반복은 줄지만 좁은 통로의 신규 연결점이 감소할 수 있고, 값 감소 시 신규 연결점은 늘지만 경계에서 graph가 흔들릴 수 있다.
+# 기존 node의 유지·삭제와 edge 안전 판정은 계속 safe_distance를 사용하므로 장애물 안전거리를 완화하는 값이 아니다.
+bubble_topo/node_insert_margin: 0.05  # 신규 node 삽입 기준 = safe_distance + 0.05 m
+
+# [신규 Topology 노드 위치 흔들림 방지]
+# 신규 생성 기준을 통과한 bubble 중 최대 장애물 여유거리와 이 값 이내인 후보를 동급으로 보고, topology 박스 중심에 가장 가까운 위치를 선택한다.
+# 값 증가 시 작은 점군 변화에도 node 위치가 안정적으로 유지되지만 가장 넓은 위치에서 멀어질 수 있고, 값 감소 시 더 넓은 위치를 우선하지만 후보 간 node 위치가 바뀔 수 있다.
+# 이 값은 신규 node의 안전거리 기준을 낮추지 않으며, 반드시 safe_distance + node_insert_margin을 통과한 후보에만 적용한다.
+bubble_topo/node_clearance_tie_tolerance: 0.10  # 동급으로 볼 장애물 여유거리 차이[m]
 
 # [한 번에 갱신할 Topology 박스 수]
 # LiDAR로 새로운 공간을 관측했을 때 현재 드론과 가까운 박스부터 한 번의 topology 갱신에서 최대 몇 개까지 처리할지 결정한다.
@@ -115,7 +133,10 @@ lidar_perception/lidar_pitch: 25.0
 lidar_perception/fov_viewpoint_up: 40.0
 lidar_perception/fov_viewpoint_down: 10.0
 lidar_perception/fov_viewpoint_horizontal: 100
-lidar_perception/max_ray_length: 30  #13
+# [LiDAR 장애물 검색 최대거리][m][하드웨어 설정]
+# Topology 갱신과 주변 장애물 KNN 검색에 사용하는 최대거리이며, 검색 결과가 없으면 이 거리만큼 빈 공간으로 간주한다.
+# LiDAR 유효거리와 점군 밀도에 맞춘 검증값이므로 임의로 수정하지 않는다.
+lidar_perception/max_ray_length: 30
 
 # NUC mid360_mlx tuning baseline: disable the horizontal FOV-edge scan.
 lidar_perception/yaw_fov: 120.0

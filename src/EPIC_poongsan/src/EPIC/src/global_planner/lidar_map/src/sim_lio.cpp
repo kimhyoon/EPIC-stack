@@ -63,7 +63,7 @@ double LIOInterface::getDisToOcc(const PointType &pt) {
   vector<float> diss;
   KNN(pt, 1, nes_pts, diss);
   if (nes_pts.size() == 0)
-    return 10.0;
+    return lp_->max_ray_length_;
   else
     return sqrt(diss[0]);
 }
@@ -83,7 +83,7 @@ double LIOInterface::getDisToOcc(const Eigen::Vector3f &pt) {
 }
 void LIOInterface::KNN(const PointType &pt, int k, PointVector &pts,
                        vector<float> &dis) {
-  ikd_Tree_map.Nearest_Search(pt, k, pts, dis, 10.0);
+  ikd_Tree_map.Nearest_Search(pt, k, pts, dis, lp_->max_ray_length_);
 }
 void LIOInterface::boxSearch(const Eigen::Vector3f &min_bd,
                              const Eigen::Vector3f &max_bd, PointVector &pts) {
