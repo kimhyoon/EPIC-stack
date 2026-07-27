@@ -214,6 +214,11 @@ FrontierManager/cluster_direction_radius: -1.0  # 표면 방향 유사도[-1~1]
 # 값 증가 시 적은 Frontier 입력은 클러스터링되지 않아 viewpoint가 생성되지 않고, 값 감소 시 적은 셀에서도 viewpoint가 생성되지만 노이즈 목표가 증가할 수 있다.
 FrontierManager/cluster_minmum_point_num: 5  # 신규 Frontier 최소 셀 수[개]
 
+# [탐사 박스 경계 Frontier 억제]
+# 탐사 박스 경계에서 지정한 셀 수 이내의 voxel은 Frontier로 승격하지 않는다.
+# 경계 밖은 관측할 수 없으므로 반복해서 남는 해소 불가능한 Frontier와 불필요한 viewpoint 생성을 방지한다.
+FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 현재 2셀 = 0.4 m
+
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
 

@@ -17,7 +17,6 @@
 		<param name="bubble_astar/lambda_heu" value="100.0" type="double" />
 		<param name="bubble_astar/debug" value="false" type="bool" />
 		<param name="bubble_astar/resolution_astar" value="0.2" type="double" />
-		<!-- topomap -->
-		<param name="bubble_topo/cube_discrete_size" value="0.3" type="double" />
+		<!-- bubble_topo/cube_discrete_size is loaded from config_file. -->
 	</node>
 </launch>
