@@ -79,7 +79,7 @@ void FrontierManager::visfrtcluster() {
     } else {
       SetMarker(VizColor::RED, "aabb", 1.0, 0.5, aabb_marker, 1.0);
     }
-    SetMarker(VizColor::WHITE, "viewpoint_number", 0.5, 1.0, viewpoint_number, 1.0);
+    SetMarker(VizColor::WHITE, "cluster_label", 0.35, 1.0, viewpoint_number, 1.0);
     SetMarker(VizColor::RED, "best_viewpoint", 0.5, 1.0, best_viewpoint, 1.0);
     SetMarker(VizColor::WHITE, "vp_frt_connecter", 0.05, 0.7, vp_frt_connecter, 1.0);
 
@@ -100,11 +100,29 @@ void FrontierManager::visfrtcluster() {
     aabb_marker.scale.y = sf_cluster->box_min_.y() - sf_cluster->box_max_.y();
     aabb_marker.scale.z = sf_cluster->box_min_.z() - sf_cluster->box_max_.z();
     viewpoint_number.pose = aabb_marker.pose;
-    int size = 0;
-    for (auto &vp_cluster : sf_cluster->vp_clusters_) {
-      size += vp_cluster.vps_.size();
-    }
-    viewpoint_number.text = std::to_string(size);
+    // [feature: vp-viz] 라벨을 "숫자 하나"에서 진단 블록으로 확장.
+    // 기존 숫자는 vp_clusters_ 안의 샘플 수였는데, vp_clusters_ 는 파이프라인
+    // 중간에 비워지므로(도달불가/비가시/top-K 밖) 대부분 0 으로만 보였다.
+    // 이제 각 수치를 분리해서 보여준다:
+    //   frt  = 이 박스가 담고 있는 프론티어 셀 수 (cells_.size())
+    //   vp   = 유효 후보 / 샘플링된 전체 후보  (vp_candidates_ 기준)
+    //   see  = best 뷰포인트에서 실제로 보이는 프론티어 셀 수 (best_vp_score_)
+    // frt 와 see 는 별개다 — 셀이 많아도 한 뷰포인트에서 다 보이지는 않는다.
+    int vp_sampled = (int)sf_cluster->vp_candidates_.size();
+    int vp_valid = 0;
+    for (auto &c : sf_cluster->vp_candidates_)
+      if (c.status_ == VP_VALID)
+        vp_valid++;
+
+    std::ostringstream lbl;
+    lbl << "#" << sf_cluster->id_ << " "
+        << clusterReasonStr(sf_cluster->reason_) << "\n"
+        << "frt " << sf_cluster->cells_.size();
+    if (vp_sampled > 0)
+      lbl << "  vp " << vp_valid << "/" << vp_sampled;
+    if (sf_cluster->reason_ == CR_OK)
+      lbl << "\nsee " << sf_cluster->best_vp_score_;
+    viewpoint_number.text = lbl.str();
 
     if (sf_cluster->is_reachable_ && !sf_cluster->is_dormant_ && !sf_cluster->is_new_cluster_) {
       best_viewpoint.scale.x = 0.2;
@@ -263,4 +281,165 @@ void FrontierManager::viz_pocc() {
   occ_pub.publish(occ_msg);
   pocc_pub.publish(pocc_msg);
   frt_pub.publish(frt_msg);
+}
+
+// [feature: vp-viz] 샘플링된 viewpoint 후보 전체를 탈락 사유별 색으로,
+// 유효(가시) 후보는 각자의 최적 yaw 화살표까지 발행한다.
+//
+// 토픽: viewpoint_candidates (visualization_msgs/MarkerArray)
+//   ns=vp/<STATUS>  : 상태별 SPHERE_LIST (상태당 마커 1개 -> 후보가 수천 개여도 저렴)
+//   ns=vp_yaw       : 유효 후보별 ARROW (최적 yaw). viz_max_yaw_arrows_ 로 상한
+//   ns=vp_best      : 클러스터별 best viewpoint 의 굵은 화살표
+//
+// 클러스터 박스(sf_cluster_marker)가 "이 클러스터가 왜 죽었나"를 보여준다면,
+// 이쪽은 "후보 하나하나가 어느 단계에서 걸러졌나"를 보여준다.
+void FrontierManager::vizBestViewpoint() {
+  if (!vpp_.viz_candidates_)
+    return;
+  static ros::Publisher vp_pub =
+      nh_.advertise<visualization_msgs::MarkerArray>("viewpoint_candidates", 5);
+
+  // 상태별 색. 공용 VizColor 팔레트를 쓰지 않고 RGB 를 직접 지정한다 —
+  // 그쪽 ORANGE(1,0.45,0.1)/YELLOW(0.9,0.9,0.1) 와 PURPLE/MAGNA 는 서로 너무
+  // 가까워서, 실제로 가장 많이 뜨는 UNREACHABLE 과 NO_VIS 를 눈으로 구분할 수
+  // 없었다. 실전에서 동시에 많이 보이는 네 가지
+  // (CLEARANCE / UNREACHABLE / OUT_OF_BOX / NO_VIS) 를 최대한 벌려 놓는다.
+  struct Rgb { float r, g, b; };
+  static const Rgb kStatusColor[VP_STATUS_COUNT] = {
+      {0.10f, 0.95f, 0.20f},  // VP_VALID                초록
+      {0.95f, 0.10f, 0.10f},  // VP_INVALID_CLEARANCE    빨강   장애물에 너무 붙음
+      {0.45f, 0.45f, 0.45f},  // VP_INVALID_OUT_OF_BOX   회색   탐사 박스 밖
+      {0.65f, 0.20f, 0.95f},  // VP_INVALID_NO_REGION    보라   토포 region 없음
+      {1.00f, 0.40f, 0.75f},  // VP_INVALID_ISOLATED     분홍   DB-SCAN 고립
+      {1.00f, 0.50f, 0.00f},  // VP_INVALID_UNREACHABLE  주황   토포 도달 불가
+      {0.20f, 0.35f, 1.00f},  // VP_INVALID_PRUNED       파랑   거리 컷 탈락
+      {0.00f, 0.90f, 0.90f},  // VP_INVALID_NO_VIS       청록   가시 셀 부족
+  };
+  static const char *kStatusNs[VP_STATUS_COUNT] = {
+      "vp/VALID",       "vp/CLEARANCE", "vp/OUT_OF_BOX", "vp/NO_REGION",
+      "vp/ISOLATED",    "vp/UNREACHABLE", "vp/PRUNED",   "vp/NO_VIS",
+  };
+
+  visualization_msgs::MarkerArray arr;
+  visualization_msgs::Marker del;
+  del.action = visualization_msgs::Marker::DELETEALL;
+  arr.markers.push_back(del);
+
+  // 상태별 SPHERE_LIST 하나씩 준비.
+  std::vector<visualization_msgs::Marker> spheres(VP_STATUS_COUNT);
+  for (int s = 0; s < VP_STATUS_COUNT; s++) {
+    // 탈락 후보는 클러스터당 수백 개 x 클러스터 수 = 메시지당 수천 점이 된다.
+    // SPHERE_LIST 는 점마다 구 메시를 인스턴스화해서 rviz 가 그 물량을 감당하지
+    // 못하고 표시가 지연되거나 아예 안 그려진다. 대량은 POINTS(빌보드)로 그린다.
+    // 수가 적고 중요한 VALID 만 구로 남겨 눈에 띄게 한다.
+    const bool valid = (s == VP_VALID);
+    const float scale = valid ? 0.20f : 0.12f;
+    const float alpha = valid ? 1.0f : 0.80f;
+    SetMarker(VizColor::WHITE, kStatusNs[s], scale, alpha, spheres[s], 1.0);
+    spheres[s].color.r = kStatusColor[s].r;
+    spheres[s].color.g = kStatusColor[s].g;
+    spheres[s].color.b = kStatusColor[s].b;
+    spheres[s].color.a = alpha;
+    spheres[s].id = s;
+    spheres[s].type = valid ? visualization_msgs::Marker::SPHERE_LIST
+                            : visualization_msgs::Marker::POINTS;
+    if (!valid) {
+      // POINTS 는 scale.x/y 만 쓴다 (화면상 점 크기 [m]). z 는 무시된다.
+      spheres[s].scale.x = spheres[s].scale.y = scale;
+      spheres[s].scale.z = 0.0;
+    }
+  }
+
+  std::vector<visualization_msgs::Marker> arrows;
+  std::vector<visualization_msgs::Marker> bests;
+  int valid_total = 0;
+  // 상태별 후보 총수를 먼저 세어 균등 간격 서브샘플 stride 를 정한다.
+  // (앞쪽만 잘라내면 공간적으로 편향된 그림이 되므로 stride 로 고르게 솎는다.)
+  std::vector<size_t> status_total(VP_STATUS_COUNT, 0), status_seen(VP_STATUS_COUNT, 0);
+  for (auto &cluster : cluster_list_)
+    for (auto &cand : cluster->vp_candidates_)
+      if (cand.status_ < VP_STATUS_COUNT)
+        status_total[cand.status_]++;
+  std::vector<size_t> stride(VP_STATUS_COUNT, 1);
+  const size_t cap = (size_t)std::max(1, vpp_.viz_max_points_per_status_);
+  for (int s = 0; s < VP_STATUS_COUNT; s++)
+    if (s != VP_VALID && status_total[s] > cap)
+      stride[s] = (status_total[s] + cap - 1) / cap;
+
+  for (auto &cluster : cluster_list_) {
+    for (auto &cand : cluster->vp_candidates_) {
+      if (cand.status_ >= VP_STATUS_COUNT)
+        continue;
+      const size_t idx = status_seen[cand.status_]++;
+      if (idx % stride[cand.status_] != 0)
+        continue;
+      geometry_msgs::Point p;
+      p.x = cand.pos_.x();
+      p.y = cand.pos_.y();
+      p.z = cand.pos_.z();
+      spheres[cand.status_].points.push_back(p);
+      if (cand.status_ != VP_VALID)
+        continue;
+      valid_total++;
+      if ((int)arrows.size() >= vpp_.viz_max_yaw_arrows_)
+        continue;
+      // 유효 후보의 최적 yaw 화살표. 길이는 고정 0.6m (방향만 보이면 됨).
+      visualization_msgs::Marker a;
+      SetMarker(VizColor::EMERALD, "vp_yaw", 1.0, 0.9, a, 1.0);
+      a.id = (int)arrows.size();
+      a.type = visualization_msgs::Marker::ARROW;
+      a.scale.x = 0.04;  // shaft diameter
+      a.scale.y = 0.09;  // head diameter
+      a.scale.z = 0.10;  // head length
+      a.points.push_back(p);
+      geometry_msgs::Point tip = p;
+      tip.x += 0.6 * cos(cand.yaw_);
+      tip.y += 0.6 * sin(cand.yaw_);
+      a.points.push_back(tip);
+      arrows.push_back(a);
+    }
+
+    // best viewpoint: 굵고 길게, 위 후보 화살표와 구분되는 색.
+    if (cluster->reason_ != CR_OK)
+      continue;
+    visualization_msgs::Marker b;
+    SetMarker(VizColor::RED, "vp_best", 1.0, 1.0, b, 1.0);
+    b.id = cluster->id_;
+    b.type = visualization_msgs::Marker::ARROW;
+    b.scale.x = 0.10;
+    b.scale.y = 0.22;
+    b.scale.z = 0.25;
+    geometry_msgs::Point p;
+    p.x = cluster->best_vp_.x();
+    p.y = cluster->best_vp_.y();
+    p.z = cluster->best_vp_.z();
+    b.points.push_back(p);
+    geometry_msgs::Point tip = p;
+    tip.x += 1.2 * cos(cluster->best_vp_yaw_);
+    tip.y += 1.2 * sin(cluster->best_vp_yaw_);
+    b.points.push_back(tip);
+    bests.push_back(b);
+  }
+
+  for (int s = 0; s < VP_STATUS_COUNT; s++)
+    if (!spheres[s].points.empty())
+      arr.markers.push_back(spheres[s]);
+  arr.markers.insert(arr.markers.end(), arrows.begin(), arrows.end());
+  arr.markers.insert(arr.markers.end(), bests.begin(), bests.end());
+
+  // 상한에 걸려 잘라냈으면 조용히 넘어가지 않고 알린다 (그림이 전부인 줄 알면
+  // 오판하게 된다).
+  if (valid_total > (int)arrows.size())
+    ROS_WARN_THROTTLE(5.0,
+                      "[vp-viz] yaw arrows capped at %d of %d valid viewpoints "
+                      "(raise ViewpointManager/viz_max_yaw_arrows)",
+                      (int)arrows.size(), valid_total);
+  for (int s = 0; s < VP_STATUS_COUNT; s++)
+    if (stride[s] > 1)
+      ROS_WARN_THROTTLE(10.0,
+                        "[vp-viz] %s subsampled 1/%zu (%zu candidates; raise "
+                        "ViewpointManager/viz_max_points_per_status)",
+                        kStatusNs[s], stride[s], status_total[s]);
+
+  vp_pub.publish(arr);
 }

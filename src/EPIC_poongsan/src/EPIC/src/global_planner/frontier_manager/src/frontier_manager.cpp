@@ -25,6 +25,19 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
               frtp_.good_observation_trust_length_);
   nh.getParam("FrontierManager/good_observation_force_trust_length",
               frtp_.good_observation_force_trust_length_);
+  // [feature: split-trust-length] 뷰포인트 평가 전용 거리. 미설정 시 기존처럼
+  // good_observation_force_trust_length 를 그대로 써서 동작이 바뀌지 않게 한다.
+  frtp_.viewpoint_dir_trust_length_ = frtp_.good_observation_force_trust_length_;
+  nh.param("FrontierManager/viewpoint_dir_trust_length",
+           frtp_.viewpoint_dir_trust_length_,
+           frtp_.good_observation_force_trust_length_);
+  nh.param("FrontierManager/viewpoint_min_visible_cells",
+           frtp_.viewpoint_min_visible_cells_, 3);
+  ROS_INFO("[FrontierManager] trust lengths: mapping(force)=%.2fm "
+           "viewpoint(FRONTIER_DIR)=%.2fm  min_visible_cells=%d",
+           frtp_.good_observation_force_trust_length_,
+           frtp_.viewpoint_dir_trust_length_,
+           frtp_.viewpoint_min_visible_cells_);
   nh.getParam("FrontierManager/update_length", frtp_.update_length_);
   // [feature: box-margin] yaml 로만 활성화 (키 없으면 0 = 기존 동작).
   nh.param("FrontierManager/box_boundary_margin", frtp_.box_boundary_margin_, 0);
@@ -64,6 +77,11 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.getParam("ViewpointManager/global_recluster_size",
               vpp_.global_recluster_size_);
   nh.getParam("ViewpointManager/local_tsp_size", vpp_.local_tsp_size_);
+  // [feature: vp-viz] 후보 시각화 (viewpoint_candidates 토픽)
+  nh.param("ViewpointManager/viz_candidates", vpp_.viz_candidates_, true);
+  nh.param("ViewpointManager/viz_max_yaw_arrows", vpp_.viz_max_yaw_arrows_, 300);
+  nh.param("ViewpointManager/viz_max_points_per_status",
+           vpp_.viz_max_points_per_status_, 4000);
 
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
@@ -90,6 +108,7 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
            "horizontal %.1f deg, lidar mount pitch %.1f / yaw %.1f deg",
            vpp_.fov_up_ * 180.0 / M_PI, vpp_.fov_down_ * 180.0 / M_PI,
            fov_vp_horizontal, vpp_.lidar_pitch_, vpp_.lidar_yaw_);
+  checkPerceptionConfig(nh);
   frtp_.map_min_ =
       lidar_map_interface_->lp_->global_map_min_boundary_.cast<float>();
   frtp_.map_max_ =
@@ -106,24 +125,40 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
       (frtp_.bits_need_.x() + frtp_.bits_need_.y() + frtp_.bits_need_.z() + 7) /
       8;
 
+  // [feature: vp-sampling] 셀 중심(cell-center) 샘플링.
+  //
+  // 이전에는 하한에서 시작해 step 씩 더하며 `<= 상한 - 1e-3` 로 끊었다. 그 결과
+  // 하한은 포함되고 상한은 배제되어 격자가 아래(안쪽)로 치우쳤다:
+  //   height [-1.0, 1.0] x5 -> -1.0, -0.6, -0.2, 0.2, 0.6   (상한 1.0 미샘플)
+  //   radius [ 1.0, 3.0] x8 ->  1.00 ... 2.75               (상한 3.0 미샘플)
+  // 특히 "frontier 와 같은 높이"(pitch=0, 어떤 FOV 든 통과)인 height=0 층이
+  // 아예 없었고, 반대로 수직 FOV 상 어떤 반경에서도 볼 수 없는 -1.0 층이
+  // 후보의 1/5 를 차지했다.
+  //
+  // 셀 중심 방식은 구간을 n 등분한 각 칸의 중앙을 찍으므로 상·하한에 대칭이고
+  // 홀수 층이면 정중앙(0)이 반드시 포함된다:
+  //   height -> -0.8, -0.4, 0.0, 0.4, 0.8
+  //   radius ->  1.125 ... 2.875
+  // 인덱스 기반 루프라 float 누적 오차도 없고, 각 방향 개수가 설정값과 정확히
+  // 일치한다 (기존 각도 루프는 경계 조건 때문에 n+1 개를 만들기도 했다).
+  const int n_h = std::max(1, vpp_.sample_pillar_height_layer_num_);
+  const int n_r = std::max(1, vpp_.sample_pillar_radius_layer_num_);
+  const int n_d = std::max(1, vpp_.sample_pillar_circle_sample_num_);
+  const float degree_step = 2 * M_PI / (float)n_d;
+  // 층마다 방위를 조금씩 돌려 후보가 방사형으로 정렬되지 않게 한다(기존 의도 유지).
+  const float start_degree_step = degree_step / (float)n_h;
+  const float height_step =
+      (vpp_.sample_pillar_max_height_ - vpp_.sample_pillar_min_height_) / (float)n_h;
+  const float radius_step =
+      (vpp_.sample_pillar_max_radius_ - vpp_.sample_pillar_min_radius_) / (float)n_r;
   float start_degree = 0;
-  float degree_step = 2 * M_PI / vpp_.sample_pillar_circle_sample_num_;
-  float start_degree_step =
-      degree_step / (float)vpp_.sample_pillar_height_layer_num_;
-  float height_step =
-      (vpp_.sample_pillar_max_height_ - vpp_.sample_pillar_min_height_) /
-      vpp_.sample_pillar_height_layer_num_;
-  float radius_step =
-      (vpp_.sample_pillar_max_radius_ - vpp_.sample_pillar_min_radius_) /
-      vpp_.sample_pillar_radius_layer_num_;
-  for (float height = vpp_.sample_pillar_min_height_;
-       height <= vpp_.sample_pillar_max_height_ - 1e-3; height += height_step) {
-    for (float radius = vpp_.sample_pillar_min_radius_;
-         radius <= vpp_.sample_pillar_max_radius_ - 1e-3;
-         radius += radius_step) {
+  for (int hi = 0; hi < n_h; hi++) {
+    const float height = vpp_.sample_pillar_min_height_ + (hi + 0.5f) * height_step;
+    for (int ri = 0; ri < n_r; ri++) {
+      const float radius = vpp_.sample_pillar_min_radius_ + (ri + 0.5f) * radius_step;
       start_degree += start_degree_step;
-      for (float degree = start_degree;
-           degree <= start_degree + 2 * M_PI - 1e-6; degree += degree_step) {
+      for (int di = 0; di < n_d; di++) {
+        const float degree = start_degree + di * degree_step;
         Eigen::Vector3f vp(radius * cos(degree), radius * sin(degree), height);
         origin_viewpoints_.push_back(vp);
       }
@@ -137,6 +172,96 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   remove_unreachable_cost_pub_ = nh.advertise<std_msgs::Float32>("/global_planning/remove_unreachable_cost", 10);
   select_vp_cost_pub_ = nh.advertise<std_msgs::Float32>("/global_planning/select_vp_cost", 10);
   explored_cell_count_pub_ = nh.advertise<std_msgs::Int32>("/frontier_manager/explored_cell_count", 10);
+}
+
+// [feature: perception-config-check] lidar_perception/* 정합성 검사.
+//
+// 이 그룹은 파라미터가 12개인데 소비자가 셋(lidar_map / frontier_manager /
+// planner_manager)으로 흩어져 있고, 물리값 계열(fov_*)과 계획용 보수값 계열
+// (fov_viewpoint_*)이 짝을 이룬다. 그래서 서로 모순되는 조합을 넣어도 아무도
+// 불평하지 않고 조용히 이상하게 동작한다. 실제로 프로파일들에 이런 것이 있다:
+//   - mid360/mid360_mlx : is_360lidar=true 인데 yaw_fov=120  (전방위? 120도?)
+//   - mid360            : fov_viewpoint_up(48) > fov_up(37.5) — 보수값이 물리값보다 넓음
+//   - real              : cloud_frame_mode=world 인데 sensor_mount_* 를 설정 (무효)
+// 시작 시 한 번 훑어 경고만 남긴다 (동작은 바꾸지 않는다 — 값 판단은 사람의 몫).
+void FrontierManager::checkPerceptionConfig(ros::NodeHandle &nh) {
+  const std::string P = "lidar_perception/";
+  auto getd = [&](const std::string &k, double def) {
+    double v = def;
+    nh.param(P + k, v, def);
+    return v;
+  };
+  int warns = 0;
+
+  // 1) is_360lidar 와 yaw_fov 는 "같은 사실"이 아니라 독립된 두 스위치다.
+  //      yaw_fov     -> corridor cone clip 각도 (planner_manager)
+  //      is_360lidar -> 수평 FOV-edge 스캔 on/off (frontier_manager)
+  //    게이트가 `!is_360lidar && yaw_fov < 360` 라서, is_360lidar=true 는
+  //    yaw_fov 와 무관하게 스캔만 끈다. mid360/mid360_mlx 가 실제로 이 조합을
+  //    의도적으로 쓴다("disable the horizontal FOV-edge scan"). 따라서 이 조합을
+  //    모순으로 경고하면 정상 설정에 오탐이 난다 — 대신 실제 효과를 알려준다.
+  bool is360 = true;
+  nh.param(P + "is_360lidar", is360, true);
+  const double yaw_fov = getd("yaw_fov", 360.0);
+  if (is360 && yaw_fov < 359.9) {
+    ROS_INFO("[perception-config] is_360lidar=true disables the horizontal "
+             "FOV-edge scan; yaw_fov=%.1fdeg is still used for corridor cone "
+             "clipping. (Set is_360lidar=false to enable the scan.)", yaw_fov);
+  }
+  if (!is360 && yaw_fov > 359.9) {
+    ROS_WARN("[perception-config] is_360lidar=false but yaw_fov=360deg, so the "
+             "horizontal FOV-edge scan never runs (its gate needs yaw_fov<360). "
+             "Set yaw_fov to the real horizontal FOV to enable it.");
+    warns++;
+  }
+
+  // 2) 계획용 보수값은 물리값 안에 들어와야 한다 (⊆ 관계)
+  const double fov_up = getd("fov_up", -0.1), fov_down = getd("fov_down", -0.1);
+  const double vp_up = getd("fov_viewpoint_up", -0.1),
+               vp_down = getd("fov_viewpoint_down", -0.1);
+  if (fov_up > -0.05 && vp_up > fov_up + 1e-3) {
+    ROS_WARN("[perception-config] fov_viewpoint_up(%.1f) > fov_up(%.1f): the planning "
+             "value is WIDER than the physical FOV, so viewpoints get assigned "
+             "to cells the sensor cannot actually see.", vp_up, fov_up);
+    warns++;
+  }
+  if (fov_down < -0.05 && vp_down < fov_down - 1e-3) {
+    ROS_WARN("[perception-config] fov_viewpoint_down(%.1f) < fov_down(%.1f): the planning "
+             "value is WIDER than the physical FOV.", vp_down, fov_down);
+    warns++;
+  }
+  const double fov_h = getd("fov_horizontal", 360.0),
+               vp_h = getd("fov_viewpoint_horizontal", 360.0);
+  if (vp_h > fov_h + 1e-3) {
+    ROS_WARN("[perception-config] fov_viewpoint_horizontal(%.1f) > fov_horizontal(%.1f): "
+             "the planning value is WIDER than the physical FOV.",
+             vp_h, fov_h);
+    warns++;
+  }
+
+  // 3) 폐지된 키가 yaml 에 남아 있는지 (이제 코드가 읽지 않는다)
+  if (nh.hasParam(P + "sensor_mount_pitch_deg") ||
+      nh.hasParam(P + "sensor_mount_yaw_deg")) {
+    ROS_WARN("[perception-config] sensor_mount_pitch_deg/sensor_mount_yaw_deg "
+             "are no longer read. The mount rotation now comes solely from "
+             "lidar_pitch/lidar_yaw; remove the stale keys to avoid confusion "
+             "(sensor_mount_offset is still used for the translation).");
+    warns++;
+  }
+
+  // 4) 장착각이 0 인데 FOV 가 수평 대칭이 아니면, 기울어진 센서를 0 으로
+  //    적어둔 전형적인 실수일 수 있다 (반대로 대칭인데 0 이면 정상).
+  const double pitch = getd("lidar_pitch", 0.0);
+  if (fabs(pitch) < 1e-3 && fov_up > -0.05 && fov_down > -0.05) {
+    ROS_WARN("[perception-config] lidar_pitch=0 but the vertical FOV [%.1f, %.1f] lies "
+             "entirely above horizontal. If the sensor is physically tilted, "
+             "put the real mount angle in lidar_pitch or viewpoint visibility "
+             "will be wrong.",
+             fov_down, fov_up);
+    warns++;
+  }
+
+  ROS_INFO("[perception-config] checked lidar_perception/*: %d warning(s)", warns);
 }
 
 void FrontierManager::pos2idx(const PointType &pt, Eigen::Vector3i &idx) {
@@ -1065,11 +1190,17 @@ void FrontierManager::compute_cluster_info(
   cluster->is_dormant_ = false;
   // cluster->is_reachable_ = false;
   cluster->is_reachable_ = true;
+  cluster->reason_ = CR_NOT_CONSIDERED;
+  cluster->best_vp_score_ = 0;
   if ((cluster->box_max_ - cluster->box_min_).maxCoeff() <
-      frtp_.cluster_min_size_)
+      frtp_.cluster_min_size_) {
     cluster->is_dormant_ = true;
-  if (cluster->cells_.size() < frtp_.cluster_min_size_)
+    cluster->reason_ = CR_TOO_SMALL;
+  }
+  if (cluster->cells_.size() < frtp_.cluster_min_size_) {
     cluster->is_dormant_ = true;
+    cluster->reason_ = CR_TOO_FEW_CELLS;
+  }
   cluster->is_new_cluster_ = true;
 }
 
@@ -1170,8 +1301,12 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     return;
   }
   PointVector vps;
+  // [feature: vp-viz] vps 와 같은 순서로 후보 인덱스를 펼쳐 둔다 (판정 역추적용).
+  vector<int> vps2cand;
   for (auto &vp_cluster : cluster->vp_clusters_) {
     vps.insert(vps.end(), vp_cluster.vps_.begin(), vp_cluster.vps_.end());
+    vps2cand.insert(vps2cand.end(), vp_cluster.vp_cand_idx_.begin(),
+                    vp_cluster.vp_cand_idx_.end());
   }
   vector<float> score(vps.size(), 0);
   vector<float> yaw(vps.size(), 0);
@@ -1189,8 +1324,9 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
       if (distance > frtp_.good_observation_trust_length_)
         continue;
       CELL_STATE state = get_state(cluster->cells_[j]);
-      if (state == FRONTIER_DIR &&
-          distance > frtp_.good_observation_force_trust_length_)
+      // [feature: split-trust-length] 여기서 재는 distance 는 "후보 뷰포인트 -> 셀"
+      // 이지 "라이다 -> 셀"이 아니다. 매핑용 force_trust_length 와 분리된 값을 쓴다.
+      if (state == FRONTIER_DIR && distance > frtp_.viewpoint_dir_trust_length_)
         continue;
       Eigen::Vector3f norm = cluster->norms_[j];
       float sin_theta = dir.dot(norm);
@@ -1219,7 +1355,8 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     }
   }
   for (int i = 0; i < vps.size(); i++) {
-    if (occ_free_frts[i].size() < 3) {
+    // [feature: split-trust-length] 문턱을 파라미터화 (원래 3 하드코딩).
+    if ((int)occ_free_frts[i].size() < frtp_.viewpoint_min_visible_cells_) {
       continue;
     }
     Eigen::Vector3f vp = vps[i].getVector3fMap();
@@ -1263,19 +1400,38 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     // }
     yaw[i] = (45.0 * (max_yaw_idx - 4) + 22.5) / 180.0 * M_PI;
   }
+  // [feature: vp-viz] 점수가 매겨진 후보를 사유와 함께 되짚어 기록한다.
+  // score[i] > 0 이면 그 후보 자체가 "보이는" 유효 뷰포인트이고, yaw[i] 가 그
+  // 후보의 최적 yaw 다 (best 하나만이 아니라 후보별로 각자 최적 yaw 를 가진다).
+  for (int i = 0; i < (int)vps.size() && i < (int)vps2cand.size(); i++) {
+    auto &cand = cluster->vp_candidates_[vps2cand[i]];
+    cand.score_ = (int)score[i];
+    if (score[i] > 0) {
+      cand.status_ = VP_VALID;
+      cand.yaw_ = yaw[i];
+    } // else: VP_INVALID_NO_VIS 유지
+  }
+
   int best_vp_idx = std::distance(score.begin(),
                                   std::max_element(score.begin(), score.end()));
   if (score[best_vp_idx] == 0) {
     cluster->is_reachable_ = false;
+    cluster->reason_ = CR_NO_VISIBILITY;
+    cluster->best_vp_score_ = 0;
     cluster->vp_clusters_.clear();
   } else {
     cluster->is_reachable_ = true;
     cluster->best_vp_yaw_ = yaw[best_vp_idx];
     cluster->best_vp_ = vps[best_vp_idx].getVector3fMap();
+    cluster->best_vp_score_ = (int)score[best_vp_idx];
+    cluster->reason_ = CR_OK;
     if (((cluster->best_vp_ - graph_->odom_node_->center_).norm() < 1e-2) &&
         (fabs(cluster->best_vp_yaw_ - graph_->odom_node_->yaw_) < 1e-2)) {
+      // 뷰포인트에 이미 도달했는데도 프론티어가 안 없어짐 -> odom 드리프트 의심.
+      // 원 저자 주석: "飞到但看不到，说明odom漂了" (이 연구에서는 처리하지 않음)
       cluster->is_reachable_ = false;
       cluster->is_dormant_ = true;
+      cluster->reason_ = CR_ODOM_DRIFT;
       cluster->vp_clusters_.clear();
     }
     int tmp_idx = best_vp_idx;
@@ -1292,22 +1448,44 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
 
 void FrontierManager::initClusterViewpoints(ClusterInfo::Ptr &cluster) {
   cluster->vp_clusters_.clear();
+  // [feature: vp-viz] 샘플 후보를 버리는 대신 사유와 함께 전부 기록한다.
+  // vps_init2cand[i] = vps_init[i] 에 대응하는 vp_candidates_ 인덱스.
+  cluster->vp_candidates_.clear();
+  cluster->vp_candidates_.reserve(origin_viewpoints_.size());
+  vector<int> vps_init2cand;
   PointVector vps_init;
   vps_init.reserve(origin_viewpoints_.size());
+  vps_init2cand.reserve(origin_viewpoints_.size());
   for (auto &ovp : origin_viewpoints_) {
     Eigen::Vector3f vp = ovp + cluster->center_;
-    if (lidar_map_interface_->getDisToOcc(vp) < vpp_.min_obstacle_clearance_)
+    VpCandidate cand;
+    cand.pos_ = vp;
+    if (lidar_map_interface_->getDisToOcc(vp) < vpp_.min_obstacle_clearance_) {
+      cand.status_ = VP_INVALID_CLEARANCE;
+      cluster->vp_candidates_.push_back(cand);
       continue;
-    if (!isInBox(vp))
+    }
+    if (!isInBox(vp)) {
+      cand.status_ = VP_INVALID_OUT_OF_BOX;
+      cluster->vp_candidates_.push_back(cand);
       continue;
+    }
     Eigen::Vector3i idx;
     graph_->getIndex(vp, idx);
-    if (graph_->getRegionNode(idx) == nullptr)
+    if (graph_->getRegionNode(idx) == nullptr) {
+      cand.status_ = VP_INVALID_NO_REGION;
+      cluster->vp_candidates_.push_back(cand);
       continue;
+    }
+    // 기하 필터 통과. DB-SCAN 이 군집에 넣어주지 못하면 ISOLATED 로 남는다.
+    cand.status_ = VP_INVALID_ISOLATED;
+    cluster->vp_candidates_.push_back(cand);
+    vps_init2cand.push_back((int)cluster->vp_candidates_.size() - 1);
     vps_init.emplace_back(vp.x(), vp.y(), vp.z());
   }
   if (vps_init.empty()) {
     cluster->is_reachable_ = false;
+    cluster->reason_ = CR_NO_CANDIDATE;
     return;
   }
   pcl::PointCloud<PointType>::Ptr vp_cloud(new pcl::PointCloud<PointType>);
@@ -1369,6 +1547,9 @@ void FrontierManager::initClusterViewpoints(ClusterInfo::Ptr &cluster) {
       if (labels[j] != i + 1)
         continue;
       vp_cluster.vps_.push_back(vps_init[j]);
+      // 군집에 편입 -> 이제 도달성 판정 대기 상태로 승격 (ISOLATED 해제)
+      vp_cluster.vp_cand_idx_.push_back(vps_init2cand[j]);
+      cluster->vp_candidates_[vps_init2cand[j]].status_ = VP_INVALID_UNREACHABLE;
       cls_radius_vec.push_back(radius_vec[j]);
     }
     for (int j = 0; j < cls_radius_vec.size(); j++) {
@@ -1458,13 +1639,18 @@ void FrontierManager::removeUnreachableViewpoints(
     vector<ViewpointCluster> tmp;
     tmp.swap(clusters[i]->vp_clusters_);
     for (int j = 0; j < tmp.size(); j++) {
+      // 탈락한 vp_cluster 의 후보는 VP_INVALID_UNREACHABLE 인 채로 남는다.
       if (kept_vp_cluster[i].find(j) == kept_vp_cluster[i].end())
         continue;
+      // 도달은 확인됨. 아래 거리 상위 컷에서 살아남지 못하면 PRUNED 로 끝난다.
+      for (int ci : tmp[j].vp_cand_idx_)
+        clusters[i]->vp_candidates_[ci].status_ = VP_INVALID_PRUNED;
       clusters[i]->vp_clusters_.push_back(tmp[j]);
     }
-    if (clusters[i]->vp_clusters_.empty())
+    if (clusters[i]->vp_clusters_.empty()) {
       clusters[i]->is_reachable_ = false;
-    else {
+      clusters[i]->reason_ = CR_TOPO_UNREACHABLE;
+    } else {
       clusters[i]->is_reachable_ = true;
       sort(clusters[i]->vp_clusters_.begin(), clusters[i]->vp_clusters_.end(),
            [](const ViewpointCluster &a, const ViewpointCluster &b) {
@@ -1479,6 +1665,10 @@ void FrontierManager::removeUnreachableViewpoints(
           tmp2.push_back(clusters[i]->vp_clusters_[j]);
       }
       clusters[i]->vp_clusters_.swap(tmp2);
+      // 거리 컷까지 통과 -> selectBestViewpoint 의 가시성 판정 대기 상태로.
+      for (auto &vpc : clusters[i]->vp_clusters_)
+        for (int ci : vpc.vp_cand_idx_)
+          clusters[i]->vp_candidates_[ci].status_ = VP_INVALID_NO_VIS;
     }
   }
 }

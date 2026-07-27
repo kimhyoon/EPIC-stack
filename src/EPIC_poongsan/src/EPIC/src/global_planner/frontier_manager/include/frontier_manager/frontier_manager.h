@@ -47,6 +47,21 @@ struct FrontierParam {
   float good_observation_trust_length_;
   float update_length_;
   float good_observation_force_trust_length_;
+  // [feature: split-trust-length] 뷰포인트 평가에서 FRONTIER_DIR 셀(gap/FOV-edge
+  // 로 표시된 셀)을 "보인다"고 인정할 최대 거리 [m]. 기준점은 후보 뷰포인트다.
+  //
+  // 원래는 good_observation_force_trust_length_ 하나를 두 곳에서 같이 썼다:
+  //   (a) 매핑: 라이다에서 이 거리 안이면 DENSE 로 확정 (관측 완료)
+  //   (b) 뷰포인트 평가: 후보에서 이 거리 밖의 FRONTIER_DIR 셀은 안 보이는 것으로 처리
+  // 기준점(라이다 vs 후보)도, 의미도 다른데 값이 묶여 있어서 (a)를 보수적으로
+  // 낮추면 (b)가 조용히 망가졌다 — real.yaml 의 0.5 가 sample_pillar_min_radius(1.0)
+  // 보다 작아 FRONTIER_DIR 셀이 어떤 후보에서도 카운트되지 못한 사례.
+  // 이제 (b)는 이 값을 쓴다. yaml 에 키가 없으면 기존 값으로 폴백해 동작이 바뀌지 않는다.
+  float viewpoint_dir_trust_length_ = -1.0f;
+  // [feature: split-trust-length] 한 뷰포인트가 "유효"로 인정받기 위해 raycast 로
+  // 실제로 보여야 하는 최소 프론티어 셀 수. 원래 코드에 3 으로 박혀 있었다.
+  // 이 문턱을 못 넘으면 yaw 스캔조차 하지 않고 score=0 -> NO_VIS 로 탈락한다.
+  int viewpoint_min_visible_cells_ = 3;
   int dense_cell_cloud_num_;
   int sparse_cell_cloud_num_;
   int noise_cell_range_;
@@ -79,7 +94,67 @@ struct ViewpointParam {
   // 낮추면 좁은 복도까지 탐사(단 벽에 근접 비행), 높이면 보수적.
   float min_obstacle_clearance_;
   int consider_range_, global_recluster_size_, local_tsp_size_;
+  // [feature: vp-viz] 샘플링된 viewpoint 후보 전체를 탈락 사유별 색으로 발행할지.
+  // 후보는 클러스터당 radius_layer*circle_sample*height_layer 개라 수천 개가 될 수
+  // 있어 기본 on 이되 화살표 수만 상한을 둔다 (구는 SPHERE_LIST 라 비용이 낮다).
+  bool viz_candidates_ = true;
+  int viz_max_yaw_arrows_ = 300;
+  // 탈락 후보를 상태별로 이 개수까지만 그린다 (균등 간격 서브샘플).
+  // circle_sample_num 을 올리면 후보가 클러스터당 수백 개가 되어 메시지당 수천
+  // 점이 나오고, 그대로 그리면 rviz 가 버거워진다. VALID 는 이 상한을 받지 않는다.
+  int viz_max_points_per_status_ = 4000;
 };
+
+// [feature: vp-viz] viewpoint 후보 하나의 최종 판정. 파이프라인이 후보를 버리는
+// 지점마다 사유를 남겨서, rviz 에서 "왜 이 클러스터에 뷰포인트가 없는가"를
+// 클러스터 단위가 아니라 후보 단위로 볼 수 있게 한다.
+enum VP_STATUS {
+  VP_VALID = 0,           // 가시 프론티어 확보(score>0) -> best yaw 유효
+  VP_INVALID_CLEARANCE,   // 장애물 최소 이격(min_obstacle_clearance_) 미달
+  VP_INVALID_OUT_OF_BOX,  // 탐사 박스 밖
+  VP_INVALID_NO_REGION,   // 토포 그래프 region 없음
+  VP_INVALID_ISOLATED,    // DB-SCAN 에서 어느 군집에도 못 붙음(고립 후보)
+  VP_INVALID_UNREACHABLE, // 토포 그래프로 도달 불가
+  VP_INVALID_PRUNED,      // 도달은 되나 거리 상위 후보에서 탈락
+  VP_INVALID_NO_VIS,      // 가시 프론티어 셀 부족 (score == 0)
+  VP_STATUS_COUNT
+};
+
+struct VpCandidate {
+  Eigen::Vector3f pos_;
+  float yaw_ = 0.0f;   // VP_VALID 일 때만 의미 있음
+  int score_ = 0;      // 해당 yaw 에서 보이는 프론티어 셀 수
+  uint8_t status_ = VP_INVALID_ISOLATED;
+};
+
+// [feature: vp-viz] 클러스터가 이번 라운드에 왜 쓰이지 못했는지. 기존에는
+// is_reachable_/is_dormant_ 두 bool 로 뭉뚱그려져 rviz 에서 검정 박스의 원인을
+// 구분할 수 없었다 (토포 도달 불가인지, 너무 작아서인지, 안 보여서인지).
+enum CLUSTER_REASON {
+  CR_OK = 0,           // 유효 뷰포인트 확보
+  CR_NOT_CONSIDERED,   // 이번 라운드 top-K(local_tsp_size) 밖 -> 평가 안 함
+  CR_TOO_SMALL,        // 박스 크기 < cluster_min_size_
+  CR_TOO_FEW_CELLS,    // 프론티어 셀 수 < cluster_min_size_
+  CR_NO_CANDIDATE,     // 기하 필터(이격/박스/region) 통과 후보 0
+  CR_TOPO_UNREACHABLE, // 토포 그래프로 도달 불가
+  CR_NO_VISIBILITY,    // 가시 프론티어 셀 < 3 (score == 0)
+  CR_ODOM_DRIFT,       // 뷰포인트에 이미 도달했는데도 안 보임 -> odom 드리프트 의심
+  CR_REASON_COUNT
+};
+
+inline const char *clusterReasonStr(uint8_t r) {
+  switch (r) {
+  case CR_OK: return "OK";
+  case CR_NOT_CONSIDERED: return "NOT_CONSIDERED";
+  case CR_TOO_SMALL: return "TOO_SMALL";
+  case CR_TOO_FEW_CELLS: return "TOO_FEW_CELLS";
+  case CR_NO_CANDIDATE: return "NO_CANDIDATE";
+  case CR_TOPO_UNREACHABLE: return "TOPO_UNREACHABLE";
+  case CR_NO_VISIBILITY: return "NO_VISIBILITY";
+  case CR_ODOM_DRIFT: return "ODOM_DRIFT";
+  default: return "?";
+  }
+}
 struct ByteArrayRaw {
   uint8_t *data;
   static size_t size;
@@ -179,6 +254,9 @@ struct ViewpointCluster {
 
   Eigen::Vector3f center_;
   PointVector vps_;
+  // [feature: vp-viz] vps_ 와 1:1 대응하는 ClusterInfo::vp_candidates_ 인덱스.
+  // 이후 단계(도달성/가시성)의 판정을 원래 샘플 후보로 되짚기 위한 것.
+  vector<int> vp_cand_idx_;
   float distance_;
 };
 
@@ -194,9 +272,19 @@ struct ClusterInfo {
   int id_;
   int odom_id_;
   vector<ViewpointCluster> vp_clusters_;
+  // [feature: vp-viz] 이번 라운드에 샘플링된 viewpoint 후보 전체 + 탈락 사유.
+  // vp_clusters_ 와 달리 파이프라인 중간에 비워지지 않으므로 rviz 에서 항상
+  // "이 클러스터가 어느 단계에서 후보를 잃었는지" 볼 수 있다.
+  vector<VpCandidate> vp_candidates_;
   Eigen::Vector3f best_vp_;
   float best_vp_yaw_;
   float distance_;
+  // [feature: vp-viz] rviz 박스 라벨용 진단.
+  // best_vp_score_: best_vp_/best_vp_yaw_ 에서 실제로 보이는 프론티어 셀 수.
+  //   cells_.size() (박스가 담고 있는 셀 수) 와는 별개다 — 셀이 많아도 한
+  //   뷰포인트에서 다 보이지는 않으므로 둘을 따로 표시한다.
+  int best_vp_score_ = 0;
+  uint8_t reason_ = CR_NOT_CONSIDERED;
 
   bool is_dormant_;
   bool is_reachable_;
@@ -299,6 +387,9 @@ private:
   bool isInBox(const Eigen::Vector3f &pt);
   // [feature: box-margin] pt 가 탐사 박스 경계에서 margin*cell_size 이내인가 (6면 프로브)
   bool is_near_box_boundary(const PointType &pt);
+  // [feature: perception-config-check] lidar_perception/* 조합의 모순을 시작 시
+  // 한 번 검사해 경고만 남긴다 (동작 변경 없음). 자세한 배경은 .cpp 주석 참고.
+  void checkPerceptionConfig(ros::NodeHandle &nh);
   bool computeSuperClusterInfo(SuperClusterInfo::Ptr &super_cluster);
   void reclusterSuperCluster(SuperClusterInfo::Ptr &super_cluster);
 
