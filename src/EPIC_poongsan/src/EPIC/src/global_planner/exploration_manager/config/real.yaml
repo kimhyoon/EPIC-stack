@@ -255,7 +255,7 @@ ViewpointManager/sample_pillar_max_height: 1.0   # Frontier 기준 위쪽 탐색
 # [Viewpoint 높이별 후보 수]
 # 위·아래 탐색 범위에 몇 개의 높이 후보를 만들지 결정한다.
 # 적절한 높이의 viewpoint를 못 찾으면 증가, 연산이 느리면 감소한다.
-ViewpointManager/sample_pillar_height_layer_num: 10  # 높이 후보 층 수[개]
+ViewpointManager/sample_pillar_height_layer_num: 9  # 높이 후보 층 수[개]
 
 # [Viewpoint 거리 범위]
 # Frontier에서 얼마나 가까운 곳부터 먼 곳까지 관측 위치를 찾을지 결정한다.

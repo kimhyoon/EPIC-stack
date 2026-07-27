@@ -222,8 +222,14 @@ bool FastExplorationFSM::installEarlyFinishPath(
   planner_manager_->local_data_.end_yaw_ =
       (dir.head<2>().norm() > 1e-3) ? std::atan2(dir.y(), dir.x())
                                     : fd_->odom_yaw_;
+  // rescue 경로는 정상 탐사 tour 가 아니므로 MAGNA 로 그린다.
+  // BLUE 로 그리면 같은 ns("global_path")를 planGlobalPath 쪽 발행과 0.2s 주기로
+  // 번갈아 덮어써서 rviz 에서 경로가 깜빡이고, 심지어 서로 다른 경로를 그린다
+  // (실측: 18초 창에서 MAGNA 13회 / BLUE 6회, 마지막 점이 각각 달랐다).
+  // 색 규약: BLUE=planGlobalPath 가 실제로 성공한 탐사 tour / ORANGE=RTH /
+  //          MAGNA=이번 주기에 정상 계획으로 갱신되지 않은 tour(rescue 포함).
   planner_manager_->graph_visualizer_->vizTour(
-      ed->global_tour_, VizColor::BLUE, "global");
+      ed->global_tour_, VizColor::MAGNA, "global");
 
   char detail[192];
   snprintf(detail, sizeof(detail),

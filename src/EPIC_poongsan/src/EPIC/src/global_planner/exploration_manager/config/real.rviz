@@ -8,6 +8,7 @@ Panels:
         - /Axes1
         - /robot_state1
         - /viewpoint_info1
+        - /viewpoint_info1/Viewpoints_debug1/Namespaces1
         - /global_planner1
         - /local_planner1
         - /debug_info1
@@ -15,7 +16,6 @@ Panels:
         - /debug_info1/label_map1/well_observed1
         - /explore_env1
         - /explore_env1/buffered_cloud1/Autocompute Value Bounds1
-        - /topo_graph1/Status1
         - /topo_graph1/Namespaces1
       Splitter Ratio: 0.4589178264141083
     Tree Height: 1244
