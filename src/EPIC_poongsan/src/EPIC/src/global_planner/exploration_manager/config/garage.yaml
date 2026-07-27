@@ -155,29 +155,23 @@ fsm/auto_rth_land: false
 # Keep traj_server as the only /position_cmd publisher after FINISH.
 fsm/traj_server_owns_finish_cmd: true
 
-# ====================================================================
-# [조기 종료(premature FINISH) 방지]
-#
-# NO_FRONTIER 는 "탐사 완료"와 "맵이 아직 안 참"을 구분하지 못한다. 이륙 직후엔
-# 토포그래프/맵이 덜 자라 frontier 가 0개로 보이기 쉬운데, 그대로 FINISH 로 가면
-# 3m 도 못 날고 RTH+착륙으로 미션이 끝난다. 두 겹으로 막는다.
-
-# 1단계: NO_FRONTIER 라는 결론 자체를 이 시간 동안은 믿지 않는다.
-#   첫 NO_FRONTIER 시점부터 재는 상한이며, 그 전에 frontier 가 한 번이라도
-#   잡히면 즉시 통과한다. 여태 어느 yaml 에도 없어 하드코딩 5.0초로 돌고 있었다.
+# [조기 종료 결론 유예]
+# NO_FRONTIER 는 '탐사 완료'와 '맵이 아직 안 참'을 구분하지 못한다. 첫
+# NO_FRONTIER 시점부터 이 시간 동안은 그 결론을 믿지 않는다. 그 전에
+# frontier 가 한 번이라도 잡히면 즉시 통과한다. 아래 EARLY_FINISH 와는
+# 별개의 1차 방어선이며, 여태 어느 프로파일에도 없어 코드 기본값 5.0초로
+# 돌고 있었다.
 fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
 
-# 2단계: 그럼에도 FINISH 로 들어왔는데 누적 비행거리가 너무 짧으면, RTH 대신
-#   가장 먼 reachable 토포 노드로 한 번 더 나가본다 (EARLY_FINISH 상태).
-#   거기까지 가는 동안 맵이 차면서 frontier 가 다시 잡히면 정상 탐사로 복귀한다.
-#   강제 발동: rosservice call /srv_early_finish
-#   상태 관측: /planning/early_finish{,_str}, /planning/traveled_distance
+# Early-finish rescue. When exploration ends after travelling only a short
+# distance, the narrow LiDAR FOV most likely hid the remaining frontiers rather
+# than the map being complete. Fly once to the farthest reachable topology node
+# to gather more observations; if a real frontier reappears on the way, normal
+# exploration takes over immediately. Enabled here so the garage simulation
+# exercises the same path as the flight profiles.
 fsm/early_finish_enable: true
-fsm/early_finish_min_dist: 3.0     # [m] 이 거리 미만 비행 중 FINISH 면 발동
-fsm/early_finish_max_count: 1      # 미션당 최대 발동 횟수 (핑퐁 방지)
-#
-# 삽입 후에는 별도 상태/래치 없이 그냥 원래 탐사 흐름을 탄다:
-#   - planGlobalPath 는 NO_FRONTIER 를 반환할 때 global_tour_ 를 건드리지 않으므로
-#     (clear 는 성공 경로에만 있다) 삽입한 목표가 0.2s 재계획에도 살아남는다
-#   - 목표 도달은 PLAN_TRAJ_EXP 최상단의 global_tour_.size()==2 검사가 처리한다
-#   - 이동 중 재-FINISH 는 위 explore_warmup_timeout 재무장으로 유예된다
+fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
+fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
+fsm/early_finish_reach_tol: 0.5          # [m] probe target counts as reached within this range
+fsm/early_finish_min_target_dist: 3.0    # [m] skip the retry when the target is closer than this
+fsm/early_finish_exclude_history: true   # drop odom-trail nodes from target candidates only
