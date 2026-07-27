@@ -89,7 +89,8 @@ bool ParallelBubbleAstar::isNodeSafe(Node::Ptr node, const Eigen::Vector3f &bbox
   if (danger_set.count(idx))
     return false;
 
-  double radius = lidar_map_interface_->getDisToOcc(node->position) - safe_distance_ - 1e-1;
+  double radius =
+      lidar_map_interface_->getDisToOcc(node->position) - safe_distance_;
 
   if (radius > 0) {
     int width = (int)((radius * 0.57737) * inv_resolution_) - 1;

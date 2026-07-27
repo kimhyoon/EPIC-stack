@@ -35,7 +35,6 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   nh.param("bubble_topo/init_region_size_x", init_region_size_x_, 0.0);
   nh.param("bubble_topo/init_region_size_y", init_region_size_y_, 0.0);
   nh.param("bubble_topo/init_region_size_z", init_region_size_z_, 0.0);
-  nh.param("bubble_topo/bubble_min_radius", bubble_min_radius_, 0.5);
   nh.param("bubble_topo/frontier_bubble_min_radius", frt_bubble_radius_, 0.5);
   nh.param("bubble_topo/cube_discrete_size", cube_discrete_size, 0.3);
   nh.param("bubble_topo/odom_node_distance", odom_node_distance_, 5.0);
@@ -883,7 +882,9 @@ void TopoGraph::updateSkeleton() {
         check_pt_flag[i] = true;
     }
     generateBubble(lb, hb, tmp_bubbles, check_pt_flag);
-    BubbleUnionSet::Ptr union_set_ = std::make_shared<BubbleUnionSet>(bubble_min_radius_); // TODO: 这个参数是topo节点2occ的最小距离
+    BubbleUnionSet::Ptr union_set_ =
+        std::make_shared<BubbleUnionSet>(
+            parallel_bubble_astar_->safe_distance_);
     vector<TopoNode::Ptr> new_nodes_region;
     Eigen::Vector3f region_center = (lb + hb) * 0.5;
     union_set_->unionSetCluster(tmp_bubbles, new_nodes_region, region_center);
@@ -896,9 +897,86 @@ void TopoGraph::updateSkeleton() {
     new_nodes_mtx.unlock();
   }
 
-  overlap(new_nodes, old_nodes, nodes_remained);
-  setdiff(old_nodes, new_nodes, nodes2remove);
-  setdiff(new_nodes, old_nodes, nodes2insert);
+  struct MatchCandidate {
+    float distance;
+    size_t new_idx;
+    size_t old_idx;
+  };
+  vector<MatchCandidate> match_candidates;
+  vector<int> new_match(new_nodes.size(), -1);
+  vector<int> old_match(old_nodes.size(), -1);
+  unordered_map<Eigen::Vector3i, vector<size_t>, Vector3iHash> old_buckets;
+  const float match_resolution =
+      std::max(0.001, node_match_tolerance_);
+  auto bucketIndex = [&](const Eigen::Vector3f &center) {
+    Eigen::Vector3i index =
+        ((center - min_bd) / match_resolution)
+            .array()
+            .floor()
+            .cast<int>()
+            .matrix();
+    return index;
+  };
+  for (size_t i = 0; i < old_nodes.size(); ++i)
+    old_buckets[bucketIndex(old_nodes[i]->center_)].push_back(i);
+
+  for (size_t new_idx = 0; new_idx < new_nodes.size(); ++new_idx) {
+    const Eigen::Vector3i center_bucket =
+        bucketIndex(new_nodes[new_idx]->center_);
+    for (int dx = -1; dx <= 1; ++dx)
+      for (int dy = -1; dy <= 1; ++dy)
+        for (int dz = -1; dz <= 1; ++dz) {
+          const Eigen::Vector3i bucket =
+              center_bucket + Eigen::Vector3i(dx, dy, dz);
+          auto bucket_it = old_buckets.find(bucket);
+          if (bucket_it == old_buckets.end())
+            continue;
+          for (const size_t old_idx : bucket_it->second) {
+            const float distance =
+                (new_nodes[new_idx]->center_ - old_nodes[old_idx]->center_)
+                    .norm();
+            if (distance <= match_resolution)
+              match_candidates.push_back(
+                  MatchCandidate{distance, new_idx, old_idx});
+          }
+        }
+  }
+  std::sort(match_candidates.begin(), match_candidates.end(),
+            [](const MatchCandidate &a, const MatchCandidate &b) {
+              return a.distance < b.distance;
+            });
+  for (const auto &candidate : match_candidates) {
+    if (new_match[candidate.new_idx] >= 0 ||
+        old_match[candidate.old_idx] >= 0)
+      continue;
+    new_match[candidate.new_idx] = candidate.old_idx;
+    old_match[candidate.old_idx] = candidate.new_idx;
+    old_nodes[candidate.old_idx]->missed_update_count_ = 0;
+    nodes_remained.push_back(old_nodes[candidate.old_idx]);
+  }
+
+  for (size_t old_idx = 0; old_idx < old_nodes.size(); ++old_idx) {
+    if (old_match[old_idx] >= 0)
+      continue;
+    auto &old_node = old_nodes[old_idx];
+    const double clearance =
+        lidar_map_interface_->getDisToOcc(old_node->center_);
+    const bool still_safe =
+        std::isfinite(clearance) &&
+        clearance >= parallel_bubble_astar_->safe_distance_;
+    if (still_safe &&
+        static_cast<int>(old_node->missed_update_count_) <
+            std::max(0, node_miss_hysteresis_)) {
+      old_node->missed_update_count_++;
+      nodes_remained.push_back(old_node);
+    } else {
+      nodes2remove.push_back(old_node);
+    }
+  }
+  for (size_t new_idx = 0; new_idx < new_nodes.size(); ++new_idx) {
+    if (new_match[new_idx] < 0)
+      nodes2insert.push_back(new_nodes[new_idx]);
+  }
 
   ros::Time t1 = ros::Time::now();
   removeNodes(nodes2remove);

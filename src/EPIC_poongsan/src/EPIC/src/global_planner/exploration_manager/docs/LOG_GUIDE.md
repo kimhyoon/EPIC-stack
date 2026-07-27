@@ -143,7 +143,7 @@ total=12          프론티어 클러스터 전체
 
 | 증상 | 병목 | 1순위 파라미터 (real.yaml) |
 |---|---|---|
-| `topo_unreachable` ↑ | 경로 도달성 | `bubble_astar/safe_distance` (경로+끝점 이격 요구), `bubble_topo/bubble_min_radius` (스켈레톤 확장). **주의: `min_obstacle_clearance` < `safe_distance`면 그 사이 밴드의 후보는 무조건 여기서 죽음** — 항상 `clearance > safe_distance` 유지 |
+| `topo_unreachable` ↑ | 경로 도달성 | `bubble_astar/safe_distance`가 topology 노드 생성·유지와 엣지 경로의 공통 이격 기준이다. **주의: `min_obstacle_clearance` < `safe_distance`면 그 사이 밴드의 후보는 여기서 제외됨** — 항상 `clearance >= safe_distance` 유지 |
 | `no_candidate` ↑ | 후보 생성 | `ViewpointManager/min_obstacle_clearance`(낮추면 후보↑), `box_0` z범위, 샘플링(`sample_pillar_*`, `circle_sample_num`) |
 | `no_visibility` ↑ | 가시성 | `lidar_perception/fov_*`, `good_observation_direction_score`, 샘플 각도수 |
 | `prev_unreachable` 누적 ↑ | 영구 낙인 | 파라미터로 못 풀음 — 일시적 topo 실패가 영구화되는 코드 동작 (재평가/에이징 코드 수정 필요) |

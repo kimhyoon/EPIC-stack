@@ -13,12 +13,13 @@ FrontierManager/view_frt: false
 bubble_topo/min_x: 1.11
 bubble_topo/min_y: 1.11
 bubble_topo/min_z: 0.51
-bubble_topo/bubble_min_radius: 0.61
 bubble_topo/init_region_size_x: 3.3
 bubble_topo/init_region_size_y: 3.3
 bubble_topo/init_region_size_z: 2.0
 bubble_topo/cube_discrete_size: 0.4
 bubble_topo/odom_node_distance: 3.0
+# topology 노드 생성·유지와 엣지 연결은 이 안전거리 하나를 공통으로 사용한다.
+# 별도 node 반경과 하드코딩 +0.1 m로 판정이 달랐던 기존 구조는 연결 실패와 설정 해석 혼선을 줄이기 위해 제거했다.
 bubble_astar/safe_distance: 0.6
 # map param
 max_update_region_num: 99999999

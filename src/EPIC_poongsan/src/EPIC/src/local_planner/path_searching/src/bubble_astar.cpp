@@ -90,7 +90,7 @@ bool BubbleAstar::generateBubble(GridNodePtr &node, bool is_start) {
   ros::Time end_time = ros::Time::now();
 
   if (point_dis.size() <= 0) {
-    node->safe_bubble->init(pow(4.0 - safe_distance_ - 0.1, 2), node->position);
+    node->safe_bubble->init(pow(4.0 - safe_distance_, 2), node->position);
     safeArea_.emplace_back(node->safe_bubble);
     if (debug_) {
       vizer.visualizeSingleBubble(node->safe_bubble, {1, 0, 0}, false);
@@ -102,7 +102,7 @@ bool BubbleAstar::generateBubble(GridNodePtr &node, bool is_start) {
     return true;
   }
   point_dis[0] = sqrt(point_dis[0]);
-  if (point_dis[0] > safe_distance_ + 0.1) {
+  if (point_dis[0] > safe_distance_) {
     node->safe_bubble->init(pow(point_dis[0] - safe_distance_, 2),
                             node->position);
     safeArea_.emplace_back(node->safe_bubble);
