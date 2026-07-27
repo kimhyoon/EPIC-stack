@@ -406,9 +406,18 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         (dir.head<2>().norm() > 1e-3) ? std::atan2(dir.y(), dir.x()) : fd_->odom_yaw_;
     ed->early_finish_probe_valid_ = true;
 
-    // planGlobalPath 는 insertNodes 직후 updateGoalNode() 를 부르는데, 그때 참조하는
-    // global_tour_ 는 아직 "이전 사이클" 것이다. 그대로 두면 첫 사이클에
-    // callExplorationPlanner() 가 FINISH 직전의 낡은 목표로 궤적을 만든다.
+    // global_tour_ / next_goal_node_ 는 planGlobalPath 가 다음 사이클(0.2s 뒤)에야
+    // 갱신한다. 그때까지 둘 다 "직전에 도달해버린 옛 목표" 를 가리키고 있어, 그냥
+    // 두면 PLAN_TRAJ_EXP 로 돌아간 바로 다음 tick(10ms)에 아래 검사가 즉시 재발동해
+    // FINISH 로 되돌아간다 — 그 시점엔 재시도 래치가 이미 소진돼 구제 분기가 걸리지
+    // 않으므로, probe 를 향해 출발도 못 해보고 미션이 끝난다:
+    //     if (global_tour_.size() == 2 &&
+    //         (global_tour_[1] - odom_pos_).norm() < 1e-1) -> FINISH
+    // 0.2s 뒤 planGlobalPath 의 단일 viewpoint 분기가 만들어낼 것과 같은 모양으로
+    // 미리 채워, 그 공백 동안의 오판만 막는다.
+    ed->global_tour_.clear();
+    ed->global_tour_.push_back(fd_->odom_pos_);
+    ed->global_tour_.push_back(target->center_);
     ed->next_goal_node_->center_ = target->center_;
     ed->next_goal_node_->is_viewpoint_ = true;
 
