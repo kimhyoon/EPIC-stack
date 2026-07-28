@@ -107,7 +107,7 @@
   <!-- 3) bag 재생 (입력 토픽만). required=true 라 재생이 끝나면 launch 도 종료. -->
   <node pkg="epic_planner" type="bag_replay.py" name="bag_replay"
         output="screen" required="true"
-        args="--bag $(arg bag)
+        args="--bag='$(arg bag)'
               --rate $(arg rate)
               --start $(arg start)
               --duration=$(arg duration)
