@@ -28,6 +28,123 @@
 #include <thread>
 #include <visualization_msgs/Marker.h>
 
+namespace {
+
+struct GuidePathTarget {
+  bool found = false;
+  size_t segment_index = 0;
+  double progress = 0.0;
+  Eigen::Vector3d point = Eigen::Vector3d::Zero();
+};
+
+bool isPointInsidePolytope(const Eigen::MatrixX4d &hPoly,
+                           const Eigen::Vector3d &point,
+                           const double tolerance) {
+  if (hPoly.rows() == 0 || !hPoly.allFinite() || !point.allFinite())
+    return false;
+
+  const Eigen::Vector4d homogeneous(point.x(), point.y(), point.z(), 1.0);
+  return (hPoly * homogeneous).maxCoeff() <= tolerance;
+}
+
+GuidePathTarget findFarthestGuidePathTarget(
+    const std::vector<Eigen::Vector3d> &guidePath,
+    const Eigen::MatrixX4d &hPoly, const double boundaryMargin) {
+  GuidePathTarget best;
+  if (guidePath.size() < 2 || hPoly.rows() == 0 || !hPoly.allFinite() ||
+      !std::isfinite(boundaryMargin) || boundaryMargin < 0.0)
+    return best;
+
+  constexpr double kEps = 1.0e-9;
+  double completedLength = 0.0;
+
+  for (size_t segment = 0; segment + 1 < guidePath.size(); ++segment) {
+    const Eigen::Vector3d start = guidePath[segment];
+    const Eigen::Vector3d direction = guidePath[segment + 1] - start;
+    const double segmentLength = direction.norm();
+    if (!start.allFinite() || !direction.allFinite() ||
+        !std::isfinite(segmentLength) || segmentLength <= kEps) {
+      continue;
+    }
+
+    double enter = 0.0;
+    double exit = 1.0;
+    bool intersects = true;
+    for (int row = 0; row < hPoly.rows(); ++row) {
+      const Eigen::Vector3d normal =
+          hPoly.row(row).head<3>().transpose();
+      const double normalNorm = normal.norm();
+      const double offset = hPoly(row, 3);
+      if (!normal.allFinite() || !std::isfinite(normalNorm) ||
+          !std::isfinite(offset)) {
+        intersects = false;
+        break;
+      }
+
+      if (normalNorm <= kEps) {
+        if (offset > kEps)
+          intersects = false;
+        continue;
+      }
+
+      // Shrink the fallback target domain by a physical distance from every
+      // corridor face. Plane normals are not assumed to be normalized.
+      const double valueAtStart =
+          normal.dot(start) + offset + boundaryMargin * normalNorm;
+      const double slope = normal.dot(direction);
+      if (std::abs(slope) <= kEps) {
+        if (valueAtStart > kEps) {
+          intersects = false;
+          break;
+        }
+        continue;
+      }
+
+      const double crossing = -valueAtStart / slope;
+      if (slope > 0.0)
+        exit = std::min(exit, crossing);
+      else
+        enter = std::max(enter, crossing);
+
+      if (enter > exit + kEps) {
+        intersects = false;
+        break;
+      }
+    }
+
+    if (intersects && exit >= -kEps && enter <= 1.0 + kEps) {
+      const double fraction = std::max(0.0, std::min(1.0, exit));
+      const double progress = completedLength + fraction * segmentLength;
+      if (!best.found || progress > best.progress + kEps) {
+        best.found = true;
+        best.segment_index = segment;
+        best.progress = progress;
+        best.point = start + fraction * direction;
+      }
+    }
+    completedLength += segmentLength;
+  }
+
+  return best;
+}
+
+void truncateGuidePath(std::vector<Eigen::Vector3d> &guidePath,
+                       const GuidePathTarget &target) {
+  constexpr double kEps = 1.0e-9;
+  if (!target.found || target.segment_index + 1 >= guidePath.size())
+    return;
+
+  std::vector<Eigen::Vector3d> truncated(
+      guidePath.begin(), guidePath.begin() + target.segment_index + 1);
+  if (truncated.empty() ||
+      (target.point - truncated.back()).norm() > kEps) {
+    truncated.push_back(target.point);
+  }
+  guidePath.swap(truncated);
+}
+
+} // namespace
+
 namespace fast_planner {
 // SECTION interfaces for setup and query
 
@@ -453,11 +570,13 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     }
   }
   for (int i = 0; i < 2; i++) {
-    min_bd[i] = (min_bd[i] - 3.0);
-    max_bd[i] = (max_bd[i] + 3.0);
+    min_bd[i] =
+        (min_bd[i] - gcopter_config_->corridorSearchMarginXY);
+    max_bd[i] =
+        (max_bd[i] + gcopter_config_->corridorSearchMarginXY);
   }
-  min_bd[2] -= 1.0;
-  max_bd[2] += 1.0;
+  min_bd[2] -= gcopter_config_->corridorSearchMarginZ;
+  max_bd[2] += gcopter_config_->corridorSearchMarginZ;
 
   PointVector Searched_Points;
   lidar_map_interface_->boxSearch(min_bd, max_bd, Searched_Points);
@@ -471,7 +590,9 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       new pcl::PointCloud<pcl::PointXYZ>);
   cloud_origin->points = Searched_Points;
   sor.setInputCloud(cloud_origin);
-  sor.setLeafSize(0.28, 0.28, 0.28);  // 0.35 → 0.28
+  sor.setLeafSize(gcopter_config_->corridorObstacleVoxelSize,
+                  gcopter_config_->corridorObstacleVoxelSize,
+                  gcopter_config_->corridorObstacleVoxelSize);
   sor.filter(*cloud_tmp);
   publishDebugObstaclePoints(cloud_tmp);
 
@@ -484,10 +605,15 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   std::vector<Eigen::MatrixX4d> hPolys; // 多面体飞行走廊
 
-  sfc_gen::convexCover(gcopter_viz_, path_shorten, surf_points,
-                       min_bd.cast<double>(), max_bd.cast<double>(), 7.0,
-                       gcopter_config_->corridor_size, hPolys, 1e-6,
-                       gcopter_config_->dilateRadiusSoft);
+  sfc_gen::convexCover(
+      gcopter_viz_, path_shorten, surf_points, min_bd.cast<double>(),
+      max_bd.cast<double>(), gcopter_config_->corridorProgressLength,
+      gcopter_config_->corridor_size, hPolys, 1e-6,
+      gcopter_config_->dilateRadiusSoft,
+      static_cast<size_t>(gcopter_config_->corridorMaxObstacleSamples),
+      gcopter_config_->firiObstacleDistanceLimit,
+      gcopter_config_->firiMaxPlaneCount,
+      gcopter_config_->corridorGapViolationPlaneThreshold);
 
   // Preserve the raw FIRI corridor before the P0 seed box and observed-FOV
   // clipping. Method B does not alter the obstacle set, so no second
@@ -582,7 +708,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (start_idx > 0) { // -1(위에서 계속 진행하는 경우) erase 방지
     hPolys.erase(hPolys.begin(), hPolys.begin() + start_idx);
   }
-  sfc_gen::shortCut(hPolys);
+  sfc_gen::shortCut(hPolys, gcopter_config_->corridorOverlapTolerance);
 
   // ros::Duration(1.0).sleep();
 
@@ -593,42 +719,66 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
-  int front = 0;
-  int back = 1;
-  while (back < hPolys.size() - 1) {
-    bool overlap = overlap =
-        geo_utils::overlap(hPolys[front], hPolys[back], 1e-2);
-    if (overlap) {
-      front += 1;
-      back += 1;
-    } else {
+  size_t lastConnected = 0;
+  for (size_t index = 1; index < hPolys.size(); ++index) {
+    if (!geo_utils::overlap(hPolys[index - 1], hPolys[index],
+                            gcopter_config_->corridorOverlapTolerance)) {
       break;
     }
+    lastConnected = index;
   }
-  // Is the guide-path terminal actually inside the last corridor polytope? With
-  // observation clipping the corridor can close before the goal, leaving
-  // path_shorten.back() OUTSIDE it. An out-of-corridor terminal makes GCOPTER's
-  // line-search collapse (optimize fails -> stuck replanning). Treat it exactly
-  // like a broken chain and reuse the same fallback: retarget to an interior
-  // point of the connected corridor (go as far as the observed corridor allows,
-  // re-observe next replan). Gated on clipping so clip=false is unchanged.
-  bool goal_outside_corridor = false;
-  if (clip_corridor_to_observed_) {
-    Eigen::Vector4d gh(path_shorten.back().x(), path_shorten.back().y(),
-                       path_shorten.back().z(), 1.0);
-    goal_outside_corridor = ((hPolys.back() * gh).array() > 1.0e-6).any();
-  }
-  if (front != hPolys.size() - 2 || goal_outside_corridor) {
-    if (front != hPolys.size() - 2)
-      ROS_ERROR("front != hPolys.size() - 2");
-    else
-      ROS_WARN_THROTTLE(1.0, "guide-path goal outside clipped corridor; "
-                             "retargeting to corridor interior");
-    Eigen::Vector3d inner;
-    geo_utils::findInterior(hPolys[front], inner);
-    finState << inner, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero();
-    hPolys.resize(front + 1);
+
+  const bool chainFullyConnected = lastConnected + 1 == hPolys.size();
+  const bool goalInsideLastCorridor =
+      chainFullyConnected &&
+      isPointInsidePolytope(hPolys.back(), path_shorten.back(), 1.0e-6);
+  if (!chainFullyConnected || !goalInsideLastCorridor) {
+    const GuidePathTarget fallback = findFarthestGuidePathTarget(
+        path_shorten, hPolys[lastConnected],
+        gcopter_config_->corridorFallbackTargetMargin);
+    if (!fallback.found) {
+      last_plan_fail_reason_ =
+          "corridor fallback has no guide-path point inside connected prefix";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+    if (fallback.progress <
+        gcopter_config_->corridorFallbackMinProgress) {
+      last_plan_fail_reason_ =
+          "corridor fallback progress below configured minimum";
+      ROS_WARN_THROTTLE(
+          2.0, "[local-plan] %s (%.3f < %.3f m)",
+          last_plan_fail_reason_.c_str(), fallback.progress,
+          gcopter_config_->corridorFallbackMinProgress);
+      return false;
+    }
+
+    const size_t originalCorridorCount = hPolys.size();
+    hPolys.resize(lastConnected + 1);
+    truncateGuidePath(path_shorten, fallback);
+    if (path_shorten.size() < 2) {
+      last_plan_fail_reason_ =
+          "corridor fallback produced fewer than two guide-path points";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+
+    use_shorten_path = true;
+    const Eigen::Vector3d fwdDir =
+        path_shorten.back() - path_shorten[path_shorten.size() - 2];
+    if (fwdDir.x() * fwdDir.x() + fwdDir.y() * fwdDir.y() >
+        fwdDir.z() * fwdDir.z()) {
+      local_data_.end_yaw_ = std::atan2(fwdDir.y(), fwdDir.x());
+    }
+    finState << fallback.point, Eigen::Vector3d::Zero(),
+        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+    ROS_WARN_THROTTLE(
+        1.0,
+        "corridor fallback target selected at %.2f m guide progress "
+        "(connected pieces %zu/%zu)",
+        fallback.progress, lastConnected + 1, originalCorridorCount);
     gcopter_viz_->visualizePolytope(hPolys, true);
   } else {
     finState << path_shorten.back(), Eigen::Vector3d::Zero(),
@@ -1121,8 +1271,9 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
       surf_points[0].data(), 3, surf_points.size());
   Eigen::MatrixX4d hp;
   firi::firi(bd, pc, topo_graph_->odom_node_->center_.cast<double>(),
-             topo_graph_->odom_node_->center_.cast<double>(),
-             hp); // 计算出包含a和b的凸包
+             topo_graph_->odom_node_->center_.cast<double>(), hp, 2, 1.0e-6,
+             gcopter_config_->firiObstacleDistanceLimit,
+             gcopter_config_->firiMaxPlaneCount); // 计算出包含a和b的凸包
   std::vector<Eigen::MatrixX4d> hPolys;
   hPolys.push_back(hp);
   hPolys.push_back(hp);
@@ -1181,7 +1332,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   if (start_idx > 0) {
     hPolys.erase(hPolys.begin(), hPolys.begin() + start_idx);
   }
-  sfc_gen::shortCut(hPolys);
+  sfc_gen::shortCut(hPolys, gcopter_config_->corridorOverlapTolerance);
 
   // ros::Duration(1.0).sleep();
 

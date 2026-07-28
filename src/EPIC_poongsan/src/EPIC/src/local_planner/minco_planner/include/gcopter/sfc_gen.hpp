@@ -51,7 +51,7 @@ namespace sfc_gen {
  * @return Downsampled point cloud
  */
 inline std::vector<Eigen::Vector3d> downsamplePoints(const std::vector<Eigen::Vector3d>& points, 
-                                                     size_t target_size = 1000) {
+                                                     size_t target_size) {
     if (points.size() <= target_size) {
         return points;
     }
@@ -73,7 +73,11 @@ inline std::vector<Eigen::Vector3d> downsamplePoints(const std::vector<Eigen::Ve
  */
 inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vector<Eigen::Vector3d> &path, const std::vector<Eigen::Vector3d> &points,
                         const Eigen::Vector3d &lowCorner, const Eigen::Vector3d &highCorner, const double &progress, const double &range, std::vector<Eigen::MatrixX4d> &hpolys,
-                        const double eps = 1.0e-6, const double dilate_radius_ = 0.1) {
+                        const double eps, const double dilate_radius_,
+                        const size_t max_obstacle_samples,
+                        const double firi_obstacle_distance_limit,
+                        const int firi_max_plane_count,
+                        const int gap_violation_plane_threshold) {
   // hpolys.clear();
   const int n = path.size();
   Eigen::Matrix<double, 6, 4> bd = Eigen::Matrix<double, 6, 4>::Zero();
@@ -133,8 +137,8 @@ inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vec
     }
     
     // Downsample valid points for faster processing
-    if (valid_pc.size() > 500) {
-      valid_pc = downsamplePoints(valid_pc, 500);
+    if (valid_pc.size() > max_obstacle_samples) {
+      valid_pc = downsamplePoints(valid_pc, max_obstacle_samples);
     }
     
     // Skip firi computation if no valid points
@@ -152,7 +156,8 @@ inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vec
     }
     
     Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(valid_pc[0].data(), 3, valid_pc.size());
-    firi::firi(bd, pc, a, b, hp); // 计算出包含a和b的凸包
+    firi::firi(bd, pc, a, b, hp, 2, eps, firi_obstacle_distance_limit,
+               firi_max_plane_count); // 计算出包含a和b的凸包
     Eigen::MatrixX4d hp_origin = hp;
 
     // 将凸包向里收缩，收缩大小为膨胀半径
@@ -165,16 +170,18 @@ inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vec
     // Reduced firi calls for performance - only call when necessary
     if (((hp * bh).array() > -eps).cast<int>().sum() > 0) {
       // Only generate additional polytopes if the current one is valid
-      firi::firi(bd, pc, a, a, hp, 1);
+      firi::firi(bd, pc, a, a, hp, 1, eps, firi_obstacle_distance_limit,
+                 firi_max_plane_count);
       hp.col(3) = hp.col(3).array() + dilate_radius_ * hp.leftCols(3).rowwise().norm().array();
       hpolys.emplace_back(hp);
       
       // Skip middle point generation for performance
-      // firi::firi(bd, pc, (a + b) / 2.0, (a + b) / 2.0, hp, 1);
+      // Middle-point FIRI generation remains intentionally disabled.
       // hp.col(3) = hp.col(3).array() + dilate_radius_ * hp.leftCols(3).rowwise().norm().array();
       // hpolys.emplace_back(hp);
       
-      firi::firi(bd, pc, b, b, hp, 1);
+      firi::firi(bd, pc, b, b, hp, 1, eps, firi_obstacle_distance_limit,
+                 firi_max_plane_count);
       hp.col(3) = hp.col(3).array() + dilate_radius_ * hp.leftCols(3).rowwise().norm().array();
       hpolys.emplace_back(hp);
     }
@@ -182,8 +189,11 @@ inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vec
     // Simplified gap generation logic
     if (hpolys.size() != 0) {
       const Eigen::Vector4d ah(a(0), a(1), a(2), 1.0);
-      if (3 <= ((hp * ah).array() > -eps).cast<int>().sum() + ((hpolys.back() * ah).array() > -eps).cast<int>().sum()) {
-        firi::firi(bd, pc, a, a, gap, 1);
+      if (gap_violation_plane_threshold <=
+          ((hp * ah).array() > -eps).cast<int>().sum() +
+              ((hpolys.back() * ah).array() > -eps).cast<int>().sum()) {
+        firi::firi(bd, pc, a, a, gap, 1, eps,
+                   firi_obstacle_distance_limit, firi_max_plane_count);
         hpolys.emplace_back(gap);
       }
     }
@@ -192,7 +202,8 @@ inline void convexCover(const std::unique_ptr<Visualizer> &vizer, const std::vec
   }
 }
 
-inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys) {
+inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys,
+                     const double overlap_tolerance) {
   std::vector<Eigen::MatrixX4d> htemp = hpolys;
   if (htemp.size() == 1) {
     Eigen::MatrixX4d headPoly = htemp.front();
@@ -208,7 +219,8 @@ inline void shortCut(std::vector<Eigen::MatrixX4d> &hpolys) {
   for (int i = M - 1; i >= 0; i--) {
     for (int j = 0; j < i; j++) {
       if (j < i - 1) {
-        overlap = geo_utils::overlap(htemp[i], htemp[j], 1e-2);
+        overlap =
+            geo_utils::overlap(htemp[i], htemp[j], overlap_tolerance);
       } else {
         overlap = true;
       }

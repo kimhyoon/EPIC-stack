@@ -72,6 +72,17 @@ struct GcopterConfig {
   double flatnessNormEps;
   double minPathSegmentLength;
   double linearSolvePivotEps;
+  double corridorObstacleVoxelSize;
+  double corridorSearchMarginXY;
+  double corridorSearchMarginZ;
+  double corridorProgressLength;
+  int corridorMaxObstacleSamples;
+  double firiObstacleDistanceLimit;
+  int firiMaxPlaneCount;
+  int corridorGapViolationPlaneThreshold;
+  double corridorOverlapTolerance;
+  double corridorFallbackTargetMargin;
+  double corridorFallbackMinProgress;
 
   void init(const ros::NodeHandle &nh_priv) {
     auto missingParam = [](const char *name) {
@@ -123,6 +134,28 @@ struct GcopterConfig {
     requireDouble("numerical/flatness_norm_eps", flatnessNormEps);
     requireDouble("numerical/min_path_segment_length", minPathSegmentLength);
     requireDouble("numerical/linear_solve_pivot_eps", linearSolvePivotEps);
+    requireDouble("local_planning/corridor/obstacle_voxel_size",
+                  corridorObstacleVoxelSize);
+    requireDouble("local_planning/corridor/search_margin_xy",
+                  corridorSearchMarginXY);
+    requireDouble("local_planning/corridor/search_margin_z",
+                  corridorSearchMarginZ);
+    requireDouble("local_planning/corridor/progress_length",
+                  corridorProgressLength);
+    requireInt("local_planning/corridor/max_obstacle_samples",
+               corridorMaxObstacleSamples);
+    requireDouble("local_planning/corridor/firi_obstacle_distance_limit",
+                  firiObstacleDistanceLimit);
+    requireInt("local_planning/corridor/firi_max_plane_count",
+               firiMaxPlaneCount);
+    requireInt("local_planning/corridor/gap_violation_plane_threshold",
+               corridorGapViolationPlaneThreshold);
+    requireDouble("local_planning/corridor/overlap_tolerance",
+                  corridorOverlapTolerance);
+    requireDouble("local_planning/corridor/fallback_target_margin",
+                  corridorFallbackTargetMargin);
+    requireDouble("local_planning/corridor/fallback_min_progress",
+                  corridorFallbackMinProgress);
 
     auto validatePositive = [](const char *name, double value) {
       if (!std::isfinite(value) || value <= 0.0) {
@@ -161,6 +194,22 @@ struct GcopterConfig {
                      minPathSegmentLength);
     validatePositive("numerical/linear_solve_pivot_eps",
                      linearSolvePivotEps);
+    validatePositive("local_planning/corridor/obstacle_voxel_size",
+                     corridorObstacleVoxelSize);
+    validatePositive("local_planning/corridor/search_margin_xy",
+                     corridorSearchMarginXY);
+    validatePositive("local_planning/corridor/search_margin_z",
+                     corridorSearchMarginZ);
+    validatePositive("local_planning/corridor/progress_length",
+                     corridorProgressLength);
+    validatePositive("local_planning/corridor/firi_obstacle_distance_limit",
+                     firiObstacleDistanceLimit);
+    validatePositive("local_planning/corridor/overlap_tolerance",
+                     corridorOverlapTolerance);
+    validatePositive("local_planning/corridor/fallback_min_progress",
+                     corridorFallbackMinProgress);
+    validateFinite("local_planning/corridor/fallback_target_margin",
+                   corridorFallbackTargetMargin);
     validateFinite("HorizDrag", horizDrag);
     validateFinite("VertDrag", vertDrag);
     validateFinite("ParasDrag", parasDrag);
@@ -178,6 +227,17 @@ struct GcopterConfig {
     if (integralIntervs <= 0) {
       ROS_FATAL("[NumericalGuard] IntegralIntervs must be greater than zero");
       throw std::runtime_error("invalid parameter: IntegralIntervs");
+    }
+    if (corridorMaxObstacleSamples <= 0 || firiMaxPlaneCount < 6 ||
+        corridorGapViolationPlaneThreshold <= 0) {
+      ROS_FATAL("[CorridorConfig] sample count and gap threshold must be "
+                "positive, and firi_max_plane_count must be at least 6");
+      throw std::runtime_error("invalid Corridor/FIRI integer parameter");
+    }
+    if (corridorFallbackTargetMargin < 0.0) {
+      ROS_FATAL("[CorridorConfig] fallback_target_margin must be non-negative");
+      throw std::runtime_error(
+          "invalid parameter: local_planning/corridor/fallback_target_margin");
     }
   }
 };
