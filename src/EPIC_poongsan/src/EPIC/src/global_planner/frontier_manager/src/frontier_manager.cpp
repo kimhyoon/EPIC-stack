@@ -95,6 +95,18 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   // 키가 없으면 3e-4 = 기존 하드코딩 값이라 동작이 바뀌지 않는다.
   nh.param("ViewpointManager/reachability_search_timeout",
            vpp_.reachability_search_timeout_, 3e-4);
+  // [feature: vp-reached-clear] 도달-후-미해소 클러스터 강제 해소.
+  nh.param("ViewpointManager/vp_reached_clear_enable",
+           vpp_.vp_reached_clear_enable_, true);
+  nh.param("ViewpointManager/vp_reached_pos_tol", vpp_.vp_reached_pos_tol_,
+           0.3f);
+  float vp_reached_yaw_deg = 20.0f;
+  nh.param("ViewpointManager/vp_reached_yaw_tol_deg", vp_reached_yaw_deg,
+           20.0f);
+  vpp_.vp_reached_yaw_tol_ = vp_reached_yaw_deg * static_cast<float>(M_PI) / 180.0f;
+  ROS_INFO("[FrontierManager] vp-reached clear: %s  pos_tol=%.2fm yaw_tol=%.1fdeg",
+           vpp_.vp_reached_clear_enable_ ? "on" : "off",
+           vpp_.vp_reached_pos_tol_, vp_reached_yaw_deg);
 
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
@@ -1503,14 +1515,26 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     cluster->best_vp_ = vps[best_vp_idx].getVector3fMap();
     cluster->best_vp_score_ = (int)score[best_vp_idx];
     cluster->reason_ = CR_OK;
-    if (((cluster->best_vp_ - graph_->odom_node_->center_).norm() < 1e-2) &&
-        (fabs(cluster->best_vp_yaw_ - graph_->odom_node_->yaw_) < 1e-2)) {
-      // 뷰포인트에 이미 도달했는데도 프론티어가 안 없어짐 -> odom 드리프트 의심.
-      // 원 저자 주석: "飞到但看不到，说明odom漂了" (이 연구에서는 처리하지 않음)
-      cluster->is_reachable_ = false;
-      cluster->is_dormant_ = true;
-      cluster->reason_ = CR_ODOM_DRIFT;
-      cluster->vp_clusters_.clear();
+    // [feature: vp-reached-clear] 뷰포인트에 도달했는데도 프론티어가 안 없어지는
+    // 클러스터를 강제 해소한다. 원 저자 주석: "飞到但看不到，说明odom漂了".
+    // 원래 임계값은 1e-2 (위치 1cm / yaw 0.57deg) 라 실질적으로 발동한 적이 없다 —
+    // best_vp_ 는 origin_viewpoints_ 의 이산 샘플이고 best_vp_yaw_ 는 45deg 격자라
+    // 실제 자세와 그 정도로 일치할 일이 없다. 이제 실도달 허용치를 쓰되, 지나가다
+    // 우연히 겹친 클러스터를 지우지 않도록 hold_time 만큼 연속 유지를 요구한다.
+    if (vpp_.vp_reached_clear_enable_) {
+      const float dpos =
+          (cluster->best_vp_ - graph_->odom_node_->center_).norm();
+      float dyaw = cluster->best_vp_yaw_ - graph_->odom_node_->yaw_;
+      // 원래 코드에 없던 wrap. +179deg 와 -179deg 는 2deg 차이지 358deg 가 아니다.
+      while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+      while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
+      if (dpos < vpp_.vp_reached_pos_tol_ &&
+          fabs(dyaw) < vpp_.vp_reached_yaw_tol_) {
+        cluster->is_reachable_ = false;
+        cluster->is_dormant_ = true;
+        cluster->reason_ = CR_ODOM_DRIFT;
+        cluster->vp_clusters_.clear();
+      }
     }
     int tmp_idx = best_vp_idx;
     for (auto &vpc : cluster->vp_clusters_) {

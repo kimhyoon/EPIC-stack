@@ -336,6 +336,18 @@ ViewpointManager/local_tsp_size: 8  # 한 주기에 검사할 Frontier 묶음 �
 # /global_planning/remove_unreachable_cost 의 p90 이 10-15 ms 를 넘기 시작하면 낮출 것.
 ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[s]
 
+# [도달했는데 안 없어지는 Frontier 강제 해소]
+# 뷰포인트까지 갔는데도 그 클러스터의 Frontier 가 그대로면, 그 위치에서는 실제로
+# 관측되지 않는다고 보고 클러스터의 셀 전부를 관측 완료(DENSE)로 표시하고 제거한다.
+# 원저자가 의도했던 경로인데 임계값이 1cm/0.57deg 라 한 번도 발동한 적이 없었다.
+# 주의: 실제로 보지 못한 공간을 본 것으로 처리하는 조치다. 영구적이며 되돌릴 수
+# 없고, 예측 가시 셀(see)보다 많은 셀까지 함께 지운다. 대신 탐사가 한 목표에
+# 묶여 비행 내내 멈추는 것을 막는다 (4회차 09-23-37: 52초 동안 한 목표 고정).
+# 근본 원인(gap/FOV-edge 로 관측이 거부되는 것)을 고치는 것이 아니라 증상 처리다.
+# enable=false 로 끄면 기존(발동 안 함) 동작으로 되돌아간다.
+ViewpointManager/vp_reached_clear_enable: true   # 강제 해소 사용
+ViewpointManager/vp_reached_pos_tol: 0.3         # best_vp 와의 거리 허용치[m]
+ViewpointManager/vp_reached_yaw_tol_deg: 20.0    # best_vp yaw 와의 차이 허용치[deg]
 
 
 

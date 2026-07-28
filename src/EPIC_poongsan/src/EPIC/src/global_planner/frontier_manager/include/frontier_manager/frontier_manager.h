@@ -111,6 +111,15 @@ struct ViewpointParam {
   // 실측(5회차 09-08-30): topo A* 소요 median 0.119ms / p90 0.290ms / max 0.958ms.
   // 즉 0.3ms 는 p90 에 정확히 걸쳐 있어 먼 목표부터 시간만으로 탈락했다.
   double reachability_search_timeout_ = 3e-4;
+  // [feature: vp-reached-clear] "뷰포인트까지 갔는데 프론티어가 그대로"인 클러스터를
+  // 강제 해소한다. 원 저자가 CR_ODOM_DRIFT 로 의도했던 경로인데 세 가지가 깨져 있어
+  // 한 번도 발동한 적이 없었다: 임계값 1cm/0.57deg, is_reachable_ 체크가 먼저 오는
+  // continue, 그리고 index 를 id 로 비교하는 제거 조건.
+  // 실측(4회차 09-23-37): 드론이 뷰포인트 0.07m 앞에 33초를 떠 있었고 클러스터 #519
+  // (frt 25, see 17) 는 끝까지 살아남아 탐사가 비행 내내 한 목표에 묶였다.
+  bool vp_reached_clear_enable_ = true;
+  float vp_reached_pos_tol_ = 0.3f;   // [m]   best_vp_ 와의 거리 허용치
+  float vp_reached_yaw_tol_ = 0.35f;  // [rad] best_vp_yaw_ 와의 차이 허용치 (~20deg)
 };
 
 // [feature: vp-viz] viewpoint 후보 하나의 최종 판정. 파이프라인이 후보를 버리는

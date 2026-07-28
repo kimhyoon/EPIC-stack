@@ -151,13 +151,21 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   for (int i = 0; i < clusters_can_be_searched_.size(); i++) {
     auto cluster = clusters_can_be_searched_[i];
     selectBestViewpoint(cluster);
+    // [feature: vp-reached-clear] 아래 두 줄이 원래 `if (!is_reachable_) continue;`
+    // 뒤에 있었다. selectBestViewpoint 의 도달-후-미해소 분기는 is_dormant_ 와
+    // is_reachable_=false 를 함께 세팅하므로 continue 가 먼저 걸려 제거 등록에
+    // 영원히 도달하지 못했다. 또 넣는 값이 clusters_can_be_searched_ 의 인덱스
+    // i 였는데 제거 조건은 cluster->id_(전역 증가 카운터)와 비교하고 있어서,
+    // 설령 도달했더라도 엉뚱한 클러스터가 지워졌다.
+    if (cluster->is_dormant_) {
+      mtx.lock();
+      cluster2remove.insert(cluster->id_);
+      mtx.unlock();
+    }
     if (!cluster->is_reachable_)
       continue;
     mtx.lock();
     tsp_clusters.push_back(cluster);
-    if (cluster->is_dormant_) {
-      cluster2remove.insert(i);
-    }
     mtx.unlock();
   }
   // 飞到但看不到，说明odom漂了，这篇工作不处理，直接跳过
