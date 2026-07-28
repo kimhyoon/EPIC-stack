@@ -369,13 +369,14 @@ ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_
 SmoothingEps: 0.015
 IntegralIntervs: 32
 
-# [수치 연산 안정화][필수 설정]
-# 0 나눗셈, 영벡터 정규화 및 삼각함수 경계 오차로 인한 NaN을 연산 전에 방지한다.
-numerical/yaw_diff_eps: 1.0e-9
-numerical/trig_gradient_eps: 1.0e-9
-numerical/vector_norm_eps: 1.0e-6
-numerical/min_segment_time: 1.0e-3
-numerical/flatness_norm_eps: 1.0e-6
+# [NaN 방지 수치 안정화][절대 수정 금지]
+# 아래 5개 값은 0 나눗셈, 영벡터 정규화 및 삼각함수 경계 오차를 방지하는 검증값이다.
+# 값을 변경하지 말 것. 항목이 누락되거나 0·음수·비정상 값이면 Planner가 실행을 거부한다.
+numerical/yaw_diff_eps: 1.0e-9       # Yaw 차이 계산의 분모 하한
+numerical/trig_gradient_eps: 1.0e-9  # acos·sqrt 경계의 gradient 하한
+numerical/vector_norm_eps: 1.0e-6    # 벡터 정규화 분모 하한
+numerical/min_segment_time: 1.0e-3   # MINCO/Yaw 궤적 구간의 최소 시간[s]
+numerical/flatness_norm_eps: 1.0e-6  # Flatness 변환의 norm·분모 하한
 
 RelCostTol: 1.1e-6
 
