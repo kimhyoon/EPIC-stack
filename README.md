@@ -12,11 +12,15 @@ need MID360-to-ML-X cloud cropping.
 Only clone the onboard planner tree:
 
 ```bash
-git clone --filter=blob:none --sparse --branch donghyuck \
-  https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-poongsan-onboard
+ git clone --filter=blob:none --sparse --branch donghyuck \
+    https://github.com/kimhyoon/EPIC-stack.git EPIC-stack-poongsan-onboard
 
-cd EPIC-stack-poongsan-onboard
-git sparse-checkout set src/EPIC_poongsan
+  cd EPIC-stack-poongsan-onboard
+
+  git sparse-checkout set \
+    src/EPIC_poongsan \
+    src/reactive_local_avoidance
+
 ```
 
 Build with the crop bridge disabled:
