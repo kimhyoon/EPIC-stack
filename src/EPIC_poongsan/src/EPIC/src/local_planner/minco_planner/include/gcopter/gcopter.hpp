@@ -26,6 +26,7 @@
 #define GCOPTER_HPP
 
 #include <Eigen/Eigen>
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <gcopter/geo_utils.hpp>
@@ -90,6 +91,11 @@ private:
   double yaw_max_vel;
   double yaw_time_fwd;
   int integralResolution_yaw;
+  double yaw_diff_eps;
+  double trig_gradient_eps;
+  double vector_norm_eps;
+  double min_segment_time;
+  double flatness_norm_eps;
   bool use_shorten_path = false;
   Eigen::Matrix3Xd guide_path;
 
@@ -114,11 +120,17 @@ private:
   }
 
   template <typename EIGENVEC>
-  static inline void backwardT(const Eigen::VectorXd &T, EIGENVEC &tau) {
+  static inline void backwardT(const Eigen::VectorXd &T, EIGENVEC &tau,
+                               const double minSegmentTime) {
     const int sizeT = T.size();
     tau.resize(sizeT);
     for (int i = 0; i < sizeT; i++) {
-      tau(i) = T(i) > 1.0 ? (sqrt(2.0 * T(i) - 1.0) - 1.0) : (1.0 - sqrt(2.0 / T(i) - 1.0));
+      const double safeT =
+          std::isfinite(T(i)) ? std::max(T(i), minSegmentTime)
+                              : minSegmentTime;
+      tau(i) = safeT > 1.0
+                   ? (sqrt(2.0 * safeT - 1.0) - 1.0)
+                   : (1.0 - sqrt(2.0 / safeT - 1.0));
     }
 
     return;
@@ -143,25 +155,41 @@ private:
   }
 
   static inline void forwardP(const Eigen::VectorXd &xi, const Eigen::VectorXi &vIdx,
-                              const PolyhedraV &vPolys, Eigen::Matrix3Xd &P) {
+                              const PolyhedraV &vPolys, Eigen::Matrix3Xd &P,
+                              const double vectorNormEps) {
     const int sizeP = vIdx.size();
     P.resize(3, sizeP);
     Eigen::VectorXd q;
     for (int i = 0, j = 0, k, l; i < sizeP; i++, j += k) {
       l = vIdx(i);
       k = vPolys[l].cols();
-      q = xi.segment(j, k).normalized().head(k - 1);
+      const Eigen::VectorXd segment = xi.segment(j, k);
+      const double segment_norm = std::max(segment.norm(), vectorNormEps);
+      q = (segment / segment_norm).head(k - 1);
       P.col(i) = vPolys[l].rightCols(k - 1) * q.cwiseProduct(q) + vPolys[l].col(0);
     }
     return;
   }
 
-  static inline double costTinyNLS(void *ptr, const Eigen::VectorXd &xi, Eigen::VectorXd &gradXi) {
+  struct TinyNLSData {
+    const Eigen::Matrix3Xd *overlap_poly;
+    double vector_norm_eps;
+  };
+
+  static inline double costTinyNLS(void *ptr, const Eigen::VectorXd &xi,
+                                   Eigen::VectorXd &gradXi) {
+    if (!xi.allFinite()) {
+      gradXi.setZero(xi.size());
+      return std::numeric_limits<double>::infinity();
+    }
     const int n = xi.size();
-    const Eigen::Matrix3Xd &ovPoly = *(Eigen::Matrix3Xd *)ptr;
+    const TinyNLSData &data = *static_cast<TinyNLSData *>(ptr);
+    const Eigen::Matrix3Xd &ovPoly = *data.overlap_poly;
 
     const double sqrNormXi = xi.squaredNorm();
-    const double invNormXi = 1.0 / sqrt(sqrNormXi);
+    const double invNormXi =
+        1.0 / std::max(std::sqrt(std::max(0.0, sqrNormXi)),
+                       data.vector_norm_eps);
     const Eigen::VectorXd unitXi = xi * invNormXi;
     const Eigen::VectorXd r = unitXi.head(n - 1);
     const Eigen::Vector3d delta =
@@ -187,7 +215,8 @@ private:
 
   template <typename EIGENVEC>
   static inline void backwardP(const Eigen::Matrix3Xd &P, const Eigen::VectorXi &vIdx,
-                               const PolyhedraV &vPolys, EIGENVEC &xi) {
+                               const PolyhedraV &vPolys, EIGENVEC &xi,
+                               const double vectorNormEps) {
     const int sizeP = P.cols();
 
     double minSqrD;
@@ -207,8 +236,9 @@ private:
       ovPoly.rightCols(k) = vPolys[l];
       Eigen::VectorXd x(k);
       x.setConstant(sqrt(1.0 / k));
+      TinyNLSData data{&ovPoly, vectorNormEps};
       lbfgs::lbfgs_optimize(x, minSqrD, &GCOPTER_PolytopeSFC::costTinyNLS, nullptr, nullptr,
-                            &ovPoly, tiny_nls_params);
+                            &data, tiny_nls_params);
 
       xi.segment(j, k) = x;
     }
@@ -219,7 +249,8 @@ private:
   template <typename EIGENVEC>
   static inline void backwardGradP(const Eigen::VectorXd &xi, const Eigen::VectorXi &vIdx,
                                    const PolyhedraV &vPolys, const Eigen::Matrix3Xd &gradP,
-                                   EIGENVEC &gradXi) {
+                                   EIGENVEC &gradXi,
+                                   const double vectorNormEps) {
     const int sizeP = vIdx.size();
     gradXi.resize(xi.size());
 
@@ -229,7 +260,7 @@ private:
       l = vIdx(i);
       k = vPolys[l].cols();
       q = xi.segment(j, k);
-      normInv = 1.0 / q.norm();
+      normInv = 1.0 / std::max(q.norm(), vectorNormEps);
       unitQ = q * normInv;
       gradQ.resize(k);
       gradQ.head(k - 1) = (vPolys[l].rightCols(k - 1).transpose() * gradP.col(i)).array() *
@@ -324,7 +355,12 @@ private:
     // }
     // return false;
     double diff = p.x() - guide_p.x();
-    double abs_diff = abs(diff);
+    if (!std::isfinite(diff)) {
+      costp = 0.0;
+      gradp.setZero();
+      return false;
+    }
+    const double abs_diff = std::abs(diff);
 
     double mu_ = 1.5e-1;
     double smooth_cost, smooth_grad;
@@ -332,7 +368,9 @@ private:
     if (smoothedL1(abs_diff, mu_, smooth_cost, smooth_grad)) {
       costp = yaw_rho_vis * smooth_cost;
       gradp.setZero();
-      gradp.x() = yaw_rho_vis * smooth_grad * (diff / abs_diff); // 链式法则
+      const double safe_abs_diff = std::max(abs_diff, yaw_diff_eps);
+      gradp.x() =
+          yaw_rho_vis * smooth_grad * (diff / safe_abs_diff); // 链式法则
       return true;
     }
 
@@ -344,7 +382,7 @@ private:
   const PolyhedraH &hPolys, const double &smoothFactor, const int &integralResolution,
   const Eigen::VectorXd &magnitudeBounds, const Eigen::VectorXd &penaltyWeights,
   flatness::FlatnessMap &flatMap, double &cost, Eigen::VectorXd &gradT, Eigen::MatrixX3d &gradC,
-  double &dilate_radius_) {
+  double &dilate_radius_, const double trigGradientEps) {
     const double velSqrMax = magnitudeBounds(0) * magnitudeBounds(0);
     const double omgSqrMax = magnitudeBounds(1) * magnitudeBounds(1);
     const double thetaMax = magnitudeBounds(2);
@@ -425,6 +463,7 @@ private:
         violaOmg = omg.squaredNorm() - omgSqrMax;
         violaAcc = acc.squaredNorm() - 3.0;
         cos_theta = 1.0 - 2.0 * (quat(1) * quat(1) + quat(2) * quat(2));
+        cos_theta = std::clamp(cos_theta, -1.0, 1.0);
         violaTheta = acos(cos_theta) - thetaMax;
         violaThrust = (thr - thrustMean) * (thr - thrustMean) - thrustSqrRadi;
 
@@ -459,7 +498,10 @@ private:
         }
 
         if (smoothedL1(violaTheta, smoothFactor, violaThetaPena, violaThetaPenaD)) {
-          gradQuat += weightTheta * violaThetaPenaD / sqrt(1.0 - cos_theta * cos_theta) * 4.0 *
+          const double sin_theta =
+              sqrt(std::max(1.0 - cos_theta * cos_theta,
+                            trigGradientEps * trigGradientEps));
+          gradQuat += weightTheta * violaThetaPenaD / sin_theta * 4.0 *
                       Eigen::Vector4d(0.0, quat(1), quat(2), 0.0);
           pena += weightTheta * violaThetaPena;
         }
@@ -547,7 +589,8 @@ private:
         } else {
           end_pt = guide_path.col(i);
         }
-        double start_ratio = 1 - j / integralResolution_yaw;
+        double start_ratio =
+            1.0 - static_cast<double>(j) / integralResolution_yaw;
         Eigen::Vector3d guide_pos = start_ratio * start_pt + (1 - start_ratio) * end_pt;
         if (grad_cost_visibility(pos, guide_pos, grad_tmp, cost_tmp)) {
           double node = (j == 0 || j == integralResolution_yaw) ? 0.5 : 1.0;
@@ -572,6 +615,10 @@ private:
   }
 
   static inline double costFunctional(void *ptr, const Eigen::VectorXd &x, Eigen::VectorXd &g) {
+    if (!x.allFinite()) {
+      g.setZero(x.size());
+      return std::numeric_limits<double>::infinity();
+    }
     GCOPTER_PolytopeSFC &obj = *(GCOPTER_PolytopeSFC *)ptr;
     const int dimTau = obj.temporalDim;
     const int dimXi = obj.spatialDim;
@@ -582,7 +629,12 @@ private:
     Eigen::Map<Eigen::VectorXd> gradXi(g.data() + dimTau, dimXi);
 
     forwardT(tau, obj.times);
-    forwardP(xi, obj.vPolyIdx, obj.vPolytopes, obj.points);
+    forwardP(xi, obj.vPolyIdx, obj.vPolytopes, obj.points,
+             obj.vector_norm_eps);
+    if (!obj.times.allFinite() || !obj.points.allFinite()) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
 
     double cost;
     obj.minco.setParameters(obj.points, obj.times);
@@ -593,7 +645,7 @@ private:
     attachPenaltyFunctional(obj.times, obj.minco.getCoeffs(), obj.hPolyIdx, obj.hPolytopes,
                             obj.smoothEps, obj.integralRes, obj.magnitudeBd, obj.penaltyWt,
                             obj.flatmap, cost, obj.partialGradByTimes, obj.partialGradByCoeffs,
-                            obj.dilate_radius_);
+                            obj.dilate_radius_, obj.trig_gradient_eps);
 
     obj.minco.propogateGrad(obj.partialGradByCoeffs, obj.partialGradByTimes, obj.gradByPoints,
                             obj.gradByTimes);
@@ -607,13 +659,18 @@ private:
     }
 
     backwardGradT(tau, obj.gradByTimes, gradTau);
-    backwardGradP(xi, obj.vPolyIdx, obj.vPolytopes, obj.gradByPoints, gradXi);
+    backwardGradP(xi, obj.vPolyIdx, obj.vPolytopes, obj.gradByPoints, gradXi,
+                  obj.vector_norm_eps);
     normRetrictionLayer(xi, obj.vPolyIdx, obj.vPolytopes, cost, gradXi);
 
     return cost;
   }
 
   static inline double costFunctional_yaw(void *ptr, const Eigen::VectorXd &x, Eigen::VectorXd &g) {
+    if (!x.allFinite()) {
+      g.setZero(x.size());
+      return std::numeric_limits<double>::infinity();
+    }
     GCOPTER_PolytopeSFC &obj = *(GCOPTER_PolytopeSFC *)ptr;
     const int dimTau = obj.temporalDim_yaw;
     const int dimXi = obj.spatialDim_yaw / 3;
@@ -631,6 +688,10 @@ private:
 
     Eigen::VectorXd times_yaw;
     forwardT(tau, times_yaw);
+    if (!times_yaw.allFinite() || !xi.allFinite()) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
     // cout<<"times_yaw: "<<times_yaw<<endl;
 
     double cost = 0.0;
@@ -662,11 +723,16 @@ private:
   }
 
   static inline double costDistance(void *ptr, const Eigen::VectorXd &xi, Eigen::VectorXd &gradXi) {
+    if (!xi.allFinite()) {
+      gradXi.setZero(xi.size());
+      return std::numeric_limits<double>::infinity();
+    }
     void **dataPtrs = (void **)ptr;
     const double &dEps = *((const double *)(dataPtrs[0]));
     const Eigen::Vector3d &ini = *((const Eigen::Vector3d *)(dataPtrs[1]));
     const Eigen::Vector3d &fin = *((const Eigen::Vector3d *)(dataPtrs[2]));
     const PolyhedraV &vPolys = *((PolyhedraV *)(dataPtrs[3]));
+    const double &vectorNormEps = *((const double *)(dataPtrs[4]));
 
     double cost = 0.0;
     const int overlaps = vPolys.size() / 2;
@@ -680,7 +746,7 @@ private:
       if (i < overlaps) {
         k = vPolys[2 * i + 1].cols();
         Eigen::Map<const Eigen::VectorXd> q(xi.data() + j, k);
-        r = q.normalized().head(k - 1);
+        r = (q / std::max(q.norm(), vectorNormEps)).head(k - 1);
         b = vPolys[2 * i + 1].rightCols(k - 1) * r.cwiseProduct(r) + vPolys[2 * i + 1].col(0);
       } else {
         b = fin;
@@ -705,7 +771,9 @@ private:
       Eigen::Map<const Eigen::VectorXd> q(xi.data() + j, k);
       Eigen::Map<Eigen::VectorXd> gradQ(gradXi.data() + j, k);
       sqrNormQ = q.squaredNorm();
-      invNormQ = 1.0 / sqrt(sqrNormQ);
+      invNormQ =
+          1.0 / std::max(std::sqrt(std::max(0.0, sqrNormQ)),
+                         vectorNormEps);
       unitQ = q * invNormQ;
       gradQ.head(k - 1) = (vPolys[2 * i + 1].rightCols(k - 1).transpose() * gradP.col(i)).array() *
                           unitQ.head(k - 1).array() * 2.0;
@@ -725,8 +793,9 @@ private:
     return cost;
   }
 
-  static inline void getShortestPath(const Eigen::Vector3d &ini, const Eigen::Vector3d &fin,
+  static inline bool getShortestPath(const Eigen::Vector3d &ini, const Eigen::Vector3d &fin,
                                      const PolyhedraV &vPolys, const double &smoothD,
+                                     const double &vectorNormEps,
                                      Eigen::Matrix3Xd &path) {
     const int overlaps = vPolys.size() / 2;
     Eigen::VectorXi vSizes(overlaps);
@@ -740,18 +809,24 @@ private:
     }
 
     double minDistance;
-    void *dataPtrs[4];
+    void *dataPtrs[5];
     dataPtrs[0] = (void *)(&smoothD);
     dataPtrs[1] = (void *)(&ini);
     dataPtrs[2] = (void *)(&fin);
     dataPtrs[3] = (void *)(&vPolys);
+    dataPtrs[4] = (void *)(&vectorNormEps);
     lbfgs::lbfgs_parameter_t shortest_path_params;
     shortest_path_params.past = 3;
     shortest_path_params.delta = 1.0e-3;
     shortest_path_params.g_epsilon = 1.0e-5;
 
-    lbfgs::lbfgs_optimize(xi, minDistance, &GCOPTER_PolytopeSFC::costDistance, nullptr, nullptr,
-                          dataPtrs, shortest_path_params);
+    const int result =
+        lbfgs::lbfgs_optimize(xi, minDistance,
+                              &GCOPTER_PolytopeSFC::costDistance, nullptr,
+                              nullptr, dataPtrs, shortest_path_params);
+    if (result < 0 || !std::isfinite(minDistance) || !xi.allFinite()) {
+      return false;
+    }
 
     path.resize(3, overlaps + 2);
     path.leftCols<1>() = ini;
@@ -760,12 +835,12 @@ private:
     for (int i = 0, j = 0, k; i < overlaps; i++, j += k) {
       k = vPolys[2 * i + 1].cols();
       Eigen::Map<const Eigen::VectorXd> q(xi.data() + j, k);
-      r = q.normalized().head(k - 1);
+      r = (q / std::max(q.norm(), vectorNormEps)).head(k - 1);
       path.col(i + 1) =
       vPolys[2 * i + 1].rightCols(k - 1) * r.cwiseProduct(r) + vPolys[2 * i + 1].col(0);
     }
 
-    return;
+    return path.allFinite();
   }
 
   static inline bool processCorridor(const PolyhedraH &hPs, PolyhedraV &vPs) {
@@ -846,7 +921,34 @@ public:
                     const Eigen::Matrix<double, 3, 4> &terminalPVAJ, const PolyhedraH &safeCorridor,
                     const double &lengthPerPiece, const double &smoothingFactor,
                     const int &integralResolution, const Eigen::VectorXd &magnitudeBounds,
-                    const Eigen::VectorXd &penaltyWeights, const Eigen::VectorXd &physicalParams) {
+                    const Eigen::VectorXd &penaltyWeights, const Eigen::VectorXd &physicalParams,
+                    const double &trigGradientEps, const double &vectorNormEps,
+                    const double &minSegmentTime, const double &flatnessNormEps) {
+    if (integralResolution <= 0 || !std::isfinite(trigGradientEps) ||
+        !std::isfinite(vectorNormEps) || !std::isfinite(minSegmentTime) ||
+        !std::isfinite(flatnessNormEps) || trigGradientEps <= 0.0 ||
+        vectorNormEps <= 0.0 || minSegmentTime <= 0.0 ||
+        flatnessNormEps <= 0.0) {
+      return false;
+    }
+    if (!std::isfinite(timeWeight) || timeWeight < 0.0 ||
+        !std::isfinite(dilate_radius) || dilate_radius < 0.0 ||
+        (!std::isfinite(lengthPerPiece) &&
+         !(std::isinf(lengthPerPiece) && lengthPerPiece > 0.0)) ||
+        !std::isfinite(smoothingFactor) || smoothingFactor <= 0.0 ||
+        !initialPVAJ.allFinite() || !terminalPVAJ.allFinite() ||
+        magnitudeBounds.size() != 5 || penaltyWeights.size() != 5 ||
+        physicalParams.size() != 6 || !magnitudeBounds.allFinite() ||
+        !penaltyWeights.allFinite() || !physicalParams.allFinite() ||
+        magnitudeBounds(0) <= 0.0 || physicalParams(0) <= 0.0 ||
+        physicalParams(1) <= 0.0 || physicalParams(5) <= 0.0 ||
+        safeCorridor.empty()) {
+      return false;
+    }
+    trig_gradient_eps = trigGradientEps;
+    vector_norm_eps = vectorNormEps;
+    min_segment_time = minSegmentTime;
+    flatness_norm_eps = flatnessNormEps;
     dilate_radius_ = dilate_radius; // 膨胀半径
     rho = timeWeight;
     headPVAJ = initialPVAJ;
@@ -855,10 +957,18 @@ public:
     hPolytopes = safeCorridor;
     for (size_t i = 0; i < hPolytopes.size(); i++) {
       const Eigen::ArrayXd norms = hPolytopes[i].leftCols<3>().rowwise().norm();
+      if (!norms.isFinite().all() || (norms <= vector_norm_eps).any()) {
+        return false;
+      }
       hPolytopes[i].array().colwise() /= norms;
     } // hPolytope 的每个平面 法向量 归一化
     if (!processCorridor(hPolytopes, vPolytopes)) {
       return false;
+    }
+    for (const auto &polytope : vPolytopes) {
+      if (polytope.cols() < 2 || !polytope.allFinite()) {
+        return false;
+      }
     }
 
     polyN = hPolytopes.size();
@@ -867,9 +977,13 @@ public:
     magnitudeBd = magnitudeBounds;
     penaltyWt = penaltyWeights;
     physicalPm = physicalParams;
-    allocSpeed = magnitudeBd(0) * 3.0;
+    allocSpeed = std::max(magnitudeBd(0) * 3.0, vector_norm_eps);
 
-    getShortestPath(headPVAJ.col(0), tailPVAJ.col(0), vPolytopes, smoothEps, shortPath);
+    if (!getShortestPath(headPVAJ.col(0), tailPVAJ.col(0), vPolytopes,
+                         smoothEps, vector_norm_eps, shortPath) ||
+        !shortPath.allFinite()) {
+      return false;
+    }
     const Eigen::Matrix3Xd deltas = shortPath.rightCols(polyN) - shortPath.leftCols(polyN);
     pieceIdx = (deltas.colwise().norm() / lengthPerPiece).cast<int>().transpose();
     pieceIdx.array() += 1;
@@ -895,8 +1009,8 @@ public:
 
     // Setup for MINCO_S3NU, FlatnessMap, and L-BFGS solver
     minco.setConditions(headPVAJ, tailPVAJ, pieceN);
-    flatmap.reset(physicalPm(0), physicalPm(1), physicalPm(2), physicalPm(3), physicalPm(4),
-                  physicalPm(5));
+    flatmap.reset(physicalPm(0), physicalPm(1), physicalPm(2), physicalPm(3),
+                  physicalPm(4), physicalPm(5), flatness_norm_eps);
 
     // Allocate temp variables
     points.resize(3, pieceN - 1);
@@ -909,9 +1023,18 @@ public:
     return true;
   }
 
-  inline bool setup_yaw(const double &rho_vis, const int &integralResolution) {
+  inline bool setup_yaw(const double &rho_vis, const int &integralResolution,
+                        const double &yawDiffEps,
+                        const double &minSegmentTime) {
+    if (integralResolution <= 0 || !std::isfinite(yawDiffEps) ||
+        !std::isfinite(minSegmentTime) || yawDiffEps <= 0.0 ||
+        minSegmentTime <= 0.0 || !std::isfinite(rho_vis) || rho_vis < 0.0) {
+      return false;
+    }
     integralResolution_yaw = integralResolution;
     yaw_rho_vis = rho_vis;
+    yaw_diff_eps = yawDiffEps;
+    min_segment_time = minSegmentTime;
     return true;
   }
 
@@ -921,8 +1044,8 @@ public:
     Eigen::Map<Eigen::VectorXd> xi(x.data() + temporalDim, spatialDim);
 
     setInitial(shortPath, allocSpeed, pieceIdx, points, times);
-    backwardT(times, tau);
-    backwardP(points, vPolyIdx, vPolytopes, xi);
+    backwardT(times, tau, min_segment_time);
+    backwardP(points, vPolyIdx, vPolytopes, xi, vector_norm_eps);
 
     double minCostFunctional;
     lbfgs_params.mem_size = 256;
@@ -931,7 +1054,8 @@ public:
     lbfgs_params.g_epsilon = FLT_EPSILON;
     lbfgs_params.delta = relCostTol;
 
-    minTimeBound = time_lb;
+    minTimeBound =
+        std::isfinite(time_lb) ? std::max(0.0, time_lb) : times.sum();
     int ret = lbfgs::lbfgs_optimize(x, minCostFunctional, &GCOPTER_PolytopeSFC::costFunctional,
                                     nullptr, nullptr, this, lbfgs_params);
     // if (ret == lbfgs::LBFGSERR_MINIMUMSTEP) {
@@ -953,9 +1077,13 @@ public:
     //   }
 
     // } else 
-    if (ret >= 0) {
+    if (ret >= 0 && std::isfinite(minCostFunctional) && x.allFinite()) {
       forwardT(tau, times);
-      forwardP(xi, vPolyIdx, vPolytopes, points);
+      times = times.unaryExpr([this](double t) {
+        return std::isfinite(t) ? std::max(t, min_segment_time)
+                                : min_segment_time;
+      });
+      forwardP(xi, vPolyIdx, vPolytopes, points, vector_norm_eps);
       minco.setParameters(points, times);
       minco.getTrajectory(traj);
     } else {
@@ -978,8 +1106,10 @@ public:
     // cout<<"pieceNum: "<<pieceNum<<endl;
     // }
 
-    yaw_minco.setConditions(inityaw, endyaw, pieceNum);
-    yaw_minco.setParameters(guide_path, ts);
+    if (pieceNum <= 0 || ts.size() != pieceNum || !inityaw.allFinite() ||
+        !endyaw.allFinite() || !yaw_points.allFinite()) {
+      return INFINITY;
+    }
 
     Eigen::VectorXd x_yaw, init_tau, yaw_vec;
     yaw_vec = Eigen::Map<const Eigen::VectorXd>(yaw_points.data(), yaw_points.size());
@@ -988,7 +1118,13 @@ public:
     spatialDim_yaw = yaw_pt_count;
     int opt_dim = pieceNum + yaw_pt_count;
     x_yaw.resize(opt_dim);
-    backwardT(ts, init_tau);
+    Eigen::VectorXd safe_ts = ts.unaryExpr([this](double t) {
+      return std::isfinite(t) ? std::max(t, min_segment_time)
+                              : min_segment_time;
+    });
+    yaw_minco.setConditions(inityaw, endyaw, pieceNum);
+    yaw_minco.setParameters(guide_path, safe_ts);
+    backwardT(safe_ts, init_tau, min_segment_time);
     x_yaw.segment(0, pieceNum) = init_tau;
     x_yaw.segment(pieceNum, yaw_pt_count) = yaw_vec;
 
@@ -1003,10 +1139,19 @@ public:
     int ret =
     lbfgs::lbfgs_optimize(x_yaw, minCostFunctional, &GCOPTER_PolytopeSFC::costFunctional_yaw,
                           nullptr, nullptr, this, lbfgs_params);
-    Eigen::VectorXd t = Eigen::Map<Eigen::VectorXd>(x_yaw.data(), pieceNum);
-    forwardT(t, t);
-
-    if (ret >= 0) {
+    if (ret >= 0 && std::isfinite(minCostFunctional) &&
+        x_yaw.allFinite()) {
+      const Eigen::VectorXd optimized_tau =
+          Eigen::Map<const Eigen::VectorXd>(x_yaw.data(), pieceNum);
+      Eigen::VectorXd t;
+      forwardT(optimized_tau, t);
+      t = t.unaryExpr([this](double value) {
+        return std::isfinite(value) ? std::max(value, min_segment_time)
+                                    : min_segment_time;
+      });
+      Eigen::Map<const Eigen::Matrix3Xd> optimized_yaw_points(
+          x_yaw.data() + pieceNum, 3, yaw_pt_count / 3);
+      yaw_minco.setParameters(optimized_yaw_points, t);
       yaw_minco.getTrajectory(traj);
     } else {
       // traj.clear();

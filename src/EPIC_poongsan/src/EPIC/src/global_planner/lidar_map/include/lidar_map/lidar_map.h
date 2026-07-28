@@ -60,7 +60,7 @@ public:
   void KNN(const PointType &pt, int k, PointVector &pts, vector<float> &dis);
   void boxSearch(const Eigen::Vector3f &min, const Eigen::Vector3f &max,
                  PointVector &pts);
-  void updateCloudMapOdometry(const sensor_msgs::PointCloud2ConstPtr &msg,
+  bool updateCloudMapOdometry(const sensor_msgs::PointCloud2ConstPtr &msg,
                               const nav_msgs::Odometry::ConstPtr &odom_);
   unique_ptr<LIOInterfaceParam> lp_;
   unique_ptr<LIOInterfaceData> ld_;
@@ -110,6 +110,8 @@ struct LIOInterfaceParam {
   double lidar_yaw_;
 
   double max_ray_length_;
+  double vector_norm_eps_;
+  double trig_gradient_eps_;
   double fov_up, fov_down;
   double fov_horizontal; // 물리 수평 FOV [deg] (360=전방위)
   double fov_vp_up, fov_vp_down;

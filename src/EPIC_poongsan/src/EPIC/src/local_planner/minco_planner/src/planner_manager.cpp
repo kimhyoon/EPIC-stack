@@ -209,32 +209,49 @@ void FastPlannerManager::initPlanModules(
 // test_gs
 void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
 
-  // 提取四元数
+  const auto &q = msg->pose.pose.orientation;
+  const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (!std::isfinite(n2) ||
+      n2 <= gcopter_config_->vectorNormEps *
+                gcopter_config_->vectorNormEps) {
+    ROS_WARN_THROTTLE(
+        1.0, "[NumericalGuard] invalid odometry quaternion; keeping last yaw");
+    return;
+  }
+
   double roll, pitch;
   tf::Quaternion quat;
-  tf::quaternionMsgToTF(msg->pose.pose.orientation, quat);
+  tf::quaternionMsgToTF(q, quat);
+  quat.normalize();
 
-  // 将四元数转换为Euler角
-  tf::Matrix3x3(quat).getRPY(roll, pitch, local_data_.curr_yaw_);
+  double yaw;
+  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  if (std::isfinite(yaw))
+    local_data_.curr_yaw_ = yaw;
 }
 
 void FastPlannerManager::goalCallback(
     const geometry_msgs::PoseStampedConstPtr &msg) {
   const auto &q = msg->pose.orientation;
   const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
-  if (std::fabs(n2 - 1.0) > 0.01) {
+  if (!std::isfinite(n2) ||
+      n2 <= gcopter_config_->vectorNormEps *
+                gcopter_config_->vectorNormEps) {
     ROS_WARN_THROTTLE(10.0,
                       "[FastPlannerManager] goal with invalid quaternion "
-                      "(|q|^2=%.3f) - ignoring yaw",
-                      n2);
+                      "- ignoring yaw");
     return;
   }
 
   double roll, pitch;
   tf::Quaternion quat;
   tf::quaternionMsgToTF(msg->pose.orientation, quat);
+  quat.normalize();
 
-  tf::Matrix3x3(quat).getRPY(roll, pitch, local_data_.end_yaw_);
+  double yaw;
+  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  if (std::isfinite(yaw))
+    local_data_.end_yaw_ = yaw;
 }
 
 bool FastPlannerManager::checkTrajVelocity() {
@@ -593,7 +610,11 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (!gcopter.setup(
           gcopter_config_->weightT, gcopter_config_->dilateRadiusSoft, iniState,
           finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
-          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams)) {
+          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams,
+          gcopter_config_->trigGradientEps,
+          gcopter_config_->vectorNormEps,
+          gcopter_config_->minSegmentTime,
+          gcopter_config_->flatnessNormEps)) {
     last_plan_fail_reason_ = "gcopter setup failed (corridor/start-state infeasible)";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
@@ -606,14 +627,24 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   // Measure trajectory generation time
   ros::Time traj_gen_start = ros::Time::now();
-  if (std::isinf(gcopter.optimize(local_data_.minco_traj_,
-                                  gcopter_config_->relCostTol, time_lb))) {
+  const double position_cost =
+      gcopter.optimize(local_data_.minco_traj_,
+                       gcopter_config_->relCostTol, time_lb);
+  if (!std::isfinite(position_cost)) {
     last_plan_fail_reason_ = "minco optimize failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   } else {
     local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+    if (!std::isfinite(local_data_.duration_) ||
+        local_data_.duration_ < gcopter_config_->minSegmentTime) {
+      last_plan_fail_reason_ = "minco produced invalid trajectory duration";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      local_data_ = local_data_backup;
+      return false;
+    }
   }
   ros::Time traj_gen_end = ros::Time::now();
   double traj_gen_time = (traj_gen_end - traj_gen_start).toSec() * 1000.0;
@@ -797,12 +828,13 @@ void FastPlannerManager::clipCorridorToObservedCone(
 }
 
 void FastPlannerManager::angleLimite(double &angle) {
-  while (angle > M_PI) {
-    angle -= (M_PI * 2);
+  if (!std::isfinite(angle)) {
+    ROS_WARN_THROTTLE(1.0,
+                      "[NumericalGuard] non-finite yaw delta replaced by zero");
+    angle = 0.0;
+    return;
   }
-  while (angle < -M_PI) {
-    angle += (M_PI * 2);
-  }
+  angle = std::remainder(angle, 2.0 * M_PI);
 }
 
 bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
@@ -911,7 +943,9 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
 
   gcopter::GCOPTER_PolytopeSFC gcopter_yaw;
   if (!gcopter_yaw.setup_yaw(gcopter_config_->yaw_rho_vis,
-                             gcopter_config_->integralIntervs)) {
+                             gcopter_config_->integralIntervs,
+                             gcopter_config_->yawDiffEps,
+                             gcopter_config_->minSegmentTime)) {
     cout << "setup_yaw failed!" << endl;
     return false;
   }
@@ -940,6 +974,12 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
       wpsYaw(2, i - 1) = 0.0;
     }
   }
+  for (int i = 0; i < opt_times_Yaw.size(); ++i) {
+    if (!std::isfinite(opt_times_Yaw[i]) ||
+        opt_times_Yaw[i] < gcopter_config_->minSegmentTime) {
+      opt_times_Yaw[i] = gcopter_config_->minSegmentTime;
+    }
+  }
   // double dur_yaw = 0.0;
   // for (int i = 0; i < opt_times_Yaw.size(); i++) {
   //   dur_yaw += opt_times_Yaw[i];
@@ -954,10 +994,18 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
   // cout << endl;
 
   local_data_.minco_yaw_traj_.clear();
-  if (std::isinf(gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM,
-                                          wpsYaw, opt_times_Yaw,
-                                          local_data_.minco_yaw_traj_))) {
+  const double yaw_cost =
+      gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM, wpsYaw,
+                               opt_times_Yaw, local_data_.minco_yaw_traj_);
+  if (!std::isfinite(yaw_cost)) {
     std::cout << "optimize yaw failed!" << std::endl;
+    return false;
+  }
+  const double yaw_duration =
+      local_data_.minco_yaw_traj_.getTotalDuration();
+  if (!std::isfinite(yaw_duration) ||
+      yaw_duration < gcopter_config_->minSegmentTime) {
+    std::cout << "yaw trajectory duration invalid!" << std::endl;
     return false;
   }
   
@@ -1026,8 +1074,14 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   geo_utils::findInterior(hp, inner);
   Eigen::Vector4d bh;
   double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
-  Eigen::Vector3d dir =
-      (inner - topo_graph_->odom_node_->center_.cast<double>()).normalized();
+  const Eigen::Vector3d inner_delta =
+      inner - topo_graph_->odom_node_->center_.cast<double>();
+  const double inner_delta_norm = inner_delta.norm();
+  const Eigen::Vector3d dir =
+      inner_delta.allFinite() &&
+              inner_delta_norm > gcopter_config_->vectorNormEps
+          ? inner_delta / inner_delta_norm
+          : Eigen::Vector3d::Zero();
   
   // Declare iniState variable
   Eigen::Matrix<double, 3, 4> iniState;
@@ -1106,15 +1160,21 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   if (!gcopter.setup(
           gcopter_config_->WeightSafeT, gcopter_config_->dilateRadiusSoft,
           iniState, finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
-          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams)) {
+          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams,
+          gcopter_config_->trigGradientEps,
+          gcopter_config_->vectorNormEps,
+          gcopter_config_->minSegmentTime,
+          gcopter_config_->flatnessNormEps)) {
     last_plan_fail_reason_ = "escape: gcopter setup failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
   auto local_data_backup = local_data_;
   local_data_.minco_traj_.clear();
-  if (std::isinf(gcopter.optimize(local_data_.minco_traj_,
-                                  gcopter_config_->relCostTol, 0.0))) {
+  const double escape_cost =
+      gcopter.optimize(local_data_.minco_traj_,
+                       gcopter_config_->relCostTol, 0.0);
+  if (!std::isfinite(escape_cost)) {
     last_plan_fail_reason_ = "escape: minco optimize failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
@@ -1137,6 +1197,12 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   local_data_.start_time_ = hpoly_gen_end;
   local_data_.start_pos_ = topo_graph_->odom_node_->center_.cast<double>();
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+  if (!std::isfinite(local_data_.duration_) ||
+      local_data_.duration_ < gcopter_config_->minSegmentTime) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ = "escape: invalid trajectory duration";
+    return false;
+  }
   // 성공: 단 이것은 요청 경로가 아니라 "안전지대 탈출" 궤적임을 표시
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = true;

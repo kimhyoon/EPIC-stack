@@ -141,6 +141,15 @@ WeightSafeT: 400.0 # Desktop 120-degree comparison value.
 ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
 SmoothingEps: 0.015
 IntegralIntervs: 32
+
+# [수치 연산 안정화][필수 설정]
+# 0 나눗셈, 영벡터 정규화 및 삼각함수 경계 오차로 인한 NaN을 연산 전에 방지한다.
+numerical/yaw_diff_eps: 1.0e-9
+numerical/trig_gradient_eps: 1.0e-9
+numerical/vector_norm_eps: 1.0e-6
+numerical/min_segment_time: 1.0e-3
+numerical/flatness_norm_eps: 1.0e-6
+
 RelCostTol: 1.0e-6  # Desktop 120-degree comparison value.
 #param for yaw opt
 yaw_max_vel: 2.0    # Desktop 120-degree comparison value.

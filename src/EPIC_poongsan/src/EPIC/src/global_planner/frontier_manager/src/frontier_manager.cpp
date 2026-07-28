@@ -10,6 +10,9 @@
 #include <pcl/filters/voxel_grid.h>
 #include <std_msgs/Int32.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 size_t ByteArrayRaw::size = 0;
 void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface,
                            TopoGraph::Ptr graph) {
@@ -17,7 +20,13 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   graph_ = graph;
   lidar_map_interface_ = lio_interface;
   nh.getParam("FrontierManager/cell_size", frtp_.cell_size_);
-  frtp_.inv_cell_size_ = 1 / frtp_.cell_size_;
+  if (!std::isfinite(frtp_.cell_size_) ||
+      frtp_.cell_size_ <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    ROS_FATAL("[FrontierManager] FrontierManager/cell_size must be finite and "
+              "greater than numerical/vector_norm_eps.");
+    throw std::runtime_error("invalid FrontierManager/cell_size");
+  }
+  frtp_.inv_cell_size_ = 1.0 / frtp_.cell_size_;
   nh.getParam("FrontierManager/noise_cell_range", frtp_.noise_cell_range_);
   nh.getParam("FrontierManager/good_observation_direction_score",
               frtp_.good_observation_direction_score_);
@@ -679,8 +688,8 @@ void FrontierManager::idx2pos(const Eigen::Vector3i &idx, PointType &pt) {
 void FrontierManager::computeNormal(const PointVector &local_pts,
                                     Eigen::Vector3f &normal) {
   if (local_pts.size() < 3) {
-    ROS_ERROR("computeNormal input size < 3");
-    exit(1);
+    normal.setZero();
+    return;
   }
   Eigen::Vector3f center(0.0, 0.0, 0.0);
   for (int i = 0; i < local_pts.size(); i++) {
@@ -695,16 +704,27 @@ void FrontierManager::computeNormal(const PointVector &local_pts,
   }
   covariance /= local_pts.size();
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> saes(covariance);
+  if (saes.info() != Eigen::Success) {
+    normal.setZero();
+    return;
+  }
   normal = saes.eigenvectors().col(0);
-  normal.normalize();
+  const double normal_norm = normal.norm();
+  if (!normal.allFinite() ||
+      normal_norm <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    normal.setZero();
+    return;
+  }
+  normal /= normal_norm;
 }
 
 void FrontierManager::computeNormalCell(const PointVector &local_pts,
                                         Eigen::Vector3f &normal,
                                         Eigen::Vector3f &center) {
   if (local_pts.size() < 3) {
-    ROS_ERROR("computeNormal input size < 3");
-    exit(1);
+    center.setZero();
+    normal.setZero();
+    return;
   }
   center = Eigen::Vector3f(0.0f, 0.0f, 0.0f);
   for (int i = 0; i < local_pts.size(); i++) {
@@ -720,8 +740,18 @@ void FrontierManager::computeNormalCell(const PointVector &local_pts,
 
   covariance /= local_pts.size();
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> saes(covariance);
+  if (saes.info() != Eigen::Success) {
+    normal.setZero();
+    return;
+  }
   normal = saes.eigenvectors().col(0);
-  normal.normalize();
+  const double normal_norm = normal.norm();
+  if (!normal.allFinite() ||
+      normal_norm <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    normal.setZero();
+    return;
+  }
+  normal /= normal_norm;
   Eigen::Vector3f dir =
       center - lidar_map_interface_->ld_->lidar_pose_.cast<float>();
   if (dir.dot(normal) < 0) {
@@ -735,7 +765,14 @@ void FrontierManager::computeNormalCell(const PointVector &local_pts,
   double dotProduct = move_pt_.dot(normal);
   double normVec1 = move_pt_.norm();
   double normVec2 = normal.norm();
-  double cosAngle = dotProduct / (normVec1 * normVec2);
+  if (!move_pt_.allFinite() ||
+      normVec1 <= lidar_map_interface_->lp_->vector_norm_eps_ ||
+      normVec2 <= lidar_map_interface_->lp_->vector_norm_eps_)
+    return;
+  const double angle_den =
+      std::max(normVec1 * normVec2,
+               lidar_map_interface_->lp_->vector_norm_eps_);
+  double cosAngle = std::max(-1.0, std::min(1.0, dotProduct / angle_den));
   double angle = std::acos(cosAngle);
   angle = angle * 180.0 / M_PI;
   if (angle > 180)
@@ -1162,6 +1199,12 @@ void FrontierManager::compute_cluster_info(
     const PointVector &frt_pts, const vector<Eigen::Vector3f> &frt_norms,
     ClusterInfo::Ptr cluster) {
   static int id = 0;
+  cluster->id_ = id++;
+  cluster->is_dormant_ = false;
+  cluster->is_reachable_ = true;
+  cluster->reason_ = CR_NOT_CONSIDERED;
+  cluster->best_vp_score_ = 0;
+  cluster->is_new_cluster_ = true;
   cluster->center_.setZero();
   cluster->normal_.setZero();
   cluster->cells_.resize(frt_pts.size());
@@ -1184,14 +1227,24 @@ void FrontierManager::compute_cluster_info(
   }
   cluster->box_max_ += Eigen::Vector3f::Ones() * 0.1;
   cluster->box_min_ -= Eigen::Vector3f::Ones() * 0.1;
-  cluster->center_ /= (float)frt_pts.size();
-  cluster->normal_.normalize();
-  cluster->id_ = id++;
-  cluster->is_dormant_ = false;
-  // cluster->is_reachable_ = false;
-  cluster->is_reachable_ = true;
-  cluster->reason_ = CR_NOT_CONSIDERED;
-  cluster->best_vp_score_ = 0;
+  if (frt_pts.empty()) {
+    cluster->center_.setZero();
+    cluster->normal_.setZero();
+    cluster->box_max_.setZero();
+    cluster->box_min_.setZero();
+    cluster->is_dormant_ = true;
+    cluster->is_reachable_ = false;
+    cluster->reason_ = CR_TOO_SMALL;
+    return;
+  }
+  cluster->center_ /= static_cast<float>(frt_pts.size());
+  const double cluster_normal_norm = cluster->normal_.norm();
+  if (!cluster->normal_.allFinite() ||
+      cluster_normal_norm <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    cluster->normal_.setZero();
+  } else {
+    cluster->normal_ /= cluster_normal_norm;
+  }
   if ((cluster->box_max_ - cluster->box_min_).maxCoeff() <
       frtp_.cluster_min_size_) {
     cluster->is_dormant_ = true;
@@ -1201,7 +1254,6 @@ void FrontierManager::compute_cluster_info(
     cluster->is_dormant_ = true;
     cluster->reason_ = CR_TOO_FEW_CELLS;
   }
-  cluster->is_new_cluster_ = true;
 }
 
 bool FrontierManager::has_overlap(const Eigen::Vector3f &box_max_,
@@ -1256,17 +1308,23 @@ void FrontierManager::updateHalfSpaces(vector<ClusterInfo::Ptr> &clusters) {
       idx2pos(cell, pt);
       sparse_center += pt.getVector3fMap();
     }
-    sparse_center /= sparse.size();
+    if (sparse.empty() || dense.empty())
+      continue;
+    sparse_center /= static_cast<float>(sparse.size());
     Eigen::Vector3f dense_center = Eigen::Vector3f::Zero();
     for (auto &cell : dense) {
       PointType pt;
       idx2pos(cell, pt);
-      sparse_center += pt.getVector3fMap();
+      dense_center += pt.getVector3fMap();
     }
-    dense_center /= dense.size();
+    dense_center /= static_cast<float>(dense.size());
     Eigen::Vector3f dir = sparse_center - dense_center;
     dir.z() = 0;
-    dir.normalize();
+    const double dir_norm = dir.norm();
+    if (!dir.allFinite() ||
+        dir_norm <= lidar_map_interface_->lp_->vector_norm_eps_)
+      continue;
+    dir /= dir_norm;
     cluster->view_halfspace_ =
         Eigen::Vector4f(dir.x(), dir.y(), dir.z(), -cluster->center_.dot(dir));
   }
@@ -1320,7 +1378,10 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
       Eigen::Vector3f frt = cluster->cells_[j].getVector3fMap();
       Eigen::Vector3f dir = (frt - vp).cast<float>();
       float distance = dir.norm();
-      dir.normalize();
+      if (!dir.allFinite() || !std::isfinite(distance) ||
+          distance <= lidar_map_interface_->lp_->vector_norm_eps_)
+        continue;
+      dir /= distance;
       if (distance > frtp_.good_observation_trust_length_)
         continue;
       CELL_STATE state = get_state(cluster->cells_[j]);
@@ -1329,13 +1390,26 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
       if (state == FRONTIER_DIR && distance > frtp_.viewpoint_dir_trust_length_)
         continue;
       Eigen::Vector3f norm = cluster->norms_[j];
-      float sin_theta = dir.dot(norm);
-      float cos_thera = sqrt(1 - sin_theta * sin_theta);
+      const double norm_length = norm.norm();
+      if (!norm.allFinite() ||
+          norm_length <= lidar_map_interface_->lp_->vector_norm_eps_)
+        continue;
+      norm /= norm_length;
+      float sin_theta =
+          std::max(-1.0f, std::min(1.0f, dir.dot(norm)));
+      float cos_thera =
+          std::sqrt(std::max(0.0f, 1.0f - sin_theta * sin_theta));
       float delta = M_PI / 100.0;
-      float score = sin_theta / (sin_theta + delta * cos_thera);
+      const double raw_score_den = sin_theta + delta * cos_thera;
+      const double score_den = std::copysign(
+          std::max(std::abs(raw_score_den),
+                   lidar_map_interface_->lp_->trig_gradient_eps_),
+          raw_score_den);
+      float score = sin_theta / score_den;
       if (score < frtp_.good_observation_direction_score_)
         continue;
-      ray_caster.input(frt.cast<double>(), vp.cast<double>());
+      if (!ray_caster.input(frt.cast<double>(), vp.cast<double>()))
+        continue;
       bool visib = true;
       Eigen::Vector3i idx;
       while (ray_caster.nextId(idx)) {
@@ -1709,11 +1783,19 @@ FrontierManager::Sphere_PosToIndex(const Eigen::Vector3f &lidar_center,
   // double dis = sqrt(pow((pos(0)-lidar_center(0)),2) +
   // pow((pos(1)-lidar_center(1)),2) + pow((pos(2)-lidar_center(2)),2));
   double dis = (pos - lidar_center).norm(); // pos是被按回去的，卡了最大范围。
+  if (!std::isfinite(dis) ||
+      dis <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    id.setZero();
+    return;
+  }
   double phi_x = atan2((pos(1) - lidar_center(1)),
                        (pos(0) - lidar_center(0))); // 水平面，以x为极轴的转角
   if (phi_x < 0)
     phi_x = 2 * M_PI + phi_x;                              // 范围是0-2pi
-  double theta_z = acos((pos(2) - lidar_center(2)) / dis); // 以z为极轴的转角
+  const double cos_theta =
+      std::max(-1.0, std::min(1.0, static_cast<double>(
+                                      (pos(2) - lidar_center(2)) / dis)));
+  double theta_z = std::acos(cos_theta); // 以z为极轴的转角
   if (theta_z < 0)
     theta_z = 2 * M_PI + theta_z;
   double sphere_r = 1 / M_PI;

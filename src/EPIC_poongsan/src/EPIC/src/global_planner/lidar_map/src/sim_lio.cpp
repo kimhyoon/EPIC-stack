@@ -13,6 +13,8 @@ If you need to integrate EPIC with Lidar SLAM algorithm and shares
 memory, thread mutual exclusion should be noted.
 */
 #include "visualization_msgs/Marker.h"
+#include <cmath>
+#include <pcl/filters/filter.h>
 #include <lidar_map/lidar_map.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/common/transforms.h>
@@ -62,10 +64,10 @@ double LIOInterface::getDisToOcc(const PointType &pt) {
   PointVector nes_pts;
   vector<float> diss;
   KNN(pt, 1, nes_pts, diss);
-  if (nes_pts.size() == 0)
+  if (nes_pts.empty() || diss.empty() || !std::isfinite(diss[0]) ||
+      diss[0] < 0.0)
     return lp_->max_ray_length_;
-  else
-    return sqrt(diss[0]);
+  return std::sqrt(diss[0]);
 }
 double LIOInterface::getDisToOcc(const Eigen::Vector3d &pt) {
   PointType p;
@@ -94,10 +96,9 @@ void LIOInterface::boxSearch(const Eigen::Vector3f &min_bd,
   }
   ikd_Tree_map.Box_Search(boxpoint, pts);
 }
-void LIOInterface::updateCloudMapOdometry(
+bool LIOInterface::updateCloudMapOdometry(
     const sensor_msgs::PointCloud2ConstPtr &msg,
     const nav_msgs::Odometry::ConstPtr &odom_) {
-  ld_->map_update = true;
   static Eigen::Vector3f last_lidar_pose(0, 0, 0);
   Eigen::Vector3f lidar_pos_(odom_->pose.pose.position.x,
                              odom_->pose.pose.position.y,
@@ -105,9 +106,19 @@ void LIOInterface::updateCloudMapOdometry(
   Eigen::Vector3f lidar_vel_(odom_->twist.twist.linear.x,
                              odom_->twist.twist.linear.y,
                              odom_->twist.twist.linear.z);
-  last_lidar_pose = lidar_pos_;
-  ld_->lidar_pose_ = lidar_pos_;
-  ld_->lidar_vel_ = lidar_vel_;
+  Eigen::Quaternionf q_map_body(odom_->pose.pose.orientation.w,
+                                odom_->pose.pose.orientation.x,
+                                odom_->pose.pose.orientation.y,
+                                odom_->pose.pose.orientation.z);
+  if (!lidar_pos_.allFinite() || !lidar_vel_.allFinite() ||
+      !q_map_body.coeffs().allFinite() ||
+      q_map_body.squaredNorm() <=
+          lp_->vector_norm_eps_ * lp_->vector_norm_eps_) {
+    ROS_WARN_THROTTLE(
+        1.0, "[NumericalGuard] ignoring cloud/odometry pair with invalid pose");
+    return false;
+  }
+  q_map_body.normalize();
   // Sensor mounting rotation for lidar_q_ visualization/FOV logic. If odometry
   // is already in the lidar frame, both values should be zero.
   Eigen::AngleAxisf y_axis_angle(M_PI / 180.0 * lp_->lidar_pitch_,
@@ -116,14 +127,19 @@ void LIOInterface::updateCloudMapOdometry(
                                  Eigen::Vector3f::UnitZ());
   Eigen::Quaternionf q_y(y_axis_angle);
   Eigen::Quaternionf q_z(z_axis_angle);
-  ld_->lidar_q_ = Eigen::Quaternionf(odom_->pose.pose.orientation.w,
-                                     odom_->pose.pose.orientation.x,
-                                     odom_->pose.pose.orientation.y,
-                                     odom_->pose.pose.orientation.z) *
-                  q_z * q_y;
+  const Eigen::Quaternionf lidar_q = q_map_body * q_z * q_y;
 
   pcl::PointCloud<pcl::PointXYZ> cloud_input;
   pcl::fromROSMsg(*msg, cloud_input);
+  std::vector<int> finite_indices;
+  pcl::PointCloud<pcl::PointXYZ> finite_cloud;
+  pcl::removeNaNFromPointCloud(cloud_input, finite_cloud, finite_indices);
+  cloud_input.swap(finite_cloud);
+  if (cloud_input.empty()) {
+    ROS_WARN_THROTTLE(1.0,
+                      "[NumericalGuard] point cloud contains no finite points");
+    return false;
+  }
 
   // ROS_INFO_THROTTLE(1.0, "[LIOInterface] Input cloud size: %lu points", cloud_input.points.size());
 
@@ -143,7 +159,7 @@ void LIOInterface::updateCloudMapOdometry(
   if (filtered_points->points.empty()) {
     // ROS_WARN_THROTTLE(1.0, "[LIOInterface] Point cloud empty after filtering! Input had %lu points",
     //                   cloud_input.points.size());
-    return;
+    return false;
   }
 
   // Apply frame transformation if needed (on filtered cloud for efficiency).
@@ -154,10 +170,6 @@ void LIOInterface::updateCloudMapOdometry(
     // Build T_map_body from odometry.
     Eigen::Matrix4f T_map_body = Eigen::Matrix4f::Identity();
     T_map_body.block<3, 1>(0, 3) = lidar_pos_;
-    Eigen::Quaternionf q_map_body(odom_->pose.pose.orientation.w,
-                                   odom_->pose.pose.orientation.x,
-                                   odom_->pose.pose.orientation.y,
-                                   odom_->pose.pose.orientation.z);
     T_map_body.block<3, 3>(0, 0) = q_map_body.toRotationMatrix();
 
     // Compute T_map_cloud = T_map_body * T_body_cloud.
@@ -172,6 +184,11 @@ void LIOInterface::updateCloudMapOdometry(
   }
 
   // Store the processed cloud for downstream frontier/viewpoint updates.
+  ld_->map_update = true;
+  last_lidar_pose = lidar_pos_;
+  ld_->lidar_pose_ = lidar_pos_;
+  ld_->lidar_vel_ = lidar_vel_;
+  ld_->lidar_q_ = lidar_q;
   ld_->lidar_cloud_ = *filtered_points;
   PointVector pcl_map = filtered_points->points;
 
@@ -184,6 +201,7 @@ void LIOInterface::updateCloudMapOdometry(
     this->ikd_Tree_map.Add_Points(pcl_map, true);
   }
   ros::Time ikd_update_end_stamp = ros::Time::now();
+  return true;
 }
 
 } // namespace fast_planner

@@ -7,8 +7,11 @@
 #include <ros/ros.h>
 #include <traj_utils/PolyTraj.h>
 #include <lidar_map/lidar_map.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <random>
+#include <stdexcept>
 #include "gcopter/firi.hpp"
 #include "gcopter/flatness.hpp"
 #include "gcopter/gcopter.hpp"
@@ -62,31 +65,112 @@ struct GcopterConfig {
   double yaw_max_vel;
   double yaw_rho_vis;
   double yaw_time_fwd;
+  double yawDiffEps;
+  double trigGradientEps;
+  double vectorNormEps;
+  double minSegmentTime;
+  double flatnessNormEps;
 
   void init(const ros::NodeHandle &nh_priv) {
-    nh_priv.getParam("DilateRadiusSoft", dilateRadiusSoft);
-    nh_priv.getParam("DilateRadiusHard", dilateRadiusHard);
-    nh_priv.getParam("MaxVelMag", maxVelMag);
-    nh_priv.getParam("maxBdrMag", maxBdrMag);
-    nh_priv.getParam("MaxTiltAngle", maxTiltAngle);
-    nh_priv.getParam("MinThrust", minThrust);
-    nh_priv.getParam("MaxThrust", maxThrust);
-    nh_priv.getParam("VehicleMass", vehicleMass);
-    nh_priv.getParam("GravAcc", gravAcc);
-    nh_priv.getParam("HorizDrag", horizDrag);
-    nh_priv.getParam("VertDrag", vertDrag);
-    nh_priv.getParam("ParasDrag", parasDrag);
-    nh_priv.getParam("SpeedEps", speedEps);
-    nh_priv.getParam("WeightT", weightT);
-    nh_priv.getParam("WeightSafeT", WeightSafeT);
-    nh_priv.getParam("ChiVec", chiVec);
-    nh_priv.getParam("SmoothingEps", smoothingEps);
-    nh_priv.getParam("IntegralIntervs", integralIntervs);
-    nh_priv.getParam("RelCostTol", relCostTol);
-    nh_priv.getParam("MaxCorridorSize", corridor_size);
-    nh_priv.getParam("yaw_rho_vis", yaw_rho_vis);
-    nh_priv.getParam("yaw_max_vel", yaw_max_vel);
-    nh_priv.getParam("yaw_time_fwd", yaw_time_fwd);
+    auto missingParam = [](const char *name) {
+      ROS_FATAL("[NumericalGuard] required parameter %s is missing", name);
+      throw std::runtime_error(std::string("missing parameter: ") + name);
+    };
+    auto requireDouble = [&nh_priv, &missingParam](const char *name,
+                                                   double &value) {
+      if (!nh_priv.getParam(name, value))
+        missingParam(name);
+    };
+    auto requireInt = [&nh_priv, &missingParam](const char *name, int &value) {
+      if (!nh_priv.getParam(name, value))
+        missingParam(name);
+    };
+    auto requireVector = [&nh_priv, &missingParam](
+                             const char *name, std::vector<double> &value) {
+      if (!nh_priv.getParam(name, value))
+        missingParam(name);
+    };
+
+    requireDouble("DilateRadiusSoft", dilateRadiusSoft);
+    requireDouble("DilateRadiusHard", dilateRadiusHard);
+    requireDouble("MaxVelMag", maxVelMag);
+    requireDouble("maxBdrMag", maxBdrMag);
+    requireDouble("MaxTiltAngle", maxTiltAngle);
+    requireDouble("MinThrust", minThrust);
+    requireDouble("MaxThrust", maxThrust);
+    requireDouble("VehicleMass", vehicleMass);
+    requireDouble("GravAcc", gravAcc);
+    requireDouble("HorizDrag", horizDrag);
+    requireDouble("VertDrag", vertDrag);
+    requireDouble("ParasDrag", parasDrag);
+    requireDouble("SpeedEps", speedEps);
+    requireDouble("WeightT", weightT);
+    requireDouble("WeightSafeT", WeightSafeT);
+    requireVector("ChiVec", chiVec);
+    requireDouble("SmoothingEps", smoothingEps);
+    requireInt("IntegralIntervs", integralIntervs);
+    requireDouble("RelCostTol", relCostTol);
+    requireDouble("MaxCorridorSize", corridor_size);
+    requireDouble("yaw_rho_vis", yaw_rho_vis);
+    requireDouble("yaw_max_vel", yaw_max_vel);
+    requireDouble("yaw_time_fwd", yaw_time_fwd);
+    requireDouble("numerical/yaw_diff_eps", yawDiffEps);
+    requireDouble("numerical/trig_gradient_eps", trigGradientEps);
+    requireDouble("numerical/vector_norm_eps", vectorNormEps);
+    requireDouble("numerical/min_segment_time", minSegmentTime);
+    requireDouble("numerical/flatness_norm_eps", flatnessNormEps);
+
+    auto validatePositive = [](const char *name, double value) {
+      if (!std::isfinite(value) || value <= 0.0) {
+        ROS_FATAL("[NumericalGuard] %s must be positive and finite", name);
+        throw std::runtime_error(std::string("invalid parameter: ") + name);
+      }
+    };
+    auto validateFinite = [](const char *name, double value) {
+      if (!std::isfinite(value)) {
+        ROS_FATAL("[NumericalGuard] %s must be finite", name);
+        throw std::runtime_error(std::string("invalid parameter: ") + name);
+      }
+    };
+    validatePositive("DilateRadiusSoft", dilateRadiusSoft);
+    validatePositive("DilateRadiusHard", dilateRadiusHard);
+    validatePositive("MaxVelMag", maxVelMag);
+    validatePositive("maxBdrMag", maxBdrMag);
+    validatePositive("MaxTiltAngle", maxTiltAngle);
+    validatePositive("MinThrust", minThrust);
+    validatePositive("MaxThrust", maxThrust);
+    validatePositive("VehicleMass", vehicleMass);
+    validatePositive("GravAcc", gravAcc);
+    validatePositive("SpeedEps", speedEps);
+    validatePositive("WeightT", weightT);
+    validatePositive("WeightSafeT", WeightSafeT);
+    validatePositive("SmoothingEps", smoothingEps);
+    validatePositive("RelCostTol", relCostTol);
+    validatePositive("MaxCorridorSize", corridor_size);
+    validatePositive("yaw_max_vel", yaw_max_vel);
+    validatePositive("numerical/yaw_diff_eps", yawDiffEps);
+    validatePositive("numerical/trig_gradient_eps", trigGradientEps);
+    validatePositive("numerical/vector_norm_eps", vectorNormEps);
+    validatePositive("numerical/min_segment_time", minSegmentTime);
+    validatePositive("numerical/flatness_norm_eps", flatnessNormEps);
+    validateFinite("HorizDrag", horizDrag);
+    validateFinite("VertDrag", vertDrag);
+    validateFinite("ParasDrag", parasDrag);
+    validateFinite("yaw_rho_vis", yaw_rho_vis);
+    validateFinite("yaw_time_fwd", yaw_time_fwd);
+    if (maxThrust <= minThrust || yaw_rho_vis < 0.0 || yaw_time_fwd < 0.0 ||
+        chiVec.size() != 5 ||
+        !std::all_of(chiVec.begin(), chiVec.end(),
+                     [](double value) {
+                       return std::isfinite(value) && value >= 0.0;
+                     })) {
+      ROS_FATAL("[NumericalGuard] invalid MINCO/Yaw parameter relationship");
+      throw std::runtime_error("invalid MINCO/Yaw parameter relationship");
+    }
+    if (integralIntervs <= 0) {
+      ROS_FATAL("[NumericalGuard] IntegralIntervs must be greater than zero");
+      throw std::runtime_error("invalid parameter: IntegralIntervs");
+    }
   }
 };
 
