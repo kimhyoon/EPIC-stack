@@ -6,6 +6,7 @@
  * @
  * @Copyright (c) 2023 by ning-zelin, All Rights Reserved.
  */
+#include <algorithm>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -285,6 +286,10 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   auto traj = local_data_.minco_traj_;
   double duration = local_data_.duration_;
   double curr_time = (ros::Time::now() - local_data_.start_time_).toSec();
+  // collision_time is an absolute time on the current trajectory. Initialize it
+  // on every path because a collision-free return previously left the caller
+  // comparing an indeterminate stack value.
+  collision_time = std::max(0.0, std::min(curr_time, duration));
   Vector3d last_sphere_cen_;
   if (curr_time > duration) {
     collision_time = duration;
@@ -349,7 +354,9 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
       true, duration,
       std::isfinite(min_distance) ? min_distance : -1.0,
       min_distance_position);
-  
+
+  // No collision was found through the end of the trajectory.
+  collision_time = duration;
   return true;
 }
 
@@ -553,10 +560,22 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
         std::string("start not in corridor (") + (is_static ? "static" : "predicted") +
         " start; corridor pieces=" + std::to_string(hPolys.size()) + ")";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
-    double time;
-    bool safe =
-        local_data_.traj_id_ >= 1 && checkTrajCollision(time) && time > 2.0;
-    if (!safe)
+    double safe_until = 0.0;
+    const double elapsed_raw =
+        (ros::Time::now() - local_data_.start_time_).toSec();
+    const double elapsed =
+        std::max(0.0, std::min(elapsed_raw, local_data_.duration_));
+    const bool collision_free =
+        local_data_.traj_id_ >= 1 && checkTrajCollision(safe_until);
+    const double remaining_safe_time =
+        std::max(0.0, safe_until - elapsed);
+
+    // safe_until uses trajectory-relative absolute time. Subtract elapsed time
+    // so the 2 s guard means "safe from now", rather than "trajectory duration
+    // happens to be greater than 2 s".
+    const bool can_keep_current_traj =
+        collision_free && remaining_safe_time > 2.0;
+    if (!can_keep_current_traj)
       return flyToSafeRegion(is_static);
     // return false;
   }
