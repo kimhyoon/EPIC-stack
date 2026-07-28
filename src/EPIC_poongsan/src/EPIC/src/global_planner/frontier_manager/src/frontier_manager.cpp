@@ -50,6 +50,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.getParam("FrontierManager/update_length", frtp_.update_length_);
   // [feature: box-margin] yaml 로만 활성화 (키 없으면 0 = 기존 동작).
   nh.param("FrontierManager/box_boundary_margin", frtp_.box_boundary_margin_, 0);
+  // [feature: obs-breakdown] 거부 사유별 점군 발행 (진단용, 판정에 영향 없음)
+  nh.param("FrontierManager/viz_obs_breakdown", frtp_.viz_obs_breakdown_, true);
   nh.getParam("FrontierManager/view_frt", frtp_.view_frt_);
   nh.getParam("FrontierManager/view_cluster", frtp_.view_cluster_);
 
@@ -948,19 +950,44 @@ void FrontierManager::updateFrontierClusters(
   Eigen::Vector3f lidar_position =
       lidar_map_interface_->ld_->lidar_pose_.cast<float>();
 
+  // [feature: obs-breakdown] bad_obs 를 거부 사유별로 쪼개서 함께 발행한다.
+  // 하나로 묶여 있으면 "관측은 됐는데 거부됐다"까지만 알 수 있고, 그 다음
+  // 판단(문턱을 키우면 해결되는가)을 못 한다. 특히 아래 Step2 의 force-trust
+  // 경로에는 `&& !is_fov_edge` 가 붙어 있어서, fov_edge 로 거부된 셀은
+  // good_observation_force_trust_length 를 아무리 키워도 해소되지 않는다.
+  // 즉 fov_edge 개수 = "거리 문턱으로는 못 고치는 셀 수" 다.
+  //
+  // 세 사유는 겹칠 수 있으므로 far -> fov_edge -> gap 우선순위로 배타 분류해
+  // 합이 bad_obs 와 정확히 같게 둔다 (비율을 그대로 읽을 수 있도록).
   PointVector bad_observation, good_observation;
+  PointVector bad_far, bad_fovedge, bad_gap;
   for (auto &cell : cells_2_update) {
     PointType pt;
     idx2pos(cell, pt);
-    if (is_gap_point(pt) || is_fov_edge(pt) ||
-        (pt.getVector3fMap() - lidar_position).norm() >
-            frtp_.good_observation_trust_length_) {
+    const bool far = (pt.getVector3fMap() - lidar_position).norm() >
+                     frtp_.good_observation_trust_length_;
+    const bool edge = is_fov_edge(pt);
+    const bool gap = is_gap_point(pt);
+    if (far || edge || gap) {
       bad_observation.push_back(pt);
+      if (frtp_.viz_obs_breakdown_) {
+        if (far)
+          bad_far.push_back(pt);
+        else if (edge)
+          bad_fovedge.push_back(pt);
+        else
+          bad_gap.push_back(pt);
+      }
     } else
       good_observation.push_back(pt);
   }
   viz_point(bad_observation, "bad_obs");
   viz_point(good_observation, "good_obs");
+  if (frtp_.viz_obs_breakdown_) {
+    viz_point(bad_far, "bad_obs_far");         // 거리 > good_observation_trust_length
+    viz_point(bad_fovedge, "bad_obs_fovedge"); // 깊이영상에서 관측 데이터의 바깥 테두리
+    viz_point(bad_gap, "bad_obs_gap");         // 이웃 픽셀 무데이터/깊이 불연속
+  }
   // cout << "update and vizgap: " << (ros::Time::now() - t2).toSec() * 1000
   // <<"----------------------------------------"<< endl;
   unordered_set<Eigen::Vector3i, Vector3i_Hash> old_frt_cells;

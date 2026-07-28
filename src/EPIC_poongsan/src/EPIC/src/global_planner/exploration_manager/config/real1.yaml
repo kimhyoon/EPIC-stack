@@ -267,6 +267,19 @@ FrontierManager/cluster_minmum_point_num: 3  # 신규 Frontier 최소 셀 수[�
 # 값 증가 시 박스 경계의 반복 viewpoint와 불필요한 탐사는 줄지만 경계 근처의 유효 viewpoint도 사라질 수 있고, 값 감소 시 경계 viewpoint는 늘지만 해소되지 않는 목표를 반복 방문할 수 있다.
 FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 0이면 비활성
 
+# [관측 거부 사유별 점군 발행][진단용]
+# bad_obs(관측됐지만 거부되어 frontier 로 남는 셀)를 사유별로 나눠 함께 발행한다.
+#   bad_obs_far      거리 > good_observation_trust_length
+#   bad_obs_fovedge  깊이영상에서 관측 데이터의 바깥 테두리 (열/행의 최외곽 유효 픽셀)
+#   bad_obs_gap      이웃 픽셀에 데이터가 없거나 깊이가 불연속
+# far -> fov_edge -> gap 우선순위로 배타 분류하므로 셋의 합 = bad_obs 다.
+# 판정 로직에는 영향이 없고 시각화/기록만 추가된다.
+# 주의: fov_edge 로 거부된 셀은 good_observation_force_trust_length 를 키워도
+# 해소되지 않는다 (force-trust 경로에 !is_fov_edge 조건이 있다). 즉 이 값이
+# frontier 가 안 없어지는 문제를 거리 문턱으로 고칠 수 있는지 판단하는 근거다.
+# bad_obs 와 같은 양의 점군이 한 벌 더 나가므로 bag 크기가 늘어난다.
+FrontierManager/viz_obs_breakdown: true  # 사유별 점군 발행
+
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
 

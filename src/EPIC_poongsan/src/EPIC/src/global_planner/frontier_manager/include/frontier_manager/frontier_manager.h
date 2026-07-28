@@ -69,6 +69,10 @@ struct FrontierParam {
   // frontier 로 승격하지 않는다 (경계 너머 관측 불가 → 해소 안 되는 frontier 방지).
   // 기본 0 = 비활성. yaml 의 FrontierManager/box_boundary_margin 으로만 켠다.
   int box_boundary_margin_ = 0;
+  // [feature: obs-breakdown] bad_obs 를 far/fov_edge/gap 세 토픽으로도 발행할지.
+  // 진단 전용이며 판정 로직에는 영향이 없다. bad_obs 와 같은 양의 점군이 한 벌
+  // 더 나가므로(약 2배) 대역폭·bag 크기가 늘어난다. 원인 규명이 끝나면 끌 것.
+  bool viz_obs_breakdown_ = true;
   float cluster_min_size_;
   Eigen::Vector3f map_min_;
   Eigen::Vector3f map_max_;
