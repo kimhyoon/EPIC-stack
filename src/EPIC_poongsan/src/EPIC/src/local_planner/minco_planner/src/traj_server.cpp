@@ -16,7 +16,7 @@ using namespace Eigen;
 using namespace std;
 double replan_time_;
 ros::Publisher pos_cmd_pub, cmd_vis_pub, traj_pub;
-std::shared_ptr<Trajectory<7>> traj_;
+std::shared_ptr<Trajectory<5>> traj_;
 std::shared_ptr<Trajectory<5>> yaw_traj_;
 quadrotor_msgs::PositionCommand cmd;
 std::vector<Eigen::Vector3d> traj_cmd_, traj_real_;
@@ -156,34 +156,35 @@ void drawCmd(const Eigen::Vector3d &pos, const Eigen::Vector3d &vec, const int &
 }
 
 void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
-  if (msg->order != 7) {
-    ROS_ERROR("[traj_server] Only support trajectory order equals 7 now!");
+  if (msg->order != 5) {
+    ROS_ERROR("[traj_server] Only support trajectory order equals 5 now!");
     return;
   }
-  if (msg->duration.size() * (msg->order + 1) != msg->coef_x.size()) {
+  const size_t expected_coeffs =
+      msg->duration.size() * static_cast<size_t>(msg->order + 1);
+  if (expected_coeffs != msg->coef_x.size() ||
+      expected_coeffs != msg->coef_y.size() ||
+      expected_coeffs != msg->coef_z.size()) {
     ROS_ERROR("[traj_server] WRONG trajectory parameters, ");
     return;
   }
 
   int piece_nums = msg->duration.size();
   std::vector<double> dura(piece_nums);
-  std::vector<Piece<7>::CoefficientMat> cMats(piece_nums);
+  std::vector<Piece<5>::CoefficientMat> cMats(piece_nums);
   for (int i = 0; i < piece_nums; ++i) {
-    int i6 = i * 8;
+    int i6 = i * 6;
     cMats[i].row(0) << msg->coef_x[i6 + 0], msg->coef_x[i6 + 1], msg->coef_x[i6 + 2],
-    msg->coef_x[i6 + 3], msg->coef_x[i6 + 4], msg->coef_x[i6 + 5], msg->coef_x[i6 + 6],
-    msg->coef_x[i6 + 7];
+    msg->coef_x[i6 + 3], msg->coef_x[i6 + 4], msg->coef_x[i6 + 5];
     cMats[i].row(1) << msg->coef_y[i6 + 0], msg->coef_y[i6 + 1], msg->coef_y[i6 + 2],
-    msg->coef_y[i6 + 3], msg->coef_y[i6 + 4], msg->coef_y[i6 + 5], msg->coef_y[i6 + 6],
-    msg->coef_y[i6 + 7];
+    msg->coef_y[i6 + 3], msg->coef_y[i6 + 4], msg->coef_y[i6 + 5];
     cMats[i].row(2) << msg->coef_z[i6 + 0], msg->coef_z[i6 + 1], msg->coef_z[i6 + 2],
-    msg->coef_z[i6 + 3], msg->coef_z[i6 + 4], msg->coef_z[i6 + 5], msg->coef_z[i6 + 6],
-    msg->coef_z[i6 + 7];
+    msg->coef_z[i6 + 3], msg->coef_z[i6 + 4], msg->coef_z[i6 + 5];
 
     dura[i] = msg->duration[i];
   }
 
-  traj_.reset(new Trajectory<7>(dura, cMats));
+  traj_.reset(new Trajectory<5>(dura, cMats));
 
   start_time_ = msg->start_time;
   traj_duration_ = traj_->getTotalDuration();

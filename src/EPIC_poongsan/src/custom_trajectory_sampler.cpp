@@ -16,7 +16,7 @@ private:
     ros::Publisher discrete_points_pub_;      // visualization_msgs/MarkerArray
     ros::Publisher discrete_poses_pub_;       // geometry_msgs/PoseStamped array
     
-    std::shared_ptr<Trajectory<7>> current_traj_;
+    std::shared_ptr<Trajectory<5>> current_traj_;
     std::shared_ptr<Trajectory<5>> current_yaw_traj_;
     
     // Sampling parameters (configurable via ROS parameters)
@@ -46,31 +46,36 @@ public:
     }
     
     void trajectoryCallback(const traj_utils::PolyTrajPtr& msg) {
-        if (msg->order != 7) {
-            ROS_WARN("[Trajectory Sampler] Only support 7th order trajectory!");
+        if (msg->order != 5) {
+            ROS_WARN("[Trajectory Sampler] Only support 5th order trajectory!");
+            return;
+        }
+        const size_t expected_coeffs =
+            msg->duration.size() * static_cast<size_t>(msg->order + 1);
+        if (expected_coeffs != msg->coef_x.size() ||
+            expected_coeffs != msg->coef_y.size() ||
+            expected_coeffs != msg->coef_z.size()) {
+            ROS_WARN("[Trajectory Sampler] Invalid coefficient count");
             return;
         }
         
         // Parse trajectory
         int piece_nums = msg->duration.size();
         std::vector<double> dura(piece_nums);
-        std::vector<Piece<7>::CoefficientMat> cMats(piece_nums);
+        std::vector<Piece<5>::CoefficientMat> cMats(piece_nums);
         
         for (int i = 0; i < piece_nums; ++i) {
-            int i8 = i * 8;
-            cMats[i].row(0) << msg->coef_x[i8+0], msg->coef_x[i8+1], msg->coef_x[i8+2], 
-                               msg->coef_x[i8+3], msg->coef_x[i8+4], msg->coef_x[i8+5], 
-                               msg->coef_x[i8+6], msg->coef_x[i8+7];
-            cMats[i].row(1) << msg->coef_y[i8+0], msg->coef_y[i8+1], msg->coef_y[i8+2], 
-                               msg->coef_y[i8+3], msg->coef_y[i8+4], msg->coef_y[i8+5], 
-                               msg->coef_y[i8+6], msg->coef_y[i8+7];
-            cMats[i].row(2) << msg->coef_z[i8+0], msg->coef_z[i8+1], msg->coef_z[i8+2], 
-                               msg->coef_z[i8+3], msg->coef_z[i8+4], msg->coef_z[i8+5], 
-                               msg->coef_z[i8+6], msg->coef_z[i8+7];
+            int i6 = i * 6;
+            cMats[i].row(0) << msg->coef_x[i6+0], msg->coef_x[i6+1], msg->coef_x[i6+2],
+                               msg->coef_x[i6+3], msg->coef_x[i6+4], msg->coef_x[i6+5];
+            cMats[i].row(1) << msg->coef_y[i6+0], msg->coef_y[i6+1], msg->coef_y[i6+2],
+                               msg->coef_y[i6+3], msg->coef_y[i6+4], msg->coef_y[i6+5];
+            cMats[i].row(2) << msg->coef_z[i6+0], msg->coef_z[i6+1], msg->coef_z[i6+2],
+                               msg->coef_z[i6+3], msg->coef_z[i6+4], msg->coef_z[i6+5];
             dura[i] = msg->duration[i];
         }
         
-        current_traj_.reset(new Trajectory<7>(dura, cMats));
+        current_traj_.reset(new Trajectory<5>(dura, cMats));
         
         // Sample and publish
         sampleAndPublish(msg->start_time);
@@ -177,4 +182,4 @@ int main(int argc, char** argv) {
     ros::spin();
     
     return 0;
-} 
+}

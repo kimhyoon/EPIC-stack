@@ -652,21 +652,20 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_)
     clipCorridorToObservedCone(hPolys);
 
-  Eigen::Matrix<double, 3, 4> iniState;
-  Eigen::Matrix<double, 3, 4> finState;
+  Eigen::Matrix3d iniState;
+  Eigen::Matrix3d finState;
   double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
   if (is_static) {
     // TSP、更新地图等会阻塞里程计回调函数，导致这里的数据不准，所以只有static才用
     iniState << local_data_.curr_pos_, Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+        Eigen::Vector3d::Zero();
   } else {
     time_now =
         time_now > local_data_.duration_ ? local_data_.duration_ : time_now;
     Eigen::Vector3d current_pose = local_data_.minco_traj_.getPos(time_now);
     Eigen::Vector3d curr_vel = local_data_.minco_traj_.getVel(time_now);
     Eigen::Vector3d curr_acc = local_data_.minco_traj_.getAcc(time_now);
-    Eigen::Vector3d curr_jerk = local_data_.minco_traj_.getJer(time_now);
-    iniState << current_pose, curr_vel, curr_acc, curr_jerk;
+    iniState << current_pose, curr_vel, curr_acc;
   }
 
   Eigen::Vector4d bh;
@@ -773,7 +772,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       local_data_.end_yaw_ = std::atan2(fwdDir.y(), fwdDir.x());
     }
     finState << fallback.point, Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+        Eigen::Vector3d::Zero();
     ROS_WARN_THROTTLE(
         1.0,
         "corridor fallback target selected at %.2f m guide progress "
@@ -782,7 +781,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     gcopter_viz_->visualizePolytope(hPolys, true);
   } else {
     finState << path_shorten.back(), Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+        Eigen::Vector3d::Zero();
     gcopter_viz_->visualizePolytope(hPolys);
   }
   if (!raw_hPolys.empty())
@@ -1291,30 +1290,24 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   }
   
   // Declare iniState variable
-  Eigen::Matrix<double, 3, 4> iniState;
+  Eigen::Matrix3d iniState;
   
   if (is_static) {
     // TSP、更新地图等会阻塞里程计回调函数，导致这里的数据不准，所以只有static才用
-    iniState << local_data_.curr_pos_, dir * 0.2, Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero();
+    iniState << local_data_.curr_pos_, dir * 0.2, Eigen::Vector3d::Zero();
     // iniState << topo_graph_->odom_node_->center_, local_data_.curr_vel_,
     // Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
   } else {
     time_now =
         time_now > local_data_.duration_ ? local_data_.duration_ : time_now;
     Eigen::Vector3d current_pose = local_data_.minco_traj_.getPos(time_now);
-    Eigen::Vector3d curr_vel = local_data_.minco_traj_.getVel(time_now);
-    Eigen::Vector3d curr_acc = local_data_.minco_traj_.getAcc(time_now);
-    Eigen::Vector3d curr_jerk = local_data_.minco_traj_.getJer(time_now);
-    // iniState << current_pose, curr_vel, curr_acc, curr_jerk;
-    iniState << current_pose, dir * 0.2, Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero();
+    iniState << current_pose, dir * 0.2, Eigen::Vector3d::Zero();
   }
-  Eigen::Matrix<double, 3, 4> finState;
+  Eigen::Matrix3d finState;
   ros::Time hpoly_gen_end = ros::Time::now();
   // iniState << topo_graph_->odom_node_->center_, local_data_.curr_vel_,
   // Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-  finState << inner, dir, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
+  finState << inner, dir, Eigen::Vector3d::Zero();
   bh << iniState.topLeftCorner<3, 1>(), 1.0;
   int start_idx = -1;
   for (int i = hPolys.size() - 1; i >= 0; i--) {
@@ -1424,17 +1417,17 @@ void FastPlannerManager::polyTraj2ROSMsg(traj_utils::PolyTraj &poly_msg,
   poly_msg.drone_id = 0;
   poly_msg.traj_id = local_data_.traj_id_;
   poly_msg.start_time = start_time;
-  poly_msg.order = 7;
+  poly_msg.order = 5;
   poly_msg.duration.resize(piece_num);
-  poly_msg.coef_x.resize(8 * piece_num);
-  poly_msg.coef_y.resize(8 * piece_num);
-  poly_msg.coef_z.resize(8 * piece_num);
+  poly_msg.coef_x.resize(6 * piece_num);
+  poly_msg.coef_y.resize(6 * piece_num);
+  poly_msg.coef_z.resize(6 * piece_num);
   for (int i = 0; i < piece_num; ++i) {
     poly_msg.duration[i] = durs(i);
-    Eigen::Matrix<double, 3, 8> cMat =
+    Eigen::Matrix<double, 3, 6> cMat =
         local_data_.minco_traj_.pieces[i].getCoeffMat();
-    int i6 = i * 8;
-    for (int j = 0; j < 8; j++) {
+    int i6 = i * 6;
+    for (int j = 0; j < 6; j++) {
       poly_msg.coef_x[i6 + j] = cMat(0, j);
       poly_msg.coef_y[i6 + j] = cMat(1, j);
       poly_msg.coef_z[i6 + j] = cMat(2, j);
