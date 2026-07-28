@@ -89,7 +89,8 @@ bool ParallelBubbleAstar::isNodeSafe(Node::Ptr node, const Eigen::Vector3f &bbox
   if (danger_set.count(idx))
     return false;
 
-  double radius = lidar_map_interface_->getDisToOcc(node->position) - safe_distance_ - 1e-1;
+  double radius =
+      lidar_map_interface_->getDisToOcc(node->position) - safe_distance_;
 
   if (radius > 0) {
     int width = (int)((radius * 0.57737) * inv_resolution_) - 1;
@@ -112,11 +113,11 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
                                     bool best_result, bool only_raycast, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max) {
   // step 1 one-shot
   vector<Eigen::Vector3f>().swap(path);
-  double goal_r;
-  goal_r = min(1.5, lidar_map_interface_->getDisToOcc(goal) - safe_distance_ - 1e-3);
-  if (goal_r <= 1e-2) {
-    return ParallelBubbleAstar::NO_PATH;
+  const double goal_clearance = lidar_map_interface_->getDisToOcc(goal);
+  if (goal_clearance <= safe_distance_) {
+    return ParallelBubbleAstar::END_FAIL;
   }
+  double goal_r = min(1.5, goal_clearance - safe_distance_);
   double len = (goal - start).norm();
   Eigen::Vector3f dir = (goal - start).normalized();
   Eigen::Vector3f curr_pos = start;
@@ -124,7 +125,7 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
   path_tmp.push_back(curr_pos);
   while (true) {
     double step;
-    step = min(1.5, lidar_map_interface_->getDisToOcc(curr_pos) - safe_distance_ - 1e-3);
+    step = min(1.5, lidar_map_interface_->getDisToOcc(curr_pos) - safe_distance_);
     if (step <= 1e-2)
       break;
     if (step + goal_r > (goal - curr_pos).norm()) {

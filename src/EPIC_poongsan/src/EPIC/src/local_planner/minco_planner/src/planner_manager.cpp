@@ -954,9 +954,42 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
   // cout << endl;
 
   local_data_.minco_yaw_traj_.clear();
-  if (std::isinf(gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM,
+  bool yaw_opt_failed =
+      std::isinf(gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM,
                                           wpsYaw, opt_times_Yaw,
-                                          local_data_.minco_yaw_traj_))) {
+                                          local_data_.minco_yaw_traj_));
+
+  // [진단] 고치지 않았다면 NaN 을 만들었을 두 조건을 그대로 보고한다. 원인이
+  // 확정되면 이 블록과 gcopter.hpp 의 yaw_diag_* 계측을 함께 제거한다.
+  if (!gcopter_yaw.yaw_diag_head_was_finite ||
+      !gcopter_yaw.yaw_diag_tail_was_finite) {
+    ROS_WARN_THROTTLE(2.0,
+                      "[yaw-opt] headPVA/tailPVA were non-finite before init "
+                      "(head=%d tail=%d) -> old code would have NaN'd here",
+                      gcopter_yaw.yaw_diag_head_was_finite ? 1 : 0,
+                      gcopter_yaw.yaw_diag_tail_was_finite ? 1 : 0);
+  }
+  if (gcopter_yaw.yaw_diag_zero_diff_hits > 0) {
+    ROS_WARN_THROTTLE(2.0,
+                      "[yaw-opt] guide diff==0 on %d/%d samples -> old code "
+                      "would have NaN'd here",
+                      gcopter_yaw.yaw_diag_zero_diff_hits,
+                      gcopter_yaw.yaw_diag_vis_samples);
+  }
+  if (!gcopter_yaw.yaw_diag_x0_finite) {
+    ROS_WARN_THROTTLE(2.0,
+                      "[yaw-opt] non-finite at x0: f0=%g bad_grad_idx=%d "
+                      "pieceNUM=%d dur=%.3f min_opt_time=%.4f "
+                      "iniYaw_finite=%d finYaw_finite=%d wps_finite=%d",
+                      gcopter_yaw.yaw_diag_f0,
+                      gcopter_yaw.yaw_diag_bad_grad_idx, pieceNUM,
+                      local_data_.duration_, opt_times_Yaw.minCoeff(),
+                      iniStateYaw.allFinite() ? 1 : 0,
+                      finStateYaw.allFinite() ? 1 : 0,
+                      wpsYaw.allFinite() ? 1 : 0);
+  }
+
+  if (yaw_opt_failed) {
     std::cout << "optimize yaw failed!" << std::endl;
     return false;
   }

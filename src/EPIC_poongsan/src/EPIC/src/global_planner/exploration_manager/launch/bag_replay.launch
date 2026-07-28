@@ -44,7 +44,7 @@
   <arg name="dry_run"      default="false"      doc="true 면 분류표만 출력하고 종료"/>
   <arg name="allow"        default=""           doc="강제로 재생할 토픽/글롭 (쉼표 구분)"/>
   <arg name="deny"         default=""           doc="추가로 제외할 토픽/글롭 (쉼표 구분)"/>
-  <arg name="rviz"         default="true"       doc="rviz 자동 실행 (real.yaml 값을 덮어씀)"/>
+  <arg name="rviz"         default="false"       doc="rviz 자동 실행 (real.yaml 값을 덮어씀)"/>
   <arg name="record"       default="false"
        doc="재생 중 녹화. 기본 false — 리플레이 결과가 records 폴더를 오염시키지 않게"/>
   <arg name="auto_trigger" default="true"

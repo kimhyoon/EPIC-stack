@@ -93,6 +93,24 @@ private:
   bool use_shorten_path = false;
   Eigen::Matrix3Xd guide_path;
 
+public:
+  /* [진단] yaw 최적화가 "negative line-search step" 으로 죽던 원인을 가리기 위한
+     임시 계측. 두 결함을 아래에서 고쳤지만, 어느 쪽이 실제로 발화하고 있었는지
+     실기 로그로 확인하려고 "고치지 않았다면 터졌을 조건" 을 그대로 센다.
+     원인이 확정되면 이 블록과 관련 코드를 통째로 제거한다.
+       - head/tail_was_finite: 수정 전 코드가 읽던 초기화 안 된 headPVA/tailPVA 가
+         이번 호출에서 유한했는지. false 면 그 경로가 범인이다.
+       - zero_diff_hits: grad_cost_visibility 에서 diff == 0 (0/0 = NaN) 이 나온
+         샘플 수. 0 보다 크면 그 경로가 범인이다. */
+  bool yaw_diag_head_was_finite = true;
+  bool yaw_diag_tail_was_finite = true;
+  int yaw_diag_zero_diff_hits = 0;
+  int yaw_diag_vis_samples = 0;
+  bool yaw_diag_x0_finite = true;
+  double yaw_diag_f0 = 0.0;
+  int yaw_diag_bad_grad_idx = -1;
+
+private:
   lbfgs::lbfgs_parameter_t lbfgs_params;
 
   Eigen::Matrix3Xd points;
@@ -329,10 +347,19 @@ private:
     double mu_ = 1.5e-1;
     double smooth_cost, smooth_grad;
 
+    ++yaw_diag_vis_samples;
     if (smoothedL1(abs_diff, mu_, smooth_cost, smooth_grad)) {
       costp = yaw_rho_vis * smooth_cost;
       gradp.setZero();
-      gradp.x() = yaw_rho_vis * smooth_grad * (diff / abs_diff); // 链式法则
+      // smoothedL1 은 x < 0 만 거르므로 x == 0 에서도 true 를 반환한다. 따라서
+      // diff 가 정확히 0 이면 diff/abs_diff 가 0/0 = NaN 이 되고, smooth_grad 가
+      // 0 이어도 0 * NaN = NaN 으로 살아남아 gradient 전체를 오염시킨다.
+      // diff == 0 에서 올바른 gradient 는 0 이다.
+      if (abs_diff > 0.0) {
+        gradp.x() = yaw_rho_vis * smooth_grad * (diff / abs_diff); // 链式法则
+      } else {
+        ++yaw_diag_zero_diff_hits;
+      }
       return true;
     }
 
@@ -978,6 +1005,23 @@ public:
     // cout<<"pieceNum: "<<pieceNum<<endl;
     // }
 
+    // [진단] 아래 대입 전에 읽어둔다 — 수정 전 코드가 PenaltyFunctional_yaw 에서
+    // 실제로 쓰던 값이 이번 호출에서 유한했는지 기록하기 위해서다.
+    yaw_diag_head_was_finite = headPVA.allFinite();
+    yaw_diag_tail_was_finite = tailPVA.allFinite();
+    yaw_diag_zero_diff_hits = 0;
+    yaw_diag_vis_samples = 0;
+
+    // headPVA/tailPVA 는 이 클래스 어디에서도 대입된 적이 없는데
+    // PenaltyFunctional_yaw 가 첫/마지막 piece 의 유도값으로 읽는다(초기화 안 된
+    // 스택 메모리). setup() 이 채우는 건 이름이 비슷한 headPVAJ/tailPVAJ 로 별개
+    // 멤버이고, optimize_yaw 는 매번 새 스택 객체 위에서 돌아 잔여 바이트가 그대로
+    // 들어온다. 그 값이 NaN 이면 x0 에서 gradient 가 비유한이 되어 L-BFGS 가
+    // 첫 line search 에서 LBFGSERR_INVALIDPARAMETERS 로 죽는다.
+    // yaw 문제의 경계값은 yaw 시작/끝 상태다.
+    headPVA = inityaw;
+    tailPVA = endyaw;
+
     yaw_minco.setConditions(inityaw, endyaw, pieceNum);
     yaw_minco.setParameters(guide_path, ts);
 
@@ -998,6 +1042,22 @@ public:
     lbfgs_params.min_step = 1.0e-20;
     lbfgs_params.g_epsilon = 1e-5;
     lbfgs_params.delta = 1e-5;
+
+    // [진단] L-BFGS 는 첫 line search 에서만 step = 1/||g(x0)|| 를 쓰므로, x0 의
+    // cost/gradient 가 비유한이면 곧바로 LBFGSERR_INVALIDPARAMETERS 로 죽는다.
+    // 어느 성분이 깨졌는지 남겨 두면 실패 원인을 사후에 특정할 수 있다.
+    {
+      Eigen::VectorXd g0(opt_dim);
+      yaw_diag_f0 = costFunctional_yaw(this, x_yaw, g0);
+      yaw_diag_bad_grad_idx = -1;
+      for (int i = 0; i < opt_dim; i++) {
+        if (!std::isfinite(g0(i))) {
+          yaw_diag_bad_grad_idx = i;
+          break;
+        }
+      }
+      yaw_diag_x0_finite = std::isfinite(yaw_diag_f0) && yaw_diag_bad_grad_idx < 0;
+    }
 
     // int ret =0;
     int ret =
