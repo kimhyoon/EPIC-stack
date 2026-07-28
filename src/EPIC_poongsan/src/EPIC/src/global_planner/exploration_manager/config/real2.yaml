@@ -362,6 +362,20 @@ ViewpointManager/vp_reached_clear_enable: true   # 강제 해소 사용
 ViewpointManager/vp_reached_pos_tol: 0.3         # best_vp 와의 거리 허용치[m]
 ViewpointManager/vp_reached_yaw_tol_deg: 20.0    # best_vp yaw 와의 차이 허용치[deg]
 
+# [도달 지점 주변 Frontier 일괄 해소][강한 옵션]
+# 위 강제 해소가 걸렸을 때, 목표 클러스터 하나만 지우는 대신 드론 반경 이 거리
+# 안의 Frontier 를 전부 관측 완료(DENSE)로 처리하고 제거한다. 0 = 사용 안 함.
+# 반경에 닿은 클러스터는 일부만 걸쳐도 통째로 지운다 — 일부만 지우면 남은 셀이
+# 곧 새 클러스터가 되어 같은 자리에 다시 묶이기 때문이다(리플레이에서 같은 목표가
+# 4회 재등장하는 것을 확인했다).
+# 값 증가 시 한 자리에 묶이는 현상은 확실히 끊기지만 실제로 보지 못한 공간까지
+# 넓게 탐사 완료로 처리되고, 값 감소 시 안전하지만 옆 클러스터로 목표가 옮겨가며
+# 같은 자리에 머무를 수 있다.
+# DENSE 는 되돌릴 수 없다. 탐사가 멈추는 것이 미탐사 영역을 잃는 것보다 나쁘다고
+# 판단될 때만 켤 것. 참고: sample_pillar_max_radius(3.0) 보다 크게 잡으면 그 자리에서
+# 만들 수 있는 뷰포인트의 대상 Frontier 가 사실상 전부 사라진다.
+ViewpointManager/vp_reached_clear_radius: 0.0  # 일괄 해소 반경[m], 0이면 사용 안 함
+
 
 
 # ViewpointManager/* : Viewpoint 생성·선택 끝

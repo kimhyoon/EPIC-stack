@@ -124,6 +124,13 @@ struct ViewpointParam {
   bool vp_reached_clear_enable_ = true;
   float vp_reached_pos_tol_ = 0.3f;   // [m]   best_vp_ 와의 거리 허용치
   float vp_reached_yaw_tol_ = 0.35f;  // [rad] best_vp_yaw_ 와의 차이 허용치 (~20deg)
+  // [feature: vp-reached-clear-radius] 위 조건이 걸렸을 때, 목표 클러스터 하나만
+  // 지우는 대신 드론 반경 이 거리 안의 프론티어를 전부 해소한다 [m]. 0 = 비활성.
+  // 목표만 지우면 바로 옆 클러스터가 다음 목표가 되어 같은 자리에 다시 묶이는
+  // 일이 있어서, "여기서는 더 볼 게 없다"를 한 번에 정리하는 강한 선택지다.
+  // SPARSE 가 아니라 DENSE 로 찍는다 — 분류 루프에서 건너뛰는 상태는 DENSE 뿐이라
+  // SPARSE 로 두면 다음 프레임에 곧바로 프론티어로 되돌아온다.
+  float vp_reached_clear_radius_ = 0.0f;
 };
 
 // [feature: vp-viz] viewpoint 후보 하나의 최종 판정. 파이프라인이 후보를 버리는

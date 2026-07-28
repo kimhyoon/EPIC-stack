@@ -209,12 +209,7 @@ FrontierManager/good_observation_direction_score: 0.6  # 관측 방향 신뢰 �
 # [근거리 강제 관측 완료 거리]
 # 드론과 가까운 셀은 관측 방향이 다소 좋지 않아도 관측 완료(DENSE)로 처리하여 Frontier 대상에서 제거할 거리를 결정한다.
 # 값 증가 시 근거리 Frontier 묶음과 viewpoint 목표가 빠르게 줄지만 실제 미관측 영역까지 제거할 수 있고, 값 감소 시 근거리 Frontier와 viewpoint가 오래 남아 반복 목표가 될 수 있다.
-FrontierManager/good_observation_force_trust_length: 0.5  # 강제 관측 완료 거리[m]
-# 위 값은 "라이다 -> 셀" 거리 기준의 매핑용이다. 예전에는 이 값 하나를 viewpoint
-# 평가에도 같이 썼는데, 그쪽은 기준점이 "후보 viewpoint -> 셀"이라 의미가 다르다.
-# 값이 묶여 있어서 매핑을 보수적으로 낮추면(0.5) viewpoint 평가가 조용히 망가졌다
-# — 후보는 sample_pillar_min_radius(1.0) 밖에만 생기므로 FRONTIER_DIR 셀이 어떤
-# 후보에서도 카운트되지 못했다. 이제 아래 값으로 분리한다.
+FrontierManager/good_observation_force_trust_length: 0.5  # 강제 관측 완료 거리[m] "라이다 -> 셀" 거리 기준의 매핑용이다. 
 
 # [Viewpoint 평가: FRONTIER_DIR 셀 신뢰 거리]
 # gap/FOV-edge 로 표시된 Frontier 셀을 후보 viewpoint 에서 "보인다"고 인정할 최대 거리.
@@ -272,13 +267,8 @@ FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 0이�
 #   bad_obs_far      거리 > good_observation_trust_length
 #   bad_obs_fovedge  깊이영상에서 관측 데이터의 바깥 테두리 (열/행의 최외곽 유효 픽셀)
 #   bad_obs_gap      이웃 픽셀에 데이터가 없거나 깊이가 불연속
-# far -> fov_edge -> gap 우선순위로 배타 분류하므로 셋의 합 = bad_obs 다.
-# 판정 로직에는 영향이 없고 시각화/기록만 추가된다.
-# 주의: fov_edge 로 거부된 셀은 good_observation_force_trust_length 를 키워도
-# 해소되지 않는다 (force-trust 경로에 !is_fov_edge 조건이 있다). 즉 이 값이
-# frontier 가 안 없어지는 문제를 거리 문턱으로 고칠 수 있는지 판단하는 근거다.
 # bad_obs 와 같은 양의 점군이 한 벌 더 나가므로 bag 크기가 늘어난다.
-FrontierManager/viz_obs_breakdown: true  # 사유별 점군 발행
+FrontierManager/viz_obs_breakdown: false  # 사유별 점군 발행
 
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
@@ -330,37 +320,19 @@ ViewpointManager/local_tsp_size: 8  # 한 주기에 검사할 Frontier 묶음 �
 # [Viewpoint 도달성 판정 제한시간]
 # 후보 viewpoint 까지 topology graph 로 경로가 있는지 A* 로 확인할 때 허용하는 연산시간이다.
 # 이 시간 안에 못 끝내면 경로가 실제로 있어도 "도달 불가"로 처리되어 rviz 에서 주황색이 된다
-# (코드가 시간초과와 경로없음을 구분하지 않는다 — 어느 쪽인지는 이벤트 로그의 reach[...] 로 본다).
-# 값 증가 시 먼 Frontier 까지 정상 평가되지만 전역 계획 주기가 길어지고,
-# 값 감소 시 계획은 빨라지지만 먼 Frontier 부터 시간 때문에 탈락해 탐사가 조기 종료될 수 있다.
-#
-# 이 값은 global_planning/topo_cost_search_timeout 이상이어야 한다. 바로 다음 단계가
-# 같은 start->viewpoint 질의를 그 값으로 평가하므로, 여기가 더 엄격하면 뒤 단계가
-# 정상 처리했을 viewpoint 를 문 앞에서 버리게 된다.
-#
-# 실측 근거 (5회차 온보드 기록):
-#   09-08-30  topo A*  median 0.119 / p90 0.290 / max 0.958 ms
-#   09-03-49  topo A*  median 0.077 / p90 0.210 / max 2.694 ms
-#   removeUnreachableViewpoints 단계 전체  median 1.4-1.8 / max 3.7-6.7 ms (탐색 10-15 회 포함)
-# 기존 하드코딩 값 0.0003 은 p90 에 정확히 걸쳐 있어 10 번에 1 번꼴로 시간만으로 실패했고,
-# 먼 Frontier 부터 TOPO_UNREACHABLE 이 되어 탐사가 조기 종료됐다 (09-08-30 t=34.6s).
-# 완주를 허용하면 0.3-2.7 ms 에 끝나므로 0.01 로 올려도 주기당 +1~5 ms 수준이다.
-# 주의: 최악은 (탐색 횟수 x 이 값) 이고 그래프가 커질수록 커진다. 장시간 비행에서
-# /global_planning/remove_unreachable_cost 의 p90 이 10-15 ms 를 넘기 시작하면 낮출 것.
 ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[s]
 
 # [도달했는데 안 없어지는 Frontier 강제 해소]
 # 뷰포인트까지 갔는데도 그 클러스터의 Frontier 가 그대로면, 그 위치에서는 실제로
 # 관측되지 않는다고 보고 클러스터의 셀 전부를 관측 완료(DENSE)로 표시하고 제거한다.
-# 원저자가 의도했던 경로인데 임계값이 1cm/0.57deg 라 한 번도 발동한 적이 없었다.
-# 주의: 실제로 보지 못한 공간을 본 것으로 처리하는 조치다. 영구적이며 되돌릴 수
-# 없고, 예측 가시 셀(see)보다 많은 셀까지 함께 지운다. 대신 탐사가 한 목표에
-# 묶여 비행 내내 멈추는 것을 막는다 (4회차 09-23-37: 52초 동안 한 목표 고정).
-# 근본 원인(gap/FOV-edge 로 관측이 거부되는 것)을 고치는 것이 아니라 증상 처리다.
-# enable=false 로 끄면 기존(발동 안 함) 동작으로 되돌아간다.
 ViewpointManager/vp_reached_clear_enable: true    # 강제 해소 사용
 ViewpointManager/vp_reached_pos_tol: 0.3         # best_vp 와의 거리 허용치[m]
 ViewpointManager/vp_reached_yaw_tol_deg: 20.0    # best_vp yaw 와의 차이 허용치[deg]
+# [도달 지점 주변 Frontier 일괄 해소][강한 옵션]
+# 위 강제 해소가 걸렸을 때, 목표 클러스터 하나만 지우는 대신 드론 반경 이 거리
+# 안의 Frontier 를 전부 관측 완료(DENSE)로 처리하고 제거한다. 0 = 사용 안 함.
+# 반경에 닿은 클러스터는 일부만 걸쳐도 통째로 지운다
+ViewpointManager/vp_reached_clear_radius: 0.0  # 일괄 해소 반경[m], 0이면 사용 안 함
 
 
 # ViewpointManager/* : Viewpoint 생성·선택 끝
@@ -393,8 +365,6 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 
 # [최대 비행 속도]
 # MINCO가 생성하는 3차원 궤적의 최대 속도를 결정한다.
-# 탐사가 너무 느리면 높이고, 경로 추종 오차·진동·제동거리 문제가 발생하면 낮춘다.
-# 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
 MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [이동 궤적에 따른 기체 자세 변화율]
@@ -500,14 +470,7 @@ fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 �
 # 돌고 있었다.
 fsm/explore_warmup_timeout: 5.0  # [s] frontier 0개 결론 유예 시간
 
-# ── 조기 종료 구제 (EARLY_FINISH) ────────────────────────────────────
-# 이륙 직후에는 LiDAR FOV(120°x30°)가 좁아 관측 영역이 거의 없다. 이때 Frontier
-# 묶음이 최소 크기에 못 미치거나 전부 도달 불가로 걸러지면 EPIC은 "다 봤다"고
-# 판단해 몇 m 도 못 가고 FINISH -> 복귀해 버린다.
-# 이 기능은 그 상황에서 탐사를 한 번 더 시도한다: topology graph에서 현재 위치로부터
-# 경로거리가 가장 먼 노드를 목표로 삼아 날아가면서 관측을 늘리고, 그 사이 Frontier가
-# 되살아나면 그 즉시 평소대로 탐사를 이어간다. 끝까지 아무것도 없으면 정상 복귀한다.
-# 이동 중 진짜 Frontier가 생기면 자동으로 그쪽이 우선되므로 별도 설정은 없다.
+
 # ── 이륙 후 제자리 360도 초기 관측 회전 (YAW_ROTATE_INIT) ──────────────
 # 이륙 직후에는 LiDAR 가 거의 아무것도 못 봐서 frontier 가 0개로 잡히고, 그대로
 # 탐사를 시작하면 첫 계획부터 갈 곳이 없다. 호버 지점을 유지한 채 한 바퀴 돌아
@@ -524,6 +487,11 @@ fsm/explore_warmup_timeout: 5.0  # [s] frontier 0개 결론 유예 시간
 fsm/yaw_rotate_init_enable: false
 fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
 
+
+# ── 조기 종료 구제 (EARLY_FINISH) ────────────────────────────────────
+# topology graph에서 현재 위치로부터 경로거리가 가장 먼 노드를 목표로 삼아 날아가면서 관측을 늘리고, 그 사이 Frontier가
+# 되살아나면 그 즉시 평소대로 탐사를 이어간다. 끝까지 아무것도 없으면 정상 복귀한다.
+# 이동 중 진짜 Frontier가 생기면 자동으로 그쪽이 우선되므로 별도 설정은 없다.
 fsm/early_finish_enable: true
 
 # [조기 종료 판정 거리]

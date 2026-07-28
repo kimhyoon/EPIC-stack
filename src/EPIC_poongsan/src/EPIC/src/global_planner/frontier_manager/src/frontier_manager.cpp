@@ -106,9 +106,14 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.param("ViewpointManager/vp_reached_yaw_tol_deg", vp_reached_yaw_deg,
            20.0f);
   vpp_.vp_reached_yaw_tol_ = vp_reached_yaw_deg * static_cast<float>(M_PI) / 180.0f;
-  ROS_INFO("[FrontierManager] vp-reached clear: %s  pos_tol=%.2fm yaw_tol=%.1fdeg",
+  nh.param("ViewpointManager/vp_reached_clear_radius",
+           vpp_.vp_reached_clear_radius_, 0.0f);
+  ROS_INFO("[FrontierManager] vp-reached clear: %s  pos_tol=%.2fm yaw_tol=%.1fdeg "
+           "radius_sweep=%.2fm(%s)",
            vpp_.vp_reached_clear_enable_ ? "on" : "off",
-           vpp_.vp_reached_pos_tol_, vp_reached_yaw_deg);
+           vpp_.vp_reached_pos_tol_, vp_reached_yaw_deg,
+           vpp_.vp_reached_clear_radius_,
+           vpp_.vp_reached_clear_radius_ > 0.0f ? "on" : "off");
 
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
