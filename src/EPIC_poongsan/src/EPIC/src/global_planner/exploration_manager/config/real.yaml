@@ -452,7 +452,7 @@ fsm/explore_warmup_timeout: 5.0  # [s] frontier 0개 결론 유예 시간
 # 의도적으로 없다 — 회전이 확인되지 않으면 탐사를 시작하지 않고 제자리 호버로
 # 남는 편이 안전하다. 기체가 못 돌면 계속 회전 명령을 낸다.
 # 상태 관측: /planning/yaw_rotate_init
-fsm/yaw_rotate_init_enable: true
+fsm/yaw_rotate_init_enable: false
 fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
 
 fsm/early_finish_enable: true
