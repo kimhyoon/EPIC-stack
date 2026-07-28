@@ -46,6 +46,18 @@ global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 
+# [TSP 비용 행렬 계산의 topology A* 제한시간]
+# viewpoint 들 사이의 이동 비용을 채울 때 각 경로 탐색에 허용하는 연산시간이다.
+# 초과하면 그 쌍은 도달 불가(비용 2e3)로 처리되어 TSP 순서가 왜곡되거나 목표가 탈락한다.
+# 값 증가 시 먼 viewpoint 쌍도 정상 평가되지만 후보 수의 제곱에 비례해 계획 시간이 늘고,
+# 값 감소 시 계획은 빨라지지만 먼 목표가 도달 불가로 잘못 표시될 수 있다.
+global_planning/topo_cost_search_timeout: 0.01  # TSP 비용용 topo A* 제한시간[s]
+
+# [목표 경로 topology A* 제한시간]
+# RTH 나 /srv_rth 목표까지의 topology 경로를 찾을 때 허용하는 연산시간이다.
+# 위 두 값보다 넉넉해야 한다 — 여기서 실패하면 귀환 경로 자체가 없어진다.
+global_planning/goal_search_timeout: 0.1  # 목표 경로 topo A* 제한시간[s]
+
 # global_planning/* : 전역 탐사 목표 선택 끝
 # ====================================================================
 
@@ -301,6 +313,30 @@ ViewpointManager/min_obstacle_clearance: 0.6  # 장애물과 확보할 최소 �
 # Frontier가 남았는데 viewpoint 0개로 탐사가 끝나면 높이고, viewpoint 계산이 너무 느리면 낮춘다.
 # 후보 위치 모양을 바꾸는 값은 아니며, 이번 주기에 검사하는 Frontier 범위만 바꾼다.
 ViewpointManager/local_tsp_size: 8  # 한 주기에 검사할 Frontier 묶음 수[개]
+
+# [Viewpoint 도달성 판정 제한시간]
+# 후보 viewpoint 까지 topology graph 로 경로가 있는지 A* 로 확인할 때 허용하는 연산시간이다.
+# 이 시간 안에 못 끝내면 경로가 실제로 있어도 "도달 불가"로 처리되어 rviz 에서 주황색이 된다
+# (코드가 시간초과와 경로없음을 구분하지 않는다 — 어느 쪽인지는 이벤트 로그의 reach[...] 로 본다).
+# 값 증가 시 먼 Frontier 까지 정상 평가되지만 전역 계획 주기가 길어지고,
+# 값 감소 시 계획은 빨라지지만 먼 Frontier 부터 시간 때문에 탈락해 탐사가 조기 종료될 수 있다.
+#
+# 이 값은 global_planning/topo_cost_search_timeout 이상이어야 한다. 바로 다음 단계가
+# 같은 start->viewpoint 질의를 그 값으로 평가하므로, 여기가 더 엄격하면 뒤 단계가
+# 정상 처리했을 viewpoint 를 문 앞에서 버리게 된다.
+#
+# 실측 근거 (5회차 온보드 기록):
+#   09-08-30  topo A*  median 0.119 / p90 0.290 / max 0.958 ms
+#   09-03-49  topo A*  median 0.077 / p90 0.210 / max 2.694 ms
+#   removeUnreachableViewpoints 단계 전체  median 1.4-1.8 / max 3.7-6.7 ms (탐색 10-15 회 포함)
+# 기존 하드코딩 값 0.0003 은 p90 에 정확히 걸쳐 있어 10 번에 1 번꼴로 시간만으로 실패했고,
+# 먼 Frontier 부터 TOPO_UNREACHABLE 이 되어 탐사가 조기 종료됐다 (09-08-30 t=34.6s).
+# 완주를 허용하면 0.3-2.7 ms 에 끝나므로 0.01 로 올려도 주기당 +1~5 ms 수준이다.
+# 주의: 최악은 (탐색 횟수 x 이 값) 이고 그래프가 커질수록 커진다. 장시간 비행에서
+# /global_planning/remove_unreachable_cost 의 p90 이 10-15 ms 를 넘기 시작하면 낮출 것.
+ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[s]
+
+
 
 
 # ViewpointManager/* : Viewpoint 생성·선택 끝

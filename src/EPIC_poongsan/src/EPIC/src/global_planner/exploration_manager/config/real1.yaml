@@ -46,6 +46,18 @@ global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 
+# [TSP 비용 행렬 계산의 topology A* 제한시간]
+# viewpoint 들 사이의 이동 비용을 채울 때 각 경로 탐색에 허용하는 연산시간이다.
+# 초과하면 그 쌍은 도달 불가(비용 2e3)로 처리되어 TSP 순서가 왜곡되거나 목표가 탈락한다.
+# 값 증가 시 먼 viewpoint 쌍도 정상 평가되지만 후보 수의 제곱에 비례해 계획 시간이 늘고,
+# 값 감소 시 계획은 빨라지지만 먼 목표가 도달 불가로 잘못 표시될 수 있다.
+global_planning/topo_cost_search_timeout: 0.01  # TSP 비용용 topo A* 제한시간[s]
+
+# [목표 경로 topology A* 제한시간]
+# RTH 나 /srv_rth 목표까지의 topology 경로를 찾을 때 허용하는 연산시간이다.
+# 위 두 값보다 넉넉해야 한다 — 여기서 실패하면 귀환 경로 자체가 없어진다.
+global_planning/goal_search_timeout: 0.1  # 목표 경로 topo A* 제한시간[s]
+
 # global_planning/* : 전역 탐사 목표 선택 끝
 # ====================================================================
 
@@ -138,8 +150,8 @@ lidar_perception/max_ray_length: 30
 # --- 계획용 보수 FOV: 반드시 위 물리값 이내 (규칙 1) ---
 # 뷰포인트 yaw 선택 시 "이 각 안에 든 프론티어만 보인다"고 친다.
 # 360 미만이면 도착 yaw 가 프론티어를 향하도록 최적화된다.
-lidar_perception/fov_viewpoint_up: 15.0
-lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/fov_viewpoint_up: 10.0
+lidar_perception/fov_viewpoint_down: -10.0
 lidar_perception/fov_viewpoint_horizontal: 100.0
 
 # --- 독립된 두 스위치 (규칙 2 — 일치시킬 필요 없음) ---
@@ -149,7 +161,7 @@ lidar_perception/is_360lidar: false         # FOV-edge 스캔 사용
 lidar_perception/yaw_fov: 120.0             # cone clip 수평각
 
 # --- 장착 회전 [deg]: "odometry 프레임 대비" 회전임에 주의 ---
-lidar_perception/lidar_pitch: 0.0
+lidar_perception/lidar_pitch: 10.0
 lidar_perception/lidar_yaw: 0.0
 
 # --- 점군 좌표계 ---
@@ -302,6 +314,29 @@ ViewpointManager/min_obstacle_clearance: 0.6  # 장애물과 확보할 최소 �
 # 후보 위치 모양을 바꾸는 값은 아니며, 이번 주기에 검사하는 Frontier 범위만 바꾼다.
 ViewpointManager/local_tsp_size: 8  # 한 주기에 검사할 Frontier 묶음 수[개]
 
+# [Viewpoint 도달성 판정 제한시간]
+# 후보 viewpoint 까지 topology graph 로 경로가 있는지 A* 로 확인할 때 허용하는 연산시간이다.
+# 이 시간 안에 못 끝내면 경로가 실제로 있어도 "도달 불가"로 처리되어 rviz 에서 주황색이 된다
+# (코드가 시간초과와 경로없음을 구분하지 않는다 — 어느 쪽인지는 이벤트 로그의 reach[...] 로 본다).
+# 값 증가 시 먼 Frontier 까지 정상 평가되지만 전역 계획 주기가 길어지고,
+# 값 감소 시 계획은 빨라지지만 먼 Frontier 부터 시간 때문에 탈락해 탐사가 조기 종료될 수 있다.
+#
+# 이 값은 global_planning/topo_cost_search_timeout 이상이어야 한다. 바로 다음 단계가
+# 같은 start->viewpoint 질의를 그 값으로 평가하므로, 여기가 더 엄격하면 뒤 단계가
+# 정상 처리했을 viewpoint 를 문 앞에서 버리게 된다.
+#
+# 실측 근거 (5회차 온보드 기록):
+#   09-08-30  topo A*  median 0.119 / p90 0.290 / max 0.958 ms
+#   09-03-49  topo A*  median 0.077 / p90 0.210 / max 2.694 ms
+#   removeUnreachableViewpoints 단계 전체  median 1.4-1.8 / max 3.7-6.7 ms (탐색 10-15 회 포함)
+# 기존 하드코딩 값 0.0003 은 p90 에 정확히 걸쳐 있어 10 번에 1 번꼴로 시간만으로 실패했고,
+# 먼 Frontier 부터 TOPO_UNREACHABLE 이 되어 탐사가 조기 종료됐다 (09-08-30 t=34.6s).
+# 완주를 허용하면 0.3-2.7 ms 에 끝나므로 0.01 로 올려도 주기당 +1~5 ms 수준이다.
+# 주의: 최악은 (탐색 횟수 x 이 값) 이고 그래프가 커질수록 커진다. 장시간 비행에서
+# /global_planning/remove_unreachable_cost 의 p90 이 10-15 ms 를 넘기 시작하면 낮출 것.
+ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[s]
+
+
 
 # ViewpointManager/* : Viewpoint 생성·선택 끝
 # ====================================================================
@@ -335,7 +370,7 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 # MINCO가 생성하는 3차원 궤적의 최대 속도를 결정한다.
 # 탐사가 너무 느리면 높이고, 경로 추종 오차·진동·제동거리 문제가 발생하면 낮춘다.
 # 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
-MaxVelMag: 1.0  # 최대 비행 속도[m/s]
+MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [이동 궤적에 따른 기체 자세 변화율]
 # 급가속·급감속·경로 굴곡을 따라가기 위해 필요한 기체 기울기 변화율의 최대 크기를 MINCO가 계산할 때 사용한다.
@@ -389,7 +424,7 @@ RelCostTol: 1.1e-6
 # 드론의 기수가 이동 경로와 viewpoint를 바라보도록 생성하는 Yaw 궤적의 최대 회전속도를 결정한다.
 # 기수 회전이 너무 느리면 높이고, 좌우 급회전·흔들림·Yaw 추종 오차가 발생하면 낮춘다.
 # PX4의 실제 Yaw rate 하드 제한이 아니라 EPIC이 생성하는 Yaw 궤적의 계획값이다.
-yaw_max_vel: 1.0  # 1.0 rad/s = 57.3 deg/s
+yaw_max_vel: 1.5  # 1.0 rad/s = 57.3 deg/s
 
 # [Yaw 목표 방향 추종 가중치]
 # 생성되는 Yaw 궤적이 이동 경로와 viewpoint를 보고 계산한 목표 Yaw 방향을 얼마나 강하게 따라갈지 결정한다.

@@ -91,6 +91,10 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.param("ViewpointManager/viz_max_yaw_arrows", vpp_.viz_max_yaw_arrows_, 300);
   nh.param("ViewpointManager/viz_max_points_per_status",
            vpp_.viz_max_points_per_status_, 4000);
+  // [feature: topo-timeout] 뷰포인트 도달성 판정의 topo A* 예산 [s].
+  // 키가 없으면 3e-4 = 기존 하드코딩 값이라 동작이 바뀌지 않는다.
+  nh.param("ViewpointManager/reachability_search_timeout",
+           vpp_.reachability_search_timeout_, 3e-4);
 
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
@@ -1680,6 +1684,7 @@ void FrontierManager::removeUnreachableViewpoints(
   for (int i = 0; i < nodes2insert.size(); i++) {
     if (nodes2insert[i]->neighbors_.empty()) {
       vp_cluster_kept[i] = false;
+      vp_stats_.reach_noedge++;
       continue;
     }
     vector<TopoNode::Ptr> topo_path;
@@ -1693,9 +1698,20 @@ void FrontierManager::removeUnreachableViewpoints(
         closest_node = hodom;
       }
     }
-    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path, 3e-4)) {
+    // [feature: topo-timeout] graphSearch 는 시간 초과와 경로 없음을 똑같이 false 로
+    // 돌려준다. result_code 를 받아 둘을 갈라 기록해야 "도달 불가"가 기하 때문인지
+    // 예산 때문인지 사후에 판정할 수 있다 (rviz 에서는 둘 다 주황으로만 보인다).
+    int search_result = ParallelBubbleAstar::NO_PATH;
+    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path,
+                             vpp_.reachability_search_timeout_, false, {},
+                             &search_result)) {
       vp_cluster_kept[i] = false;
+      if (search_result == ParallelBubbleAstar::TIME_OUT)
+        vp_stats_.reach_timeout++;
+      else
+        vp_stats_.reach_nopath++;
     } else {
+      vp_stats_.reach_ok++;
       clusters[nodeidx2clusteridx[i]]
           ->vp_clusters_[nodeidx2vpclusteridx[i]]
           .distance_ = graph_->getPathLength(topo_path);

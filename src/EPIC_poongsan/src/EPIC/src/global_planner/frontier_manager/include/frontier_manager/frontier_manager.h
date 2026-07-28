@@ -103,6 +103,14 @@ struct ViewpointParam {
   // circle_sample_num 을 올리면 후보가 클러스터당 수백 개가 되어 메시지당 수천
   // 점이 나오고, 그대로 그리면 rviz 가 버거워진다. VALID 는 이 상한을 받지 않는다.
   int viz_max_points_per_status_ = 4000;
+  // [feature: topo-timeout] removeUnreachableViewpoints 의 topo A* 예산 [s].
+  // 원래 3e-4(0.3ms) 로 박혀 있었는데, 같은 graphSearch 를 쓰는 다른 호출부는
+  // 10ms(getPathCost) / 100ms(planGoalPath) 를 준다 — 33~333 배 차이다.
+  // graphSearch 는 시간 초과와 "경로 없음"을 모두 false 로 돌려주므로, 예산이
+  // 모자라면 그래프가 멀쩡히 연결돼 있어도 VP_INVALID_UNREACHABLE(주황) 이 된다.
+  // 실측(5회차 09-08-30): topo A* 소요 median 0.119ms / p90 0.290ms / max 0.958ms.
+  // 즉 0.3ms 는 p90 에 정확히 걸쳐 있어 먼 목표부터 시간만으로 탈락했다.
+  double reachability_search_timeout_ = 3e-4;
 };
 
 // [feature: vp-viz] viewpoint 후보 하나의 최종 판정. 파이프라인이 후보를 버리는
@@ -313,13 +321,24 @@ struct VpPipelineStats {
   int no_visibility = 0;    // selectBestViewpoint: 가시 프론티어 셀 부족(score 0)
   int ok = 0;               // 최종 살아남은 클러스터(=뷰포인트 수)
 
+  // [feature: topo-timeout] 위의 topo_unreachable 은 "클러스터가 통째로 죽은 수"라
+  // 원인을 못 가린다 — 그래프가 정말 끊겨서인지, A* 가 예산 안에 못 끝내서인지.
+  // 아래는 그 판정을 내리는 vp_cluster 단위 탐색의 결과 내역이다. reach_timeout 이
+  // 0 이 아니면 "도달 불가"의 일부는 기하가 아니라 시간 때문이라는 뜻이다.
+  int reach_ok = 0;      // graphSearch 성공 (경로 확인됨)
+  int reach_timeout = 0; // graphSearch 가 TIME_OUT 으로 실패 (예산 부족)
+  int reach_nopath = 0;  // graphSearch 가 경로 없음으로 실패 (진짜 단절)
+  int reach_noedge = 0;  // 삽입한 vp 노드가 이웃을 하나도 못 얻음 (raycast 실패)
+
   std::string str() const {
-    char b[256];
+    char b[384];
     snprintf(b, sizeof(b),
              "pipeline[total=%d dormant=%d prev_unreachable=%d evaluated=%d "
-             "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d]",
+             "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d] "
+             "reach[ok=%d timeout=%d nopath=%d noedge=%d]",
              total, dormant, unreachable_pre, considered, no_candidates,
-             topo_unreachable, no_visibility, ok);
+             topo_unreachable, no_visibility, ok, reach_ok, reach_timeout,
+             reach_nopath, reach_noedge);
     return b;
   }
 };

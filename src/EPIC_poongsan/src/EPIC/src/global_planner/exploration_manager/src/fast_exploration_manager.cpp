@@ -59,6 +59,11 @@ void FastExplorationManager::initialize(
   nh.getParam("global_planning/w_vdir", ep_->w_vdir_);
   nh.getParam("global_planning/w_yawdir", ep_->w_yawdir_);
   nh.param("fsm/max_segment_length", ep_->max_segment_length_, 3.0);
+  // [feature: topo-timeout] 기본값 = 기존 하드코딩 값이라 키가 없으면 동작 불변.
+  nh.param("global_planning/topo_cost_search_timeout",
+           ep_->topo_cost_search_timeout_, 1e-2);
+  nh.param("global_planning/goal_search_timeout", ep_->goal_search_timeout_,
+           0.1);
   Eigen::Vector3d origin, size;
   ofstream par_file(ep_->tsp_dir_ + "/single.par");
   par_file << "PROBLEM_FILE = " << ep_->tsp_dir_ << "/single.tsp\n";
@@ -148,7 +153,8 @@ double FastExplorationManager::getPathCost(TopoNode::Ptr &n1,
   
   // Measure topo search time
   ros::Time topo_search_start = ros::Time::now();
-  int res = planner_manager_->fast_searcher_->topoSearch(n1, n2, 1e-2, path);
+  int res = planner_manager_->fast_searcher_->topoSearch(
+      n1, n2, ep_->topo_cost_search_timeout_, path);
   ros::Time topo_search_end = ros::Time::now();
   double topo_search_time = (topo_search_end - topo_search_start).toSec() * 1000.0;
   
@@ -642,7 +648,7 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   vector<TopoNode::Ptr> topo_path;
   ros::Time search_start = ros::Time::now();
   bool search_success = planner_manager_->topo_graph_->graphSearch(
-      start_node, goal_node, topo_path, 0.1);  // 100ms timeout
+      start_node, goal_node, topo_path, ep_->goal_search_timeout_);
   ros::Time search_end = ros::Time::now();
 
   std_msgs::Float32 timing_msg;
