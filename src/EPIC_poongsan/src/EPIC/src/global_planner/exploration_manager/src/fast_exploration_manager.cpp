@@ -79,7 +79,9 @@ void FastExplorationManager::goalCallback(
     const geometry_msgs::PoseStampedConstPtr &msg) {
   const auto &q = msg->pose.orientation;
   const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
-  if (std::fabs(n2 - 1.0) > 0.01) {
+  if (!std::isfinite(n2) ||
+      n2 <= planner_manager_->gcopter_config_->vectorNormEps *
+                planner_manager_->gcopter_config_->vectorNormEps) {
     ROS_WARN_THROTTLE(10.0,
                       "[FastExplorationManager] goal with invalid quaternion "
                       "(|q|^2=%.3f) - ignoring yaw",
@@ -90,8 +92,12 @@ void FastExplorationManager::goalCallback(
   double roll, pitch;
   tf::Quaternion quat;
   tf::quaternionMsgToTF(msg->pose.orientation, quat);
+  quat.normalize();
 
-  tf::Matrix3x3(quat).getRPY(roll, pitch, goal_yaw);
+  double yaw;
+  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  if (std::isfinite(yaw))
+    goal_yaw = yaw;
 }
 
 double FastExplorationManager::getPathCost(TopoNode::Ptr &n1,
@@ -176,8 +182,14 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
                                const Eigen::Vector3d &v1,
                                const TopoNode::Ptr &n2) -> double {
     Eigen::Vector3f dir = n2->center_ - n1->center_;
-    dir.normalize();
-    Eigen::Vector3f v_dir = v1.normalized().cast<float>();
+    const double dir_norm = dir.norm();
+    const double vel_norm = v1.norm();
+    if (!dir.allFinite() || !v1.allFinite() ||
+        dir_norm <= planner_manager_->gcopter_config_->vectorNormEps ||
+        vel_norm <= planner_manager_->gcopter_config_->vectorNormEps)
+      return 0.0;
+    dir /= dir_norm;
+    Eigen::Vector3f v_dir = (v1 / vel_norm).cast<float>();
     float yaw1 = atan2(dir.y(), dir.x());
     float yaw2 = atan2(v_dir.y(), v_dir.x());
     float diff = yaw1 - yaw2;

@@ -8,7 +8,9 @@
  */
 #include "pointcloud_topo/parallel_bubble_astar.h"
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <stdexcept>
 
 // [feature: astar-profile] parallel_astar/*_timeout 튜닝용 계측.
 AstarProfile ParallelBubbleAstar::profile_;
@@ -68,6 +70,12 @@ void ParallelBubbleAstar::init(ros::NodeHandle &nh, const LIOInterface::Ptr &lid
   nh.param("bubble_astar/debug", debug_, false);
   tie_breaker_ = 1.0 + 1.0 / 1000;
   this->lidar_map_interface_ = lidar_map;
+  if (!std::isfinite(resolution_) ||
+      resolution_ <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    ROS_FATAL("[ParallelBubbleAstar] bubble_astar/resolution_astar must be "
+              "finite and greater than numerical/vector_norm_eps.");
+    throw std::runtime_error("invalid bubble_astar/resolution_astar");
+  }
   origin_ = lidar_map->lp_->global_map_min_boundary_;
   this->inv_resolution_ = 1.0 / resolution_;
   // frontier_manager_ = frontier_manager_;
@@ -118,8 +126,17 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
     return ParallelBubbleAstar::END_FAIL;
   }
   double goal_r = min(1.5, goal_clearance - safe_distance_);
-  double len = (goal - start).norm();
-  Eigen::Vector3f dir = (goal - start).normalized();
+  const Eigen::Vector3f goal_delta = goal - start;
+  // 아래 one-shot 루프가 남은 거리 추적용으로 len 을 감산하므로 const 일 수 없다.
+  double len = goal_delta.norm();
+  if (!goal_delta.allFinite() || !std::isfinite(len)) {
+    return ParallelBubbleAstar::NO_PATH;
+  }
+  if (len <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    path.push_back(start);
+    return ParallelBubbleAstar::REACH_END;
+  }
+  Eigen::Vector3f dir = goal_delta / len;
   Eigen::Vector3f curr_pos = start;
   vector<Eigen::Vector3f> path_tmp;
   path_tmp.push_back(curr_pos);

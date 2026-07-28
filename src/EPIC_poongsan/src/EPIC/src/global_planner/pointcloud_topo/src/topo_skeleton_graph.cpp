@@ -9,6 +9,7 @@
 
 #include "pointcloud_topo/graph.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -981,14 +982,23 @@ void TopoGraph::getRegionsToUpdate() {
   // 向四周发射射线，超过当前单位球大概一格子的范围
   double step_size = min(init_region_size_x_, init_region_size_y_);
   step_size = min(step_size, init_region_size_z_);
-  step_size /= 2.0;
+  step_size = std::max(
+      std::abs(step_size) / 2.0,
+      lidar_map_interface_->lp_->vector_norm_eps_);
   for (auto &region : toponodes_update_region_arr_) {
     Eigen::Vector3f lb, hb, goal;
     index2boundary(region->region_idx_, lb, hb);
     goal = 0.5 * (lb + hb);
     Eigen::Vector3f dir = goal - lidar_map_interface_->ld_->lidar_pose_;
-    int step_num = (int)(dir.norm() / step_size) + 1;
-    dir.normalize();
+    const double dir_norm = dir.norm();
+    if (!dir.allFinite() || !std::isfinite(dir_norm))
+      continue;
+    if (dir_norm <= lidar_map_interface_->lp_->vector_norm_eps_) {
+      region_set.insert(region);
+      continue;
+    }
+    int step_num = (int)(dir_norm / step_size) + 1;
+    dir /= dir_norm;
     Eigen::Vector3f step = dir * step_size;
     for (int i = 0; i < step_num; ++i) {
       Eigen::Vector3f pos = lidar_map_interface_->ld_->lidar_pose_ + step * i;

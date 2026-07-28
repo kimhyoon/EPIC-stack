@@ -1,5 +1,6 @@
 #include <epic_planner/expl_data.h>
 #include <epic_planner/fast_exploration_fsm.h>
+#include <cmath>
 
 void FastExplorationFSM::pubState() {
 
@@ -87,10 +88,12 @@ int FastExplorationFSM::callExplorationPlanner() {
 
   for (int i = 1; i < path_next_goal.size();) {
     Eigen::Vector3f end_pt = path_next_goal_tmp.back();
-    if ((path_next_goal[i] - end_pt).norm() > 1.0) {
-      Eigen::Vector3f dir = (path_next_goal[i] - end_pt).normalized();
+    const Eigen::Vector3f segment = path_next_goal[i] - end_pt;
+    const double segment_norm = segment.norm();
+    if (segment.allFinite() && segment_norm > 1.0) {
+      Eigen::Vector3f dir = segment / segment_norm;
       path_next_goal_tmp.push_back(end_pt + 1.0 * dir);
-    } else if ((path_next_goal[i] - end_pt).norm() < 0.01) {
+    } else if (!std::isfinite(segment_norm) || segment_norm < 0.01) {
       i++;
     } else {
       path_next_goal_tmp.push_back(path_next_goal[i]);
@@ -185,7 +188,9 @@ void FastExplorationFSM::avoidFlagCallback(const std_msgs::Int16ConstPtr &msg) {
 
 void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPtr &msg, const nav_msgs::Odometry::ConstPtr &odom_) {
   ros::Time t1 = ros::Time::now();
-  planner_manager_->lidar_map_interface_->updateCloudMapOdometry(msg, odom_);
+  if (!planner_manager_->lidar_map_interface_->updateCloudMapOdometry(msg,
+                                                                      odom_))
+    return;
   double collision_time;
   bool safe = planner_manager_->checkTrajCollision(collision_time);
   if (!safe) {
@@ -210,13 +215,19 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   // 이걸 넘으면 FAST-LIO/LIO-SAM 포즈 점프이므로 거리에 반영하지 않는다.
   if (traveled_valid_) {
     double step = (fd_->odom_pos_ - last_traveled_pos_).norm();
-    if (step < 1.0)
+    if (std::isfinite(step) && step < 1.0)
       traveled_distance_ += step;
   }
   last_traveled_pos_ = fd_->odom_pos_;
   traveled_valid_ = true;
 
-  fd_->odom_yaw_ = (float)tf::getYaw(odom_->pose.pose.orientation);
+  const double odom_yaw = tf::getYaw(odom_->pose.pose.orientation);
+  if (!std::isfinite(odom_yaw)) {
+    ROS_WARN_THROTTLE(1.0,
+                      "[NumericalGuard] ignoring non-finite odometry yaw");
+    return;
+  }
+  fd_->odom_yaw_ = static_cast<float>(odom_yaw);
   planner_manager_->local_data_.curr_pos_ = fd_->odom_pos_.cast<double>();
   planner_manager_->local_data_.curr_vel_ = fd_->odom_vel_.cast<double>();
   planner_manager_->topo_graph_->odom_node_->center_ = fd_->odom_pos_;

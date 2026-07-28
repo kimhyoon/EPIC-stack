@@ -27,6 +27,7 @@
 
 #include <Eigen/Eigen>
 
+#include <algorithm>
 #include <cmath>
 
 namespace flatness
@@ -39,14 +40,16 @@ namespace flatness
                           const double &horitonral_drag_coeff,
                           const double &vertical_drag_coeff,
                           const double &parasitic_drag_coeff,
-                          const double &speed_smooth_factor)
+                          const double &speed_smooth_factor,
+                          const double &norm_epsilon)
         {
-            mass = vehicle_mass;
+            norm_eps = norm_epsilon;
+            mass = std::max(vehicle_mass, norm_eps);
             grav = gravitational_acceleration;
             dh = horitonral_drag_coeff;
             dv = vertical_drag_coeff;
             cp = parasitic_drag_coeff;
-            veps = speed_smooth_factor;
+            veps = std::max(speed_smooth_factor, norm_eps * norm_eps);
 
             return;
         }
@@ -84,11 +87,12 @@ namespace flatness
             zu12 = zu1 * zu2;
             zu02 = zu0 * zu2;
             zu_sqr_norm = zu_sqr0 + zu_sqr1 + zu_sqr2;
-            zu_norm = sqrt(zu_sqr_norm);
+            zu_norm = sqrt(std::max(zu_sqr_norm, norm_eps * norm_eps));
             z0 = zu0 / zu_norm;
             z1 = zu1 / zu_norm;
             z2 = zu2 / zu_norm;
-            ng_den = zu_sqr_norm * zu_norm;
+            ng_den = std::max(zu_sqr_norm * zu_norm,
+                              norm_eps * norm_eps * norm_eps);
             ng00 = (zu_sqr1 + zu_sqr2) / ng_den;
             ng01 = -zu01 / ng_den;
             ng02 = -zu02 / ng_den;
@@ -110,7 +114,8 @@ namespace flatness
             f_term1 = mass * a1 + dv * w1;
             f_term2 = mass * (a2 + grav) + dv * w2;
             thr = z0 * f_term0 + z1 * f_term1 + z2 * f_term2;
-            tilt_den = sqrt(2.0 * (1.0 + z2));
+            tilt_den = sqrt(std::max(2.0 * (1.0 + z2),
+                                     norm_eps * norm_eps));
             tilt0 = 0.5 * tilt_den;
             tilt1 = -z1 / tilt_den;
             tilt2 = z0 / tilt_den;
@@ -122,7 +127,7 @@ namespace flatness
             quat(3) = tilt0 * s_half_psi;
             c_psi = cos(psi);
             s_psi = sin(psi);
-            omg_den = z2 + 1.0;
+            omg_den = std::max(z2 + 1.0, norm_eps);
             omg_term = dz2 / omg_den;
             omg(0) = dz0 * s_psi - dz1 * c_psi -
                      (z0 * s_psi - z1 * c_psi) * omg_term;
@@ -230,7 +235,8 @@ namespace flatness
                        zu01 * ng01b / (ng_den * ng_den) -
                        (zu_sqr1 + zu_sqr2) * tempb / ng_den;
             zu_normb = zu_sqr_norm * ng_denb -
-                       (zu2 * z2b + zu1 * z1b + zu0 * z0b) / zu_sqr_norm;
+                       (zu2 * z2b + zu1 * z1b + zu0 * z0b) /
+                           std::max(zu_sqr_norm, norm_eps * norm_eps);
             zu_sqr_normb = zu_norm * ng_denb + zu_normb / (2.0 * zu_norm);
             tempb += zu_sqr_normb;
             zu_sqr1b += tempb;
@@ -260,7 +266,7 @@ namespace flatness
         }
 
     private:
-        double mass, grav, dh, dv, cp, veps;
+        double mass, grav, dh, dv, cp, veps, norm_eps;
 
         double v0, v1, v2, a0, a1, a2, v_dot_a;
         double z0, z1, z2, dz0, dz1, dz2;

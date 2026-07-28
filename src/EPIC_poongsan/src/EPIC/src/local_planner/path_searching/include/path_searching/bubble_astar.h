@@ -114,6 +114,8 @@ public:
 
   std::vector<Eigen::Vector3f> getVisited();
   double getEarlyTerminateCost();
+  // FastSearcher 가 수치 가드용 파라미터(lp_)를 읽어야 해서 노출한다.
+  const LIOInterface::Ptr &getLidarMapInterface() const { return lidar_map_interface_; }
 
   double lambda_heu_;
   double max_search_time_;

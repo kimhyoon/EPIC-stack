@@ -33,14 +33,14 @@ public:
 struct LocalTrajData {
   /* info of generated traj */
 
-  int traj_id_;
-  double duration_;
+  int traj_id_ = 0;
+  double duration_ = 0.0;
   ros::Time start_time_;
-  Eigen::Vector3d start_pos_;
-  Eigen::Vector3d curr_pos_;
-  Eigen::Vector3d curr_vel_;
-  double curr_yaw_;
-  double end_yaw_;
+  Eigen::Vector3d start_pos_ = Eigen::Vector3d::Zero();
+  Eigen::Vector3d curr_pos_ = Eigen::Vector3d::Zero();
+  Eigen::Vector3d curr_vel_ = Eigen::Vector3d::Zero();
+  double curr_yaw_ = 0.0;
+  double end_yaw_ = 0.0;
   Trajectory<7> minco_traj_;
   Trajectory<5> minco_yaw_traj_;
 

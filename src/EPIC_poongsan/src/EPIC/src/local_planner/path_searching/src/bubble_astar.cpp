@@ -8,6 +8,9 @@
  */
 #include <path_searching/bubble_astar.h>
 #include <pcl/registration/distances.h>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 using namespace std;
 using namespace Eigen;
 
@@ -38,6 +41,12 @@ void BubbleAstar::init(ros::NodeHandle &nh,
   safeArea_.reserve(100000);
   tie_breaker_ = 1.0 + 1.0 / 1000;
   this->lidar_map_interface_ = lidar_map;
+  if (!std::isfinite(resolution_) ||
+      resolution_ <= lidar_map_interface_->lp_->vector_norm_eps_) {
+    ROS_FATAL("[BubbleAstar] bubble_astar/resolution_astar must be finite and "
+              "greater than numerical/vector_norm_eps.");
+    throw std::runtime_error("invalid bubble_astar/resolution_astar");
+  }
   origin_ = lidar_map->lp_->global_map_min_boundary_;
   this->inv_resolution_ = 1.0 / resolution_;
   bubble_node_pool_.resize(allocate_num_);
@@ -53,7 +62,9 @@ void BubbleAstar::init(ros::NodeHandle &nh,
 
 void BubbleAstar::reset(double resolution) {
   ros::Time start = ros::Time::now();
-  resolution_ = resolution;
+  resolution_ =
+      std::max(std::abs(resolution),
+               lidar_map_interface_->lp_->vector_norm_eps_);
   inv_resolution_ = 1.0 / resolution_;
   open_set_map_.clear();
   close_set_map_.clear();
@@ -89,7 +100,7 @@ bool BubbleAstar::generateBubble(GridNodePtr &node, bool is_start) {
   this->lidar_map_interface_->KNN(node->position, 1, Nearest_Points, point_dis);
   ros::Time end_time = ros::Time::now();
 
-  if (point_dis.size() <= 0) {
+  if (point_dis.empty()) {
     node->safe_bubble->init(pow(4.0 - safe_distance_, 2), node->position);
     safeArea_.emplace_back(node->safe_bubble);
     if (debug_) {
@@ -101,7 +112,9 @@ bool BubbleAstar::generateBubble(GridNodePtr &node, bool is_start) {
 
     return true;
   }
-  point_dis[0] = sqrt(point_dis[0]);
+  if (!std::isfinite(point_dis[0]) || point_dis[0] < 0.0f)
+    return false;
+  point_dis[0] = std::sqrt(point_dis[0]);
   if (point_dis[0] > safe_distance_) {
     node->safe_bubble->init(pow(point_dis[0] - safe_distance_, 2),
                             node->position);
@@ -547,12 +560,15 @@ void BubbleAstar::goal_refine(Eigen::Vector3f &goal, bool use_map_bd) {
   ros::Time start = ros::Time::now();
   while ((ros::Time::now() - start).toSec() < 1e-4) {
     Eigen::Vector3f occ_pt = nearest_occ(goal);
-    if (occ_pt.norm() < 1e-3)
+    const Eigen::Vector3f goal_delta = goal - occ_pt;
+    const double goal_delta_norm = goal_delta.norm();
+    if (!goal_delta.allFinite() ||
+        goal_delta_norm <= lidar_map_interface_->lp_->vector_norm_eps_)
       return;
     if ((occ_pt - goal).norm() > safe_distance_ + 0.3) {
       return;
     }
-    Eigen::Vector3f dir = (goal - occ_pt).normalized();
+    Eigen::Vector3f dir = goal_delta / goal_delta_norm;
     double dis = min((occ_pt - goal).norm(), 0.05f);
     goal = goal + dir * dis;
   }
@@ -714,10 +730,18 @@ TopoNode::Ptr FastSearcher::createTopoNode(const Eigen::Vector3f &pose,
     for (int i = 0; i < path.size() - 1; i++) {
       weight += (path[i + 1] - path[i]).norm();
     }
-    if (curr_vel.norm() > 1e-3) {
-      Eigen::Vector3f dir = (nei_node->center_ - node->center_).normalized();
-      Eigen::Vector3f vdir = curr_vel.normalized();
-      double diff = acos(vdir.dot(dir));
+    const Eigen::Vector3f edge_delta = nei_node->center_ - node->center_;
+    const double edge_norm = edge_delta.norm();
+    const double velocity_norm = curr_vel.norm();
+    const double norm_eps =
+        bubble_astar_searcher_->getLidarMapInterface()->lp_->vector_norm_eps_;
+    if (curr_vel.allFinite() && edge_delta.allFinite() &&
+        velocity_norm > norm_eps && edge_norm > norm_eps) {
+      const Eigen::Vector3f dir = edge_delta / edge_norm;
+      const Eigen::Vector3f vdir = curr_vel / velocity_norm;
+      const double dot =
+          std::max(-1.0, std::min(1.0, static_cast<double>(vdir.dot(dir))));
+      double diff = std::acos(dot);
       weight += diff;
     }
     node->weight_[nei_node] = weight;
