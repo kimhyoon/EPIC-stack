@@ -1111,6 +1111,10 @@ public:
       return INFINITY;
     }
 
+    // The yaw penalty uses these as the first and last guide states.
+    headPVA = inityaw;
+    tailPVA = endyaw;
+
     Eigen::VectorXd x_yaw, init_tau, yaw_vec;
     yaw_vec = Eigen::Map<const Eigen::VectorXd>(yaw_points.data(), yaw_points.size());
     int yaw_pt_count = yaw_vec.size();
