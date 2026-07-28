@@ -359,6 +359,16 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   ros::Time start = ros::Time::now();
   if (planner_debug_enabled_)
     current_debug_plan_seq_ = ++planner_debug_seq_;
+  if (path.size() < 2 ||
+      !std::all_of(path.begin(), path.end(),
+                   [](const Eigen::Vector3f &point) {
+                     return point.allFinite();
+                   })) {
+    last_plan_fail_reason_ = "guide path has fewer than two finite points";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
 
   vector<Eigen::Vector3d> path_shorten;
   bool use_shorten_path = false;
@@ -385,10 +395,35 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   for (int i = 0; i <= end_idx; i++) {
     path_shorten.emplace_back(path[i].cast<double>());
   }
+
+  // Keep both endpoints while removing interior guide points that would create
+  // near-zero MINCO segments. The terminal point is preserved exactly.
+  vector<Eigen::Vector3d> filtered_path;
+  filtered_path.reserve(path_shorten.size());
+  filtered_path.push_back(path_shorten.front());
+  for (size_t idx = 1; idx + 1 < path_shorten.size(); ++idx) {
+    if ((path_shorten[idx] - filtered_path.back()).norm() >=
+        gcopter_config_->minPathSegmentLength) {
+      filtered_path.push_back(path_shorten[idx]);
+    }
+  }
+  const Eigen::Vector3d terminal = path_shorten.back();
+  while (filtered_path.size() > 1 &&
+         (terminal - filtered_path.back()).norm() <
+             gcopter_config_->minPathSegmentLength) {
+    filtered_path.pop_back();
+  }
+  filtered_path.push_back(terminal);
+  if (filtered_path.size() != path_shorten.size()) {
+    ROS_DEBUG("[NumericalGuard] compacted guide path from %zu to %zu points",
+              path_shorten.size(), filtered_path.size());
+  }
+  path_shorten.swap(filtered_path);
   publishDebugGuidePath(path_shorten);
 
   if (use_shorten_path) {
-    Eigen::Vector3f fwd_dir = path[end_idx] - path[end_idx - 1];
+    const Eigen::Vector3d fwd_dir =
+        path_shorten.back() - path_shorten[path_shorten.size() - 2];
     if (fwd_dir.x() * fwd_dir.x() + fwd_dir.y() * fwd_dir.y() >
         fwd_dir.z() * fwd_dir.z()) {
       local_data_.end_yaw_ = atan2(fwd_dir.y(), fwd_dir.x());
@@ -614,7 +649,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
           gcopter_config_->trigGradientEps,
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
-          gcopter_config_->flatnessNormEps)) {
+          gcopter_config_->flatnessNormEps,
+          gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = "gcopter setup failed (corridor/start-state infeasible)";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
@@ -945,7 +981,8 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
   if (!gcopter_yaw.setup_yaw(gcopter_config_->yaw_rho_vis,
                              gcopter_config_->integralIntervs,
                              gcopter_config_->yawDiffEps,
-                             gcopter_config_->minSegmentTime)) {
+                             gcopter_config_->minSegmentTime,
+                             gcopter_config_->linearSolvePivotEps)) {
     cout << "setup_yaw failed!" << endl;
     return false;
   }
@@ -1077,11 +1114,11 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   const Eigen::Vector3d inner_delta =
       inner - topo_graph_->odom_node_->center_.cast<double>();
   const double inner_delta_norm = inner_delta.norm();
-  const Eigen::Vector3d dir =
-      inner_delta.allFinite() &&
-              inner_delta_norm > gcopter_config_->vectorNormEps
-          ? inner_delta / inner_delta_norm
-          : Eigen::Vector3d::Zero();
+  Eigen::Vector3d dir = Eigen::Vector3d::Zero();
+  if (inner_delta.allFinite() &&
+      inner_delta_norm > gcopter_config_->vectorNormEps) {
+    dir = inner_delta / inner_delta_norm;
+  }
   
   // Declare iniState variable
   Eigen::Matrix<double, 3, 4> iniState;
@@ -1164,7 +1201,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
           gcopter_config_->trigGradientEps,
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
-          gcopter_config_->flatnessNormEps)) {
+          gcopter_config_->flatnessNormEps,
+          gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = "escape: gcopter setup failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;

@@ -96,16 +96,29 @@ namespace minco
 
         // This function conducts banded LU factorization in place
         // Note that NO PIVOT is applied on the matrix "A" for efficiency!!!
-        inline void factorizeLU()
+        inline bool factorizeLU(const double minPivotMagnitude = 0.0)
         {
+            if (!std::isfinite(minPivotMagnitude) || minPivotMagnitude < 0.0)
+            {
+                return false;
+            }
             int iM, jM;
             double cVl;
             for (int k = 0; k <= N - 2; k++)
             {
                 iM = std::min(k + lowerBw, N - 1);
                 cVl = operator()(k, k);
+                if (!std::isfinite(cVl) ||
+                    std::abs(cVl) <= minPivotMagnitude)
+                {
+                    return false;
+                }
                 for (int i = k + 1; i <= iM; i++)
                 {
+                    if (!std::isfinite(operator()(i, k)))
+                    {
+                        return false;
+                    }
                     if (operator()(i, k) != 0.0)
                     {
                         operator()(i, k) /= cVl;
@@ -115,6 +128,10 @@ namespace minco
                 for (int j = k + 1; j <= jM; j++)
                 {
                     cVl = operator()(k, j);
+                    if (!std::isfinite(cVl))
+                    {
+                        return false;
+                    }
                     if (cVl != 0.0)
                     {
                         for (int i = k + 1; i <= iM; i++)
@@ -122,20 +139,32 @@ namespace minco
                             if (operator()(i, k) != 0.0)
                             {
                                 operator()(i, j) -= operator()(i, k) * cVl;
+                                if (!std::isfinite(operator()(i, j)))
+                                {
+                                    return false;
+                                }
                             }
                         }
                     }
                 }
             }
-            return;
+            const double finalPivot = operator()(N - 1, N - 1);
+            return std::isfinite(finalPivot) &&
+                   std::abs(finalPivot) > minPivotMagnitude;
         }
 
         // This function solves Ax=b, then stores x in b
         // The input b is required to be N*m, i.e.,
         // m vectors to be solved.
         template <typename EIGENMAT>
-        inline void solve(EIGENMAT &b) const
+        inline bool solve(EIGENMAT &b,
+                          const double minPivotMagnitude = 0.0) const
         {
+            if (!std::isfinite(minPivotMagnitude) || minPivotMagnitude < 0.0 ||
+                !b.allFinite())
+            {
+                return false;
+            }
             int iM;
             for (int j = 0; j <= N - 1; j++)
             {
@@ -150,6 +179,12 @@ namespace minco
             }
             for (int j = N - 1; j >= 0; j--)
             {
+                const double pivot = operator()(j, j);
+                if (!std::isfinite(pivot) ||
+                    std::abs(pivot) <= minPivotMagnitude)
+                {
+                    return false;
+                }
                 b.row(j) /= operator()(j, j);
                 iM = std::max(0, j - upperBw);
                 for (int i = iM; i <= j - 1; i++)
@@ -160,18 +195,30 @@ namespace minco
                     }
                 }
             }
-            return;
+            return b.allFinite();
         }
 
         // This function solves ATx=b, then stores x in b
         // The input b is required to be N*m, i.e.,
         // m vectors to be solved.
         template <typename EIGENMAT>
-        inline void solveAdj(EIGENMAT &b) const
+        inline bool solveAdj(EIGENMAT &b,
+                             const double minPivotMagnitude = 0.0) const
         {
+            if (!std::isfinite(minPivotMagnitude) || minPivotMagnitude < 0.0 ||
+                !b.allFinite())
+            {
+                return false;
+            }
             int iM;
             for (int j = 0; j <= N - 1; j++)
             {
+                const double pivot = operator()(j, j);
+                if (!std::isfinite(pivot) ||
+                    std::abs(pivot) <= minPivotMagnitude)
+                {
+                    return false;
+                }
                 b.row(j) /= operator()(j, j);
                 iM = std::min(j + upperBw, N - 1);
                 for (int i = j + 1; i <= iM; i++)
@@ -193,7 +240,7 @@ namespace minco
                     }
                 }
             }
-            return;
+            return b.allFinite();
         }
     };
 
@@ -411,6 +458,7 @@ namespace minco
         Eigen::VectorXd T3;
         Eigen::VectorXd T4;
         Eigen::VectorXd T5;
+        double linearSolvePivotEps = 0.0;
 
     public:
         inline void setConditions(const Eigen::Matrix3d &headState,
@@ -430,9 +478,19 @@ namespace minco
             return;
         }
 
-        inline void setParameters(const Eigen::Matrix3Xd &inPs,
-                                  const Eigen::VectorXd &ts)
+        inline bool setParameters(const Eigen::Matrix3Xd &inPs,
+                                  const Eigen::VectorXd &ts,
+                                  const double minPivotMagnitude = 0.0)
         {
+            if (N <= 0 || inPs.cols() != N - 1 || ts.size() != N ||
+                !inPs.allFinite() || !ts.allFinite() ||
+                (ts.array() <= 0.0).any() ||
+                !std::isfinite(minPivotMagnitude) ||
+                minPivotMagnitude < 0.0)
+            {
+                return false;
+            }
+            linearSolvePivotEps = minPivotMagnitude;
             T1 = ts;
             T2 = T1.cwiseProduct(T1);
             T3 = T2.cwiseProduct(T1);
@@ -506,10 +564,13 @@ namespace minco
             b.row(6 * N - 2) = tailPVA.col(1).transpose();
             b.row(6 * N - 1) = tailPVA.col(2).transpose();
 
-            A.factorizeLU();
-            A.solve(b);
+            if (!A.factorizeLU(linearSolvePivotEps) ||
+                !A.solve(b, linearSolvePivotEps))
+            {
+                return false;
+            }
 
-            return;
+            return b.allFinite();
         }
 
         inline void getTrajectory(Trajectory<5> &traj) const
@@ -581,7 +642,7 @@ namespace minco
             return;
         }
 
-        inline void propogateGrad(const Eigen::MatrixX3d &partialGradByCoeffs,
+        inline bool propogateGrad(const Eigen::MatrixX3d &partialGradByCoeffs,
                                   const Eigen::VectorXd &partialGradByTimes,
                                   Eigen::Matrix3Xd &gradByPoints,
                                   Eigen::VectorXd &gradByTimes)
@@ -590,7 +651,10 @@ namespace minco
             gradByPoints.resize(3, N - 1);
             gradByTimes.resize(N);
             Eigen::MatrixX3d adjGrad = partialGradByCoeffs;
-            A.solveAdj(adjGrad);
+            if (!A.solveAdj(adjGrad, linearSolvePivotEps))
+            {
+                return false;
+            }
 
             for (int i = 0; i < N - 1; i++)
             {
@@ -651,6 +715,7 @@ namespace minco
             gradByTimes(N - 1) = B2.cwiseProduct(adjGrad.block<3, 3>(6 * N - 3, 0)).sum();
 
             gradByTimes += partialGradByTimes;
+            return gradByPoints.allFinite() && gradByTimes.allFinite();
         }
     };
 
@@ -674,6 +739,7 @@ namespace minco
         Eigen::VectorXd T5;
         Eigen::VectorXd T6;
         Eigen::VectorXd T7;
+        double linearSolvePivotEps = 0.0;
 
     public:
         inline void setConditions(const Eigen::Matrix<double, 3, 4> &headState,
@@ -695,9 +761,19 @@ namespace minco
             return;
         }
 
-        inline void setParameters(const Eigen::MatrixXd &inPs,
-                                  const Eigen::VectorXd &ts)
+        inline bool setParameters(const Eigen::MatrixXd &inPs,
+                                  const Eigen::VectorXd &ts,
+                                  const double minPivotMagnitude = 0.0)
         {
+            if (N <= 0 || inPs.cols() != N - 1 || ts.size() != N ||
+                !inPs.allFinite() || !ts.allFinite() ||
+                (ts.array() <= 0.0).any() ||
+                !std::isfinite(minPivotMagnitude) ||
+                minPivotMagnitude < 0.0)
+            {
+                return false;
+            }
+            linearSolvePivotEps = minPivotMagnitude;
             T1 = ts;
             T2 = T1.cwiseProduct(T1);
             T3 = T2.cwiseProduct(T1);
@@ -806,10 +882,13 @@ namespace minco
             b.row(8 * N - 2) = tailPVAJ.col(2).transpose();
             b.row(8 * N - 1) = tailPVAJ.col(3).transpose();
 
-            A.factorizeLU();
-            A.solve(b);
+            if (!A.factorizeLU(linearSolvePivotEps) ||
+                !A.solve(b, linearSolvePivotEps))
+            {
+                return false;
+            }
 
-            return;
+            return b.allFinite();
         }
 
         inline void getTrajectory(Trajectory<7> &traj) const
@@ -896,7 +975,7 @@ namespace minco
             return;
         }
 
-        inline void propogateGrad(const Eigen::MatrixX3d &partialGradByCoeffs,
+        inline bool propogateGrad(const Eigen::MatrixX3d &partialGradByCoeffs,
                                   const Eigen::VectorXd &partialGradByTimes,
                                   Eigen::Matrix3Xd &gradByPoints,
                                   Eigen::VectorXd &gradByTimes)
@@ -904,7 +983,10 @@ namespace minco
             gradByPoints.resize(3, N - 1);
             gradByTimes.resize(N);
             Eigen::MatrixX3d adjGrad = partialGradByCoeffs;
-            A.solveAdj(adjGrad);
+            if (!A.solveAdj(adjGrad, linearSolvePivotEps))
+            {
+                return false;
+            }
 
             for (int i = 0; i < N - 1; i++)
             {
@@ -993,6 +1075,7 @@ namespace minco
 
             gradByTimes(N - 1) = B2.cwiseProduct(adjGrad.block<4, 3>(8 * N - 4, 0)).sum();
             gradByTimes += partialGradByTimes;
+            return gradByPoints.allFinite() && gradByTimes.allFinite();
         }
     };
 

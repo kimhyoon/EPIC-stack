@@ -96,6 +96,7 @@ private:
   double vector_norm_eps;
   double min_segment_time;
   double flatness_norm_eps;
+  double linear_solve_pivot_eps;
   bool use_shorten_path = false;
   Eigen::Matrix3Xd guide_path;
 
@@ -109,12 +110,15 @@ private:
   Eigen::VectorXd partialGradByTimes;
 
 private:
-  static inline void forwardT(const Eigen::VectorXd &tau, Eigen::VectorXd &T) {
+  static inline void forwardT(const Eigen::VectorXd &tau, Eigen::VectorXd &T,
+                              const double minSegmentTime) {
     const int sizeTau = tau.size();
     T.resize(sizeTau);
     for (int i = 0; i < sizeTau; i++) {
-      T(i) = tau(i) > 0.0 ? ((0.5 * tau(i) + 1.0) * tau(i) + 1.0)
-                          : 1.0 / ((0.5 * tau(i) - 1.0) * tau(i) + 1.0);
+      const double positiveTime =
+          tau(i) > 0.0 ? ((0.5 * tau(i) + 1.0) * tau(i) + 1.0)
+                       : 1.0 / ((0.5 * tau(i) - 1.0) * tau(i) + 1.0);
+      T(i) = minSegmentTime + positiveTime;
     }
     return;
   }
@@ -126,11 +130,12 @@ private:
     tau.resize(sizeT);
     for (int i = 0; i < sizeT; i++) {
       const double safeT =
-          std::isfinite(T(i)) ? std::max(T(i), minSegmentTime)
-                              : minSegmentTime;
-      tau(i) = safeT > 1.0
-                   ? (sqrt(2.0 * safeT - 1.0) - 1.0)
-                   : (1.0 - sqrt(2.0 / safeT - 1.0));
+          std::isfinite(T(i)) ? std::max(T(i), 2.0 * minSegmentTime)
+                              : 2.0 * minSegmentTime;
+      const double positiveTime = safeT - minSegmentTime;
+      tau(i) = positiveTime > 1.0
+                   ? (sqrt(2.0 * positiveTime - 1.0) - 1.0)
+                   : (1.0 - sqrt(2.0 / positiveTime - 1.0));
     }
 
     return;
@@ -463,7 +468,7 @@ private:
         violaOmg = omg.squaredNorm() - omgSqrMax;
         violaAcc = acc.squaredNorm() - 3.0;
         cos_theta = 1.0 - 2.0 * (quat(1) * quat(1) + quat(2) * quat(2));
-        cos_theta = std::clamp(cos_theta, -1.0, 1.0);
+        cos_theta = std::max(-1.0, std::min(1.0, cos_theta));
         violaTheta = acos(cos_theta) - thetaMax;
         violaThrust = (thr - thrustMean) * (thr - thrustMean) - thrustSqrRadi;
 
@@ -628,7 +633,7 @@ private:
     Eigen::Map<Eigen::VectorXd> gradTau(g.data(), dimTau);
     Eigen::Map<Eigen::VectorXd> gradXi(g.data() + dimTau, dimXi);
 
-    forwardT(tau, obj.times);
+    forwardT(tau, obj.times, obj.min_segment_time);
     forwardP(xi, obj.vPolyIdx, obj.vPolytopes, obj.points,
              obj.vector_norm_eps);
     if (!obj.times.allFinite() || !obj.points.allFinite()) {
@@ -637,7 +642,11 @@ private:
     }
 
     double cost;
-    obj.minco.setParameters(obj.points, obj.times);
+    if (!obj.minco.setParameters(obj.points, obj.times,
+                                 obj.linear_solve_pivot_eps)) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
     obj.minco.getEnergy(cost);
     obj.minco.getEnergyPartialGradByCoeffs(obj.partialGradByCoeffs);
     obj.minco.getEnergyPartialGradByTimes(obj.partialGradByTimes);
@@ -647,8 +656,12 @@ private:
                             obj.flatmap, cost, obj.partialGradByTimes, obj.partialGradByCoeffs,
                             obj.dilate_radius_, obj.trig_gradient_eps);
 
-    obj.minco.propogateGrad(obj.partialGradByCoeffs, obj.partialGradByTimes, obj.gradByPoints,
-                            obj.gradByTimes);
+    if (!obj.minco.propogateGrad(obj.partialGradByCoeffs,
+                                 obj.partialGradByTimes, obj.gradByPoints,
+                                 obj.gradByTimes)) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
     double cost_time, grad_time;
     if (smoothedL1(obj.times.sum() - obj.minTimeBound, 1.5e-1, cost_time, grad_time)) {
       cost += weightT * cost_time;
@@ -687,7 +700,7 @@ private:
     //   }
 
     Eigen::VectorXd times_yaw;
-    forwardT(tau, times_yaw);
+    forwardT(tau, times_yaw, obj.min_segment_time);
     if (!times_yaw.allFinite() || !xi.allFinite()) {
       g.setZero();
       return std::numeric_limits<double>::infinity();
@@ -697,7 +710,11 @@ private:
     double cost = 0.0;
     Eigen::MatrixX3d gdC_;
     Eigen::VectorXd gdT_;
-    obj.yaw_minco.setParameters(xi, times_yaw);
+    if (!obj.yaw_minco.setParameters(xi, times_yaw,
+                                     obj.linear_solve_pivot_eps)) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
     obj.yaw_minco.getEnergy(cost);
     obj.yaw_minco.getEnergyPartialGradByCoeffs(gdC_);
     obj.yaw_minco.getEnergyPartialGradByTimes(gdT_);
@@ -711,7 +728,11 @@ private:
     Eigen::VectorXd gdT_now = gdT_ + gdT_constrain;
     Eigen::Matrix3Xd gradP_temp;
     Eigen::VectorXd gradT_temp;
-    obj.yaw_minco.propogateGrad(gdC_now, gdT_now, gradP_temp, gradT_temp);
+    if (!obj.yaw_minco.propogateGrad(gdC_now, gdT_now, gradP_temp,
+                                     gradT_temp)) {
+      g.setZero();
+      return std::numeric_limits<double>::infinity();
+    }
 
     // cost += obj.yaw_rho_t * times_yaw.sum();
     gradT_temp.setZero();
@@ -923,12 +944,14 @@ public:
                     const int &integralResolution, const Eigen::VectorXd &magnitudeBounds,
                     const Eigen::VectorXd &penaltyWeights, const Eigen::VectorXd &physicalParams,
                     const double &trigGradientEps, const double &vectorNormEps,
-                    const double &minSegmentTime, const double &flatnessNormEps) {
+                    const double &minSegmentTime, const double &flatnessNormEps,
+                    const double &linearSolvePivotEps) {
     if (integralResolution <= 0 || !std::isfinite(trigGradientEps) ||
         !std::isfinite(vectorNormEps) || !std::isfinite(minSegmentTime) ||
-        !std::isfinite(flatnessNormEps) || trigGradientEps <= 0.0 ||
+        !std::isfinite(flatnessNormEps) ||
+        !std::isfinite(linearSolvePivotEps) || trigGradientEps <= 0.0 ||
         vectorNormEps <= 0.0 || minSegmentTime <= 0.0 ||
-        flatnessNormEps <= 0.0) {
+        flatnessNormEps <= 0.0 || linearSolvePivotEps <= 0.0) {
       return false;
     }
     if (!std::isfinite(timeWeight) || timeWeight < 0.0 ||
@@ -949,6 +972,7 @@ public:
     vector_norm_eps = vectorNormEps;
     min_segment_time = minSegmentTime;
     flatness_norm_eps = flatnessNormEps;
+    linear_solve_pivot_eps = linearSolvePivotEps;
     dilate_radius_ = dilate_radius; // 膨胀半径
     rho = timeWeight;
     headPVAJ = initialPVAJ;
@@ -1025,16 +1049,20 @@ public:
 
   inline bool setup_yaw(const double &rho_vis, const int &integralResolution,
                         const double &yawDiffEps,
-                        const double &minSegmentTime) {
+                        const double &minSegmentTime,
+                        const double &linearSolvePivotEps) {
     if (integralResolution <= 0 || !std::isfinite(yawDiffEps) ||
-        !std::isfinite(minSegmentTime) || yawDiffEps <= 0.0 ||
-        minSegmentTime <= 0.0 || !std::isfinite(rho_vis) || rho_vis < 0.0) {
+        !std::isfinite(minSegmentTime) ||
+        !std::isfinite(linearSolvePivotEps) || yawDiffEps <= 0.0 ||
+        minSegmentTime <= 0.0 || linearSolvePivotEps <= 0.0 ||
+        !std::isfinite(rho_vis) || rho_vis < 0.0) {
       return false;
     }
     integralResolution_yaw = integralResolution;
     yaw_rho_vis = rho_vis;
     yaw_diff_eps = yawDiffEps;
     min_segment_time = minSegmentTime;
+    linear_solve_pivot_eps = linearSolvePivotEps;
     return true;
   }
 
@@ -1078,13 +1106,11 @@ public:
 
     // } else 
     if (ret >= 0 && std::isfinite(minCostFunctional) && x.allFinite()) {
-      forwardT(tau, times);
-      times = times.unaryExpr([this](double t) {
-        return std::isfinite(t) ? std::max(t, min_segment_time)
-                                : min_segment_time;
-      });
+      forwardT(tau, times, min_segment_time);
       forwardP(xi, vPolyIdx, vPolytopes, points, vector_norm_eps);
-      minco.setParameters(points, times);
+      if (!minco.setParameters(points, times, linear_solve_pivot_eps)) {
+        return INFINITY;
+      }
       minco.getTrajectory(traj);
     } else {
       // traj.clear();
@@ -1127,7 +1153,10 @@ public:
                               : min_segment_time;
     });
     yaw_minco.setConditions(inityaw, endyaw, pieceNum);
-    yaw_minco.setParameters(guide_path, safe_ts);
+    if (!yaw_minco.setParameters(guide_path, safe_ts,
+                                 linear_solve_pivot_eps)) {
+      return INFINITY;
+    }
     backwardT(safe_ts, init_tau, min_segment_time);
     x_yaw.segment(0, pieceNum) = init_tau;
     x_yaw.segment(pieceNum, yaw_pt_count) = yaw_vec;
@@ -1148,14 +1177,13 @@ public:
       const Eigen::VectorXd optimized_tau =
           Eigen::Map<const Eigen::VectorXd>(x_yaw.data(), pieceNum);
       Eigen::VectorXd t;
-      forwardT(optimized_tau, t);
-      t = t.unaryExpr([this](double value) {
-        return std::isfinite(value) ? std::max(value, min_segment_time)
-                                    : min_segment_time;
-      });
+      forwardT(optimized_tau, t, min_segment_time);
       Eigen::Map<const Eigen::Matrix3Xd> optimized_yaw_points(
           x_yaw.data() + pieceNum, 3, yaw_pt_count / 3);
-      yaw_minco.setParameters(optimized_yaw_points, t);
+      if (!yaw_minco.setParameters(optimized_yaw_points, t,
+                                   linear_solve_pivot_eps)) {
+        return INFINITY;
+      }
       yaw_minco.getTrajectory(traj);
     } else {
       // traj.clear();

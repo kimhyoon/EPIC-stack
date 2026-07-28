@@ -70,6 +70,8 @@ struct GcopterConfig {
   double vectorNormEps;
   double minSegmentTime;
   double flatnessNormEps;
+  double minPathSegmentLength;
+  double linearSolvePivotEps;
 
   void init(const ros::NodeHandle &nh_priv) {
     auto missingParam = [](const char *name) {
@@ -119,6 +121,8 @@ struct GcopterConfig {
     requireDouble("numerical/vector_norm_eps", vectorNormEps);
     requireDouble("numerical/min_segment_time", minSegmentTime);
     requireDouble("numerical/flatness_norm_eps", flatnessNormEps);
+    requireDouble("numerical/min_path_segment_length", minPathSegmentLength);
+    requireDouble("numerical/linear_solve_pivot_eps", linearSolvePivotEps);
 
     auto validatePositive = [](const char *name, double value) {
       if (!std::isfinite(value) || value <= 0.0) {
@@ -153,6 +157,10 @@ struct GcopterConfig {
     validatePositive("numerical/vector_norm_eps", vectorNormEps);
     validatePositive("numerical/min_segment_time", minSegmentTime);
     validatePositive("numerical/flatness_norm_eps", flatnessNormEps);
+    validatePositive("numerical/min_path_segment_length",
+                     minPathSegmentLength);
+    validatePositive("numerical/linear_solve_pivot_eps",
+                     linearSolvePivotEps);
     validateFinite("HorizDrag", horizDrag);
     validateFinite("VertDrag", vertDrag);
     validateFinite("ParasDrag", parasDrag);
