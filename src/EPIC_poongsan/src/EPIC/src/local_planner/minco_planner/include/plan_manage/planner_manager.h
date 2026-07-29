@@ -283,7 +283,8 @@ public:
   bool checkTrajCollision(double &collision_time);
   bool checkTrajVelocity();
 
-  bool YawTrajOpt(double &start_yaw, double &end_yaw, bool is_static, bool use_shorten_path);
+  bool YawTrajOpt(const Eigen::Vector3d &initial_yaw_state, double &end_yaw,
+                  bool use_shorten_path);
   bool YawTrajwithoutOpt(double &start_yaw, double &end_yaw, bool is_static, bool use_shorten_path);
   void goalCallback(const geometry_msgs::PoseStampedConstPtr &msg);
   void posCallback(const nav_msgs::OdometryConstPtr &msg);

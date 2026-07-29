@@ -652,6 +652,11 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_)
     clipCorridorToObservedCone(hPolys);
 
+  // Use one absolute handoff time for both position and yaw. Normal replans
+  // inherit the previous trajectory state at this instant so the new
+  // polynomial has continuous PVA and yaw boundary conditions. Static and
+  // emergency plans intentionally restart from odometry.
+  const ros::Time trajectory_start_time = ros::Time::now();
   Eigen::Matrix3d iniState;
   Eigen::Matrix3d finState;
   Eigen::Vector3d initialVelocity = local_data_.curr_vel_;
@@ -661,21 +666,85 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     initialVelocity =
         initialVelocity.normalized() * gcopter_config_->maxVelMag;
   }
-  // Position comes directly from the latest odometry. Velocity is only a soft
-  // reference inside GCOPTER, and acceleration starts from a neutral reference.
-  iniState << local_data_.curr_pos_, initialVelocity,
-      Eigen::Vector3d::Zero();
+  Eigen::Matrix3d odometryState;
+  odometryState.col(0) = local_data_.curr_pos_;
+  odometryState.col(1) = initialVelocity;
+  odometryState.col(2).setZero();
+  iniState = odometryState;
 
-  Eigen::Vector4d bh;
-  bh << iniState.topLeftCorner<3, 1>(), 1.0;
-  int start_idx = -1;
-  for (int i = hPolys.size() - 1; i >= 0; i--) {
-    Eigen::MatrixX4d hp = hPolys[i];
-    if ((((hp * bh).array() > -1.0e-6).cast<int>().sum() <= 0)) {
-      start_idx = i;
-      break;
+  Eigen::Vector3d initialYawState(local_data_.curr_yaw_, 0.0, 0.0);
+  bool previousPositionStateAvailable = false;
+  bool previousYawStateAvailable = false;
+  double previousPositionTime = 0.0;
+  double previousYawTime = 0.0;
+  Eigen::Matrix3d previousPositionState;
+  Eigen::Vector3d previousYawState = initialYawState;
+
+  if (!is_static && local_data_.traj_id_ >= 1 &&
+      local_data_.minco_traj_.getPieceNum() > 0 &&
+      std::isfinite(local_data_.duration_) && local_data_.duration_ > 0.0) {
+    previousPositionTime =
+        (trajectory_start_time - local_data_.start_time_).toSec();
+    previousPositionTime =
+        std::max(0.0, std::min(previousPositionTime, local_data_.duration_));
+    previousPositionState.col(0) =
+        local_data_.minco_traj_.getPos(previousPositionTime);
+    previousPositionState.col(1) =
+        local_data_.minco_traj_.getVel(previousPositionTime);
+    previousPositionState.col(2) =
+        local_data_.minco_traj_.getAcc(previousPositionTime);
+    previousPositionStateAvailable = previousPositionState.allFinite();
+
+    if (local_data_.minco_yaw_traj_.getPieceNum() > 0) {
+      const double previousYawDuration =
+          local_data_.minco_yaw_traj_.getTotalDuration();
+      if (std::isfinite(previousYawDuration) && previousYawDuration > 0.0) {
+        previousYawTime =
+            std::max(0.0, std::min(previousPositionTime, previousYawDuration));
+        previousYawState.x() =
+            local_data_.minco_yaw_traj_.getPos(previousYawTime).x();
+        previousYawState.y() =
+            local_data_.minco_yaw_traj_.getVel(previousYawTime).x();
+        previousYawState.z() =
+            local_data_.minco_yaw_traj_.getAcc(previousYawTime).x();
+        previousYawStateAvailable = previousYawState.allFinite();
+      }
     }
   }
+
+  const auto findStartCorridor =
+      [&hPolys](const Eigen::Vector3d &position) -> int {
+    if (!position.allFinite())
+      return -1;
+    Eigen::Vector4d homogeneous;
+    homogeneous << position, 1.0;
+    for (int index = static_cast<int>(hPolys.size()) - 1; index >= 0;
+         --index) {
+      if ((hPolys[index] * homogeneous).maxCoeff() <= 1.0e-6)
+        return index;
+    }
+    return -1;
+  };
+
+  bool inheritedPreviousState = false;
+  int start_idx = -1;
+  if (previousPositionStateAvailable) {
+    start_idx = findStartCorridor(previousPositionState.col(0));
+    if (start_idx >= 0) {
+      iniState = previousPositionState;
+      inheritedPreviousState = true;
+      if (previousYawStateAvailable)
+        initialYawState = previousYawState;
+    } else {
+      ROS_WARN_THROTTLE(
+          2.0,
+          "[ReplanContinuity] previous trajectory state is outside the new "
+          "corridor; using odometry PVA and yaw");
+    }
+  }
+  if (!inheritedPreviousState)
+    start_idx = findStartCorridor(iniState.col(0));
+
   if (start_idx == -1) {
     // 시작상태(예측점)가 corridor 밖: RTH 정체 사건의 주범. 이벤트 로거가 사유를
     // 읽어가므로 콘솔은 스로틀만 남긴다 (예전엔 이 ROS_ERROR가 초당 수십 번 스팸).
@@ -863,13 +932,32 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     return false;
   }
   if (local_data_.minco_traj_.getPieceNum() > 0) {
-    if (!YawTrajOpt(local_data_.curr_yaw_, local_data_.end_yaw_, is_static,
+    if (!YawTrajOpt(initialYawState, local_data_.end_yaw_,
                     use_shorten_path)) {
       last_plan_fail_reason_ = "yaw traj opt failed";
       ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
       local_data_ = local_data_backup;
       return false;
     }
+    const Eigen::Vector3d positionBoundaryError(
+        (local_data_.minco_traj_.getPos(0.0) - iniState.col(0)).norm(),
+        (local_data_.minco_traj_.getVel(0.0) - iniState.col(1)).norm(),
+        (local_data_.minco_traj_.getAcc(0.0) - iniState.col(2)).norm());
+    const Eigen::Vector3d yawBoundaryError(
+        std::abs(local_data_.minco_yaw_traj_.getPos(0.0).x() -
+                 initialYawState.x()),
+        std::abs(local_data_.minco_yaw_traj_.getVel(0.0).x() -
+                 initialYawState.y()),
+        std::abs(local_data_.minco_yaw_traj_.getAcc(0.0).x() -
+                 initialYawState.z()));
+    ROS_INFO_THROTTLE(
+        1.0,
+        "[ReplanContinuity] source=%s PVA_err=[%.3e %.3e %.3e] "
+        "Yaw_err=[%.3e %.3e %.3e]",
+        inheritedPreviousState ? "previous_trajectory" : "odometry",
+        positionBoundaryError.x(), positionBoundaryError.y(),
+        positionBoundaryError.z(), yawBoundaryError.x(),
+        yawBoundaryError.y(), yawBoundaryError.z());
     gcopter_viz_->visualize(local_data_.minco_traj_,
                             gcopter_config_->maxVelMag);
   } else {
@@ -888,8 +976,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   gcopter_viz_->visualizeTimeCost(PolysGenerate_time, trajOptimize_time, pointCloudProcess_time);
   
   local_data_.traj_id_ += 1;
-  local_data_.start_time_ = hpoly_gen_end;
-  local_data_.start_pos_ = path_shorten.front();
+  local_data_.start_time_ = trajectory_start_time;
+  local_data_.start_pos_ = iniState.col(0);
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = false;
@@ -1029,20 +1117,25 @@ void FastPlannerManager::angleLimite(double &angle) {
   angle = std::remainder(angle, 2.0 * M_PI);
 }
 
-bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
-                                    bool is_static, bool use_shorten_path) {
+bool FastPlannerManager::YawTrajOpt(
+    const Eigen::Vector3d &initial_yaw_state, double &end_yaw,
+    bool use_shorten_path) {
   ros::Time yaw_opt_start = ros::Time::now();
   
   Eigen::Matrix3d iniStateYaw, finStateYaw;
   Eigen::MatrixXd wpsYaw;
   Eigen::VectorXd opt_times_Yaw;
-  double yaw_sp, yaw_sv(0.0), yaw_sa(0.0), yaw_ep(end_yaw);
+  double yaw_sp(initial_yaw_state.x()), yaw_sv(initial_yaw_state.y()),
+      yaw_sa(initial_yaw_state.z()), yaw_ep(end_yaw);
 
-  // Replanning starts from the latest odometry yaw. Subsequent waypoints add
-  // wrapped shortest-angle deltas to this value, producing one continuous
-  // unwrapped yaw sequence even when the measured angle crosses +/-pi.
-  yaw_sp = start_yaw;
-  angleLimite(yaw_sp);
+  // Keep the inherited yaw unwrapped. Wrapping this absolute start angle would
+  // reintroduce a +/-pi discontinuity even though all following deltas already
+  // use the shortest angular distance.
+  if (!initial_yaw_state.allFinite()) {
+    ROS_WARN_THROTTLE(
+        1.0, "[ReplanContinuity] invalid initial yaw state");
+    return false;
+  }
   static double yaw_dur = 0.3;
   // double yaw_dur = local_data_.duration_ / 12.0;
   double fwd_time = gcopter_config_->yaw_time_fwd;
