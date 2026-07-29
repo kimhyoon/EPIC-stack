@@ -24,6 +24,18 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     ros::shutdown();
     exit(1);
   }
+  auto requirePositiveFinite = [&nh](const std::string &name, double &value) {
+    if (!nh.getParam(name, value) || !std::isfinite(value) || value <= 0.0) {
+      ROS_FATAL("[LIOInterface] required positive finite parameter '%s' is "
+                "missing or invalid.",
+                name.c_str());
+      ros::shutdown();
+      exit(1);
+    }
+  };
+  requirePositiveFinite("numerical/vector_norm_eps", lp_->vector_norm_eps_);
+  requirePositiveFinite("numerical/trig_gradient_eps",
+                        lp_->trig_gradient_eps_);
 
   // A crop bridge keeps localization on the raw cloud while EPIC plans from
   // the configured ML-X-emulation output cloud.
@@ -115,7 +127,8 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   nh.param("lidar_perception/fov_horizontal", lp_->fov_horizontal, 360.0);
   nh.param("lidar_perception/fov_viewpoint_up", lp_->fov_vp_up, -0.1);
   nh.param("lidar_perception/fov_viewpoint_down", lp_->fov_vp_down, -0.1);
-  nh.getParam("lidar_perception/max_ray_length", lp_->max_ray_length_);
+  requirePositiveFinite("lidar_perception/max_ray_length",
+                        lp_->max_ray_length_);
   ld_->first_map_flag_ = true;
 
   // Initialize TF listener for frame transforms.

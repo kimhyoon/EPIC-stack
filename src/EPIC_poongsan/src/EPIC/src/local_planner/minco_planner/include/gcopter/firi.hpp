@@ -248,15 +248,18 @@ inline bool maxVolInsEllipsoid(const Eigen::MatrixX4d& hPoly,
  * @param a the vector a
  * @param b the vector b
  * @param hPoly the output matrix hPoly
- * @param iterations the number of iterations (default: 2, reduced from 4)
- * @param epsilon the epsilon value (default: 1.0e-6)
+ * @param iterations the number of iterations
+ * @param epsilon the geometric comparison tolerance
+ * @param obstacleDistanceLimit transformed obstacle-distance processing limit
+ * @param maxPlaneCount maximum number of boundary and obstacle planes
  * @note 生成包含a b 不包含pc的最大凸包
  * @return true if the algorithm completes successfully, false otherwise
  */
 inline bool firi(const Eigen::MatrixX4d& bd, const Eigen::Matrix3Xd& pc,
                  const Eigen::Vector3d& a, const Eigen::Vector3d& b,
-                 Eigen::MatrixX4d& hPoly, const int iterations = 2,
-                 const double epsilon = 1.0e-6) {
+                 Eigen::MatrixX4d& hPoly, const int iterations,
+                 const double epsilon, const double obstacleDistanceLimit,
+                 const int maxPlaneCount) {
 	const Eigen::Vector4d ah(a(0), a(1), a(2), 1.0);
 	const Eigen::Vector4d bh(b(0), b(1), b(2), 1.0);
 
@@ -303,7 +306,7 @@ inline bool firi(const Eigen::MatrixX4d& bd, const Eigen::Matrix3Xd& pc,
 			tangents.block<1, 3>(i, 0) = forwardPC.col(i).transpose() / distRs(i);  
 			
 			// Early termination for points that are clearly outside
-			if (distRs(i) > 10.0) { // Skip very distant points
+			if (distRs(i) > obstacleDistanceLimit) {
 				tangents.row(i).setZero();
 				continue;
 			}
@@ -344,7 +347,7 @@ inline bool firi(const Eigen::MatrixX4d& bd, const Eigen::Matrix3Xd& pc,
 		}
 		
 		// Limit the maximum number of iterations to prevent infinite loops
-		const int max_iterations = std::min(M + N, 50);
+		const int max_iterations = std::min(M + N, maxPlaneCount);
 		for (int i = 0; !completed && i < max_iterations; ++i) {
 			if (minSqrD < minSqrR) {
 				forwardH.block<1, 3>(nH, 0) = forwardB.row(bdMinId);

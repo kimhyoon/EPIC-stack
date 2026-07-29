@@ -319,7 +319,7 @@ namespace lbfgs
             ++count;
 
             /* Test for errors. */
-            if (std::isinf(f) || std::isnan(f))
+            if (!std::isfinite(f) || !g.allFinite())
             {
                 return LBFGSERR_INVALID_FUNCVAL;
             }
@@ -516,6 +516,11 @@ namespace lbfgs
 
         /* Evaluate the function value and its gradient. */
         fx = cd.proc_evaluate(cd.instance, x, g);
+        if (!std::isfinite(fx) || !x.allFinite() || !g.allFinite())
+        {
+            f = fx;
+            return LBFGSERR_INVALID_FUNCVAL;
+        }
 
         /* Store the initial value of the cost function. */
         pf(0) = fx;
@@ -542,7 +547,7 @@ namespace lbfgs
             /* 
             Compute the initial step:
             */
-            step = 1.0 / d.norm();
+            step = 1.0 / std::max(d.norm(), param.machine_prec);
 
             k = 1;
             end = 0;
@@ -573,6 +578,13 @@ namespace lbfgs
                     x = xp;
                     g = gp;
                     ret = ls;
+                    break;
+                }
+                if (!std::isfinite(fx) || !x.allFinite() || !g.allFinite())
+                {
+                    x = xp;
+                    g = gp;
+                    ret = LBFGSERR_INVALID_FUNCVAL;
                     break;
                 }
 

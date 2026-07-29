@@ -121,6 +121,20 @@ box_0/up: [38.5, 18.0, 2.5]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0
+
+# Corridor/FIRI generation parameters. Field-tuning effects are documented in real.yaml.
+local_planning/corridor/obstacle_voxel_size: 0.28       # Increase: faster/coarser obstacle input; decrease: slower/denser input.
+local_planning/corridor/search_margin_xy: 3.0           # XY obstacle-search margin around the guide path [m].
+local_planning/corridor/search_margin_z: 1.0            # Z obstacle-search margin around the guide path [m].
+local_planning/corridor/progress_length: 7.0            # Max seed-path length per FIRI piece [m], not total trajectory length.
+local_planning/corridor/max_obstacle_samples: 500       # Max obstacle points retained per FIRI piece.
+local_planning/corridor/firi_obstacle_distance_limit: 10.0  # FIRI transformed-distance processing limit.
+local_planning/corridor/firi_max_plane_count: 50        # Max boundary/obstacle planes processed per FIRI iteration.
+local_planning/corridor/gap_violation_plane_threshold: 3  # Violated-plane count that triggers a gap polytope.
+local_planning/corridor/overlap_tolerance: 0.01         # Minimum numerical interior-overlap tolerance.
+local_planning/corridor/fallback_target_margin: 0.1     # Keep fallback targets this far inside the connected corridor [m].
+local_planning/corridor/fallback_min_progress: 0.5      # Reject fallback targets with less guide-path progress [m].
+
 DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
 DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
 MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
@@ -141,6 +155,18 @@ WeightSafeT: 400.0 # Desktop 120-degree comparison value.
 ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
 SmoothingEps: 0.015
 IntegralIntervs: 32
+
+# [NaN 방지 수치 안정화][절대 수정 금지]
+# 아래 7개 값은 0 나눗셈, 영벡터 정규화, 짧은 경로 구간 및 작은 LU pivot을 방지하는 검증값이다.
+# 값을 변경하지 말 것. 항목이 누락되거나 0·음수·비정상 값이면 Planner가 실행을 거부한다.
+numerical/yaw_diff_eps: 1.0e-9       # Yaw 차이 계산의 분모 하한
+numerical/trig_gradient_eps: 1.0e-9  # acos·sqrt 경계의 gradient 하한
+numerical/vector_norm_eps: 1.0e-6    # 벡터 정규화 분모 하한
+numerical/min_segment_time: 5.0e-2   # MINCO/Yaw 궤적 구간의 최소 시간[s]
+numerical/flatness_norm_eps: 1.0e-6  # Flatness 변환의 norm·분모 하한
+numerical/min_path_segment_length: 5.0e-2  # 서로 붙은 guide point를 하나로 합칠 거리[m]
+numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 pivot 절대값 하한
+
 RelCostTol: 1.0e-6  # Desktop 120-degree comparison value.
 #param for yaw opt
 yaw_max_vel: 2.0    # Desktop 120-degree comparison value.

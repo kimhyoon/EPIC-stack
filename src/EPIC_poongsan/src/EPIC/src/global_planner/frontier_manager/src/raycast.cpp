@@ -1,6 +1,7 @@
 #include <Eigen/Eigen>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <frontier_manager/raycast.h>
 
 int signum(int x) {
@@ -13,6 +14,9 @@ double mod(double value, double modulus) {
 
 double intbound(double s, double ds) {
   // Find the smallest positive t such that s+t*ds is an integer.
+  if (!std::isfinite(s) || !std::isfinite(ds) || ds == 0.0) {
+    return std::numeric_limits<double>::infinity();
+  }
   if (ds < 0) {
     return intbound(-s, -ds);
   } else {
@@ -22,8 +26,19 @@ double intbound(double s, double ds) {
   }
 }
 
+double axisDelta(int step, double delta) {
+  if (step == 0 || delta == 0.0 || !std::isfinite(delta)) {
+    return std::numeric_limits<double>::infinity();
+  }
+  return static_cast<double>(step) / delta;
+}
+
 void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eigen::Vector3d& min,
              const Eigen::Vector3d& max, int& output_points_cnt, Eigen::Vector3d* output) {
+  if (!start.allFinite() || !end.allFinite() || !min.allFinite() ||
+      !max.allFinite()) {
+    return;
+  }
   //    std::cout << start << ' ' << end << std::endl;
   // From "A Fast Voxel Traversal Algorithm for Ray Tracing"
   // by John Amanatides and Andrew Woo, 1987
@@ -70,9 +85,9 @@ void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eig
   double tMaxZ = intbound(start.z(), dz);
 
   // The change in t when taking a step (always positive).
-  double tDeltaX = ((double)stepX) / dx;
-  double tDeltaY = ((double)stepY) / dy;
-  double tDeltaZ = ((double)stepZ) / dz;
+  double tDeltaX = axisDelta(stepX, dx);
+  double tDeltaY = axisDelta(stepY, dy);
+  double tDeltaZ = axisDelta(stepZ, dz);
 
   // Avoids an infinite loop.
   if (stepX == 0 && stepY == 0 && stepZ == 0) return;
@@ -127,6 +142,11 @@ void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eig
 
 void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eigen::Vector3d& min,
              const Eigen::Vector3d& max, std::vector<Eigen::Vector3d>* output) {
+  output->clear();
+  if (!start.allFinite() || !end.allFinite() || !min.allFinite() ||
+      !max.allFinite()) {
+    return;
+  }
   //    std::cout << start << ' ' << end << std::endl;
   // From "A Fast Voxel Traversal Algorithm for Ray Tracing"
   // by John Amanatides and Andrew Woo, 1987
@@ -173,11 +193,9 @@ void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eig
   double tMaxZ = intbound(start.z(), dz);
 
   // The change in t when taking a step (always positive).
-  double tDeltaX = ((double)stepX) / dx;
-  double tDeltaY = ((double)stepY) / dy;
-  double tDeltaZ = ((double)stepZ) / dz;
-
-  output->clear();
+  double tDeltaX = axisDelta(stepX, dx);
+  double tDeltaY = axisDelta(stepY, dy);
+  double tDeltaZ = axisDelta(stepZ, dz);
 
   // Avoids an infinite loop.
   if (stepX == 0 && stepY == 0 && stepZ == 0) return;
@@ -228,6 +246,8 @@ void Raycast(const Eigen::Vector3d& start, const Eigen::Vector3d& end, const Eig
 bool RayCaster::setInput(const Eigen::Vector3d& start,
                          const Eigen::Vector3d& end /* , const Eigen::Vector3d& min,
                          const Eigen::Vector3d& max */) {
+  if (!start.allFinite() || !end.allFinite())
+    return false;
   start_ = start;
   end_ = end;
   // max_ = max;
@@ -259,9 +279,9 @@ bool RayCaster::setInput(const Eigen::Vector3d& start,
   tMaxZ_ = intbound(start_.z(), dz_);
 
   // The change in t when taking a step (always positive).
-  tDeltaX_ = ((double)stepX_) / dx_;
-  tDeltaY_ = ((double)stepY_) / dy_;
-  tDeltaZ_ = ((double)stepZ_) / dz_;
+  tDeltaX_ = axisDelta(stepX_, dx_);
+  tDeltaY_ = axisDelta(stepY_, dy_);
+  tDeltaZ_ = axisDelta(stepZ_, dz_);
 
   dist_ = 0;
 
@@ -327,6 +347,9 @@ void RayCaster::setParams(const double& res, const Eigen::Vector3d& origin) {
 }
 
 bool RayCaster::input(const Eigen::Vector3d& start, const Eigen::Vector3d& end) {
+  if (!start.allFinite() || !end.allFinite() ||
+      !std::isfinite(resolution_) || resolution_ <= 0.0)
+    return false;
   start_ = start / resolution_;
   end_ = end / resolution_;
 
@@ -356,9 +379,9 @@ bool RayCaster::input(const Eigen::Vector3d& start, const Eigen::Vector3d& end) 
   tMaxZ_ = intbound(start_.z(), dz_);
 
   // The change in t when taking a step (always positive).
-  tDeltaX_ = ((double)stepX_) / dx_;
-  tDeltaY_ = ((double)stepY_) / dy_;
-  tDeltaZ_ = ((double)stepZ_) / dz_;
+  tDeltaX_ = axisDelta(stepX_, dx_);
+  tDeltaY_ = axisDelta(stepY_, dy_);
+  tDeltaZ_ = axisDelta(stepZ_, dz_);
 
   dist_ = 0;
 
@@ -373,6 +396,9 @@ bool RayCaster::input(const Eigen::Vector3d& start, const Eigen::Vector3d& end) 
 
 bool RayCaster::biInput(const Eigen::Vector3d& start, const Eigen::Vector3d& end)
 {
+  if (!start.allFinite() || !end.allFinite() ||
+      !std::isfinite(resolution_) || resolution_ <= 0.0)
+    return false;
   start_ = start / resolution_;
   inter_ = 0.5*(start+end) / resolution_;
   end_ = end / resolution_;
@@ -408,12 +434,12 @@ bool RayCaster::biInput(const Eigen::Vector3d& start, const Eigen::Vector3d& end
   tMaxYn = intbound(end_.y(), dy_n);
   tMaxZn = intbound(end_.z(), dz_n);
 
-  tDeltaXp = ((double)stepXp) / dx_p;
-  tDeltaYp = ((double)stepYp) / dy_p;
-  tDeltaZp = ((double)stepZp) / dz_p;
-  tDeltaXn = ((double)stepXn) / dx_n;
-  tDeltaYn = ((double)stepYn) / dy_n;
-  tDeltaZn = ((double)stepZn) / dz_n;
+  tDeltaXp = axisDelta(stepXp, dx_p);
+  tDeltaYp = axisDelta(stepYp, dy_p);
+  tDeltaZp = axisDelta(stepZp, dz_p);
+  tDeltaXn = axisDelta(stepXn, dx_n);
+  tDeltaYn = axisDelta(stepYn, dy_n);
+  tDeltaZn = axisDelta(stepZn, dz_n);
 
   dist_ = 0;
 
