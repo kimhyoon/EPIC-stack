@@ -37,6 +37,8 @@ static bool                        have_odom_  = false;
 static bool                        have_cmd_   = false;
 static ros::Time                   last_cmd_stamp_;
 static quadrotor_msgs::PositionCommand last_cmd_;
+static double                      last_valid_yaw_ = 0.0;
+static bool                        have_valid_yaw_ = false;
 
 // ---- reactive-avoidance MUX state ------------------------------------------
 static int                         avoid_flag_     = 0;     // last /FSM_flag_avoidance value (1 = obstacle close)
@@ -67,9 +69,34 @@ static ros::Publisher       replan_pub_;   // /planning/replan (std_msgs::Empty)
 
 void stateCb(const mavros_msgs::State::ConstPtr& msg) { px4_state_ = *msg; }
 
+double wrapToPi(const double angle) {
+  return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+bool quaternionToYaw(const geometry_msgs::Quaternion& q, double& yaw) {
+  const double norm_sq =
+      q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (!std::isfinite(norm_sq) || norm_sq <= 1.0e-12)
+    return false;
+
+  const double inv_norm = 1.0 / std::sqrt(norm_sq);
+  const double x = q.x * inv_norm;
+  const double y = q.y * inv_norm;
+  const double z = q.z * inv_norm;
+  const double w = q.w * inv_norm;
+  yaw = std::atan2(2.0 * (w * z + x * y),
+                   1.0 - 2.0 * (y * y + z * z));
+  return std::isfinite(yaw);
+}
+
 void odomCb(const nav_msgs::Odometry::ConstPtr& msg) {
   odom_ = *msg;
   have_odom_ = true;
+  double odom_yaw;
+  if (!have_valid_yaw_ && quaternionToYaw(msg->pose.pose.orientation, odom_yaw)) {
+    last_valid_yaw_ = odom_yaw;
+    have_valid_yaw_ = true;
+  }
 }
 
 void cmdCb(const quadrotor_msgs::PositionCommand::ConstPtr& msg) {
@@ -133,6 +160,25 @@ mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector3d& p,
   sp.yaw      = std::remainder(yaw, 2.0 * M_PI);
   sp.yaw_rate = yaw_rate;
   return sp;
+}
+
+void sanitizeYawSetpoint(mavros_msgs::PositionTarget& sp) {
+  if (std::isfinite(sp.yaw)) {
+    sp.yaw = wrapToPi(sp.yaw);
+    last_valid_yaw_ = sp.yaw;
+    have_valid_yaw_ = true;
+  } else {
+    ROS_ERROR_THROTTLE(
+        1.0,
+        "[px4_bridge] non-finite yaw command; holding the last valid yaw");
+    sp.yaw = have_valid_yaw_ ? last_valid_yaw_ : 0.0;
+  }
+
+  if (!std::isfinite(sp.yaw_rate)) {
+    ROS_ERROR_THROTTLE(
+        1.0, "[px4_bridge] non-finite yaw rate command; replacing it with zero");
+    sp.yaw_rate = 0.0;
+  }
 }
 
 int main(int argc, char** argv) {
@@ -255,9 +301,8 @@ int main(int argc, char** argv) {
       Eigen::Vector3d p(odom_.pose.pose.position.x,
                         odom_.pose.pose.position.y,
                         odom_.pose.pose.position.z);
-      const auto& q = odom_.pose.pose.orientation;
-      double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
-                              1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+      double yaw = last_valid_yaw_;
+      quaternionToYaw(odom_.pose.pose.orientation, yaw);
       sp = makeSetpoint(p, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
                         yaw, 0.0, /*full_state=*/false);
       ROS_WARN_THROTTLE(0.5, "[px4_bridge] flag=1 but /target_avoidance STALE -> hold pose");
@@ -274,9 +319,8 @@ int main(int argc, char** argv) {
       Eigen::Vector3d p(odom_.pose.pose.position.x,
                         odom_.pose.pose.position.y,
                         odom_.pose.pose.position.z);
-      const auto& q = odom_.pose.pose.orientation;
-      double yaw = std::atan2(2.0 * (q.w * q.z + q.x * q.y),
-                              1.0 - 2.0 * (q.y * q.y + q.z * q.z));
+      double yaw = last_valid_yaw_;
+      quaternionToYaw(odom_.pose.pose.orientation, yaw);
 
       sp = makeSetpoint(p, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
                         yaw, 0.0, /*full_state=*/false);
@@ -284,6 +328,10 @@ int main(int argc, char** argv) {
         ROS_WARN_THROTTLE(1.0, "[px4_bridge] /position_cmd stale -> holding pose");
     }
 
+    // Normalize every path, including avoidance passthrough, immediately before
+    // MAVROS. This is a final representation guard; traj_server remains
+    // responsible for temporal yaw continuity.
+    sanitizeYawSetpoint(sp);
     sp_pub_.publish(sp);
     rate.sleep();
   }

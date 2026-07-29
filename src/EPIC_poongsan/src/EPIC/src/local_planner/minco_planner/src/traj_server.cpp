@@ -9,6 +9,8 @@
 #include <traj_utils/PolyTraj.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <chrono>
 #include <ctime>
@@ -31,7 +33,10 @@ int traj_id_;
 ros::Time heartbeat_time_(0);
 Eigen::Vector3d last_pos_;
 
-double last_yaw_, last_yawdot_;
+double last_yaw_, last_yawdot_, yaw_max_vel_;
+bool yaw_initialized_ = false;
+bool yaw_command_started_ = false;
+ros::Time last_yaw_cmd_time_;
 
 // RTH mode detection
 bool is_rth_mode_ = false;
@@ -50,23 +55,43 @@ ros::Time last_odom_time_;
 bool has_last_odom_pos_ = false;
 int error_sample_count_ = 0;
 
+double wrapToPi(const double angle) {
+  return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+bool quaternionToYaw(const geometry_msgs::Quaternion &q, double &yaw) {
+  const double norm_sq =
+      q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (!std::isfinite(norm_sq) || norm_sq <= 1.0e-12)
+    return false;
+
+  const double inv_norm = 1.0 / std::sqrt(norm_sq);
+  const double x = q.x * inv_norm;
+  const double y = q.y * inv_norm;
+  const double z = q.z * inv_norm;
+  const double w = q.w * inv_norm;
+  yaw = std::atan2(2.0 * (w * z + x * y),
+                   1.0 - 2.0 * (y * y + z * z));
+  return std::isfinite(yaw);
+}
+
 std::pair<double, double> get_yaw(double current_yaw, double t_cur) {
   std::pair<double, double> yaw_yawdot(0, 0);
   if (t_cur > yaw_traj_->getTotalDuration())
     t_cur = yaw_traj_->getTotalDuration();
   Eigen::Vector3d ap = yaw_traj_->getPos(t_cur);
   double next_yaw = ap.x();
-  double d_yaw = next_yaw - current_yaw;
-  if (d_yaw >= M_PI) {
-    d_yaw -= 2 * M_PI;
+  if (!std::isfinite(next_yaw)) {
+    ROS_ERROR_THROTTLE(1.0,
+                       "[traj_server] non-finite yaw trajectory sample; "
+                       "holding the last valid yaw");
+    return std::make_pair(current_yaw, 0.0);
   }
-  if (d_yaw <= -M_PI) {
-    d_yaw += 2 * M_PI;
-  }
+  const double d_yaw = wrapToPi(next_yaw - current_yaw);
   next_yaw = current_yaw + d_yaw;
   yaw_yawdot.first = next_yaw;
   Eigen::Vector3d av = yaw_traj_->getVel(t_cur);
-  yaw_yawdot.second = av(0);
+  yaw_yawdot.second = std::isfinite(av(0)) ? av(0) : 0.0;
   return yaw_yawdot;
 }
 
@@ -259,6 +284,12 @@ void cmdCallback(const ros::TimerEvent &e) {
   }
   if (!receive_traj_)
     return;
+  if (!yaw_initialized_) {
+    ROS_WARN_THROTTLE(
+        1.0,
+        "[traj_server] waiting for a valid odometry yaw before publishing");
+    return;
+  }
 
   ros::Time time_now = ros::Time::now();
   static bool printed;
@@ -304,8 +335,26 @@ void cmdCallback(const ros::TimerEvent &e) {
     yaw_yawdot = std::make_pair(last_yaw_, 0.0);
   }
 
+  // A replacement yaw trajectory can start far from the command currently
+  // being executed. Limit the final setpoint delta as well as the optimizer so
+  // replanning cannot bypass yaw_max_vel with an instantaneous angle jump.
+  double yaw_dt = 0.0;
+  if (yaw_command_started_)
+    yaw_dt = (time_now - last_yaw_cmd_time_).toSec();
+  if (!std::isfinite(yaw_dt) || yaw_dt <= 0.0)
+    yaw_dt = 0.0;
+  const double requested_delta = wrapToPi(yaw_yawdot.first - last_yaw_);
+  const double max_delta = yaw_max_vel_ * yaw_dt;
+  const double limited_delta =
+      std::max(-max_delta, std::min(requested_delta, max_delta));
+  yaw_yawdot.first = last_yaw_ + limited_delta;
+  yaw_yawdot.second = yaw_dt > 0.0 ? limited_delta / yaw_dt : 0.0;
+
   time_last = time_now;
+  yaw_command_started_ = true;
   last_yaw_ = yaw_yawdot.first;
+  last_yawdot_ = yaw_yawdot.second;
+  last_yaw_cmd_time_ = time_now;
   last_pos_ = pos;
 
   publish_cmd(pos, vel, acc, jer, yaw_yawdot.first, yaw_yawdot.second);
@@ -340,6 +389,24 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
   }
 
   real_pos_ = current_pos;
+
+  if (!yaw_command_started_) {
+    double odom_yaw = 0.0;
+    if (quaternionToYaw(msg.pose.pose.orientation, odom_yaw)) {
+      last_yaw_ = odom_yaw;
+      last_yawdot_ = 0.0;
+      last_yaw_cmd_time_ = ros::Time::now();
+      if (!yaw_initialized_) {
+        yaw_initialized_ = true;
+        ROS_INFO("[traj_server] initial yaw from odometry: %.3f rad (%.1f deg)",
+                 last_yaw_, last_yaw_ * 180.0 / M_PI);
+      }
+    } else {
+      ROS_WARN_THROTTLE(
+          1.0,
+          "[traj_server] invalid odometry quaternion; yaw not initialized");
+    }
+  }
 
   if (traj_real_.size() > 100000)
     traj_real_.erase(traj_real_.begin(), traj_real_.begin() + 1000);
@@ -560,6 +627,14 @@ int main(int argc, char **argv) {
   ros::Subscriber rth_dist_sub = nh.subscribe("/planning/rth_distance", 10, rthDistanceCallback);
 
   nh.param("/fsm/replan_time", replan_time_, 0.1);
+  if (!ros::param::get("/exploration_node/yaw_max_vel", yaw_max_vel_) ||
+      !std::isfinite(yaw_max_vel_) || yaw_max_vel_ <= 0.0) {
+    ROS_FATAL("[Traj server] /exploration_node/yaw_max_vel must be finite "
+              "and greater than zero");
+    return 1;
+  }
+  ROS_INFO("[Traj server]: final yaw setpoint rate limit: %.3f rad/s",
+           yaw_max_vel_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);
