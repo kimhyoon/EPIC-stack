@@ -19,6 +19,7 @@
 
 #include <ros/ros.h>
 #include <Eigen/Eigen>
+#include <cmath>
 
 #include <quadrotor_msgs/PositionCommand.h>
 #include <nav_msgs/Odometry.h>
@@ -50,7 +51,7 @@ static bool                        avoid_active_prev_ = false;  // for 1->0 edge
 static bool   auto_arm_        = false;  // auto-request OFFBOARD + arm
 static double cmd_timeout_     = 0.5;    // [s] treat cmd stream as stale after this
 static bool   use_accel_ff_    = false;  // forward acceleration feed-forward to PX4
-static bool   use_yawrate_     = true;   // forward yaw_dot, else hold yaw only
+static bool   use_yawrate_     = false;  // false: command planned yaw angle
 
 // ---- avoidance MUX params --------------------------------------------------
 static bool   enable_avoidance_  = true;  // master switch for the reactive-avoidance MUX
@@ -126,7 +127,10 @@ mavros_msgs::PositionTarget makeSetpoint(const Eigen::Vector3d& p,
   sp.acceleration_or_force.x = a.x();
   sp.acceleration_or_force.y = a.y();
   sp.acceleration_or_force.z = a.z();
-  sp.yaw      = yaw;
+  // EPIC keeps yaw continuous across +/-pi while constructing each trajectory.
+  // MAVROS/PX4 accepts the equivalent principal angle, so normalize only at
+  // the output boundary and avoid exposing multi-turn values to the FCU.
+  sp.yaw      = std::remainder(yaw, 2.0 * M_PI);
   sp.yaw_rate = yaw_rate;
   return sp;
 }

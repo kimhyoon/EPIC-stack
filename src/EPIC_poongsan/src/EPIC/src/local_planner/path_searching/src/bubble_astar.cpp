@@ -734,8 +734,10 @@ TopoNode::Ptr FastSearcher::createTopoNode(const Eigen::Vector3f &pose,
     const double edge_norm = edge_delta.norm();
     const double velocity_norm = curr_vel.norm();
     if (curr_vel.allFinite() && edge_delta.allFinite() &&
-        velocity_norm > lidar_map_interface_->lp_->vector_norm_eps_ &&
-        edge_norm > lidar_map_interface_->lp_->vector_norm_eps_) {
+        velocity_norm >
+            topo_graph_->lidar_map_interface_->lp_->vector_norm_eps_ &&
+        edge_norm >
+            topo_graph_->lidar_map_interface_->lp_->vector_norm_eps_) {
       const Eigen::Vector3f dir = edge_delta / edge_norm;
       const Eigen::Vector3f vdir = curr_vel / velocity_norm;
       const double dot =

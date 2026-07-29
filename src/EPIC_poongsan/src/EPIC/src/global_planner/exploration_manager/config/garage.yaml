@@ -139,6 +139,7 @@ DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
 DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
 MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
 MaxVelMag: 2.0
+MaxAccMag: 2.0
 maxBdrMag: 10000.0
 MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
 MinThrust: 15.0
@@ -153,6 +154,9 @@ WeightT: 2000.0   # Desktop 120-degree comparison value.
 WeightSafeT: 400.0 # Desktop 120-degree comparison value.
 # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
 ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
+PvaRunningWeights: [2.0e+5, 1.5e+4, 1.0e+4]
+PvaInitialWeights: [1.0e+2, 1.0e+2]
+PvaTerminalWeights: [2.0e+5, 1.5e+4, 1.0e+4]
 SmoothingEps: 0.015
 IntegralIntervs: 32
 

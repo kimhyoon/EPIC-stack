@@ -78,6 +78,7 @@ DilateRadiusSoft: 0.6 # corrido
 DilateRadiusHard: 0.45 # collision check threshold
 MaxCorridorSize: 4.0
 MaxVelMag: 4.0
+MaxAccMag: 2.0
 maxBdrMag: 10000.0
 MaxTiltAngle: 1.0 # 最大飞行姿态角度, 弧度制
 MinThrust: 15.0
@@ -91,6 +92,9 @@ SpeedEps: 0.0001
 WeightT: 700.0
 WeightSafeT: 200.0
 ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
+PvaRunningWeights: [1.1e+5, 1.5e+4, 1.1e+4]
+PvaInitialWeights: [1.0e+2, 1.0e+2]
+PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4]
 SmoothingEps: 0.015
 IntegralIntervs: 32
 

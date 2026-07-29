@@ -127,7 +127,7 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
   }
   double goal_r = min(1.5, goal_clearance - safe_distance_);
   const Eigen::Vector3f goal_delta = goal - start;
-  const double len = goal_delta.norm();
+  double len = goal_delta.norm();
   if (!goal_delta.allFinite() || !std::isfinite(len)) {
     return ParallelBubbleAstar::NO_PATH;
   }

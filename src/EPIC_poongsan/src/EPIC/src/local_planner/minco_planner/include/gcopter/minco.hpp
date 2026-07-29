@@ -478,6 +478,18 @@ namespace minco
             return;
         }
 
+        inline bool setBoundaryConditions(const Eigen::Matrix3d &headState,
+                                          const Eigen::Matrix3d &tailState)
+        {
+            if (!headState.allFinite() || !tailState.allFinite())
+            {
+                return false;
+            }
+            headPVA = headState;
+            tailPVA = tailState;
+            return true;
+        }
+
         inline bool setParameters(const Eigen::Matrix3Xd &inPs,
                                   const Eigen::VectorXd &ts,
                                   const double minPivotMagnitude = 0.0)
@@ -645,7 +657,9 @@ namespace minco
         inline bool propogateGrad(const Eigen::MatrixX3d &partialGradByCoeffs,
                                   const Eigen::VectorXd &partialGradByTimes,
                                   Eigen::Matrix3Xd &gradByPoints,
-                                  Eigen::VectorXd &gradByTimes)
+                                  Eigen::VectorXd &gradByTimes,
+                                  Eigen::Matrix3d *gradByHeadPVA = nullptr,
+                                  Eigen::Matrix3d *gradByTailPVA = nullptr)
 
         {
             gradByPoints.resize(3, N - 1);
@@ -654,6 +668,22 @@ namespace minco
             if (!A.solveAdj(adjGrad, linearSolvePivotEps))
             {
                 return false;
+            }
+
+            if (gradByHeadPVA != nullptr)
+            {
+                gradByHeadPVA->col(0) = adjGrad.row(0).transpose();
+                gradByHeadPVA->col(1) = adjGrad.row(1).transpose();
+                gradByHeadPVA->col(2) = adjGrad.row(2).transpose();
+            }
+            if (gradByTailPVA != nullptr)
+            {
+                gradByTailPVA->col(0) =
+                    adjGrad.row(6 * N - 3).transpose();
+                gradByTailPVA->col(1) =
+                    adjGrad.row(6 * N - 2).transpose();
+                gradByTailPVA->col(2) =
+                    adjGrad.row(6 * N - 1).transpose();
             }
 
             for (int i = 0; i < N - 1; i++)

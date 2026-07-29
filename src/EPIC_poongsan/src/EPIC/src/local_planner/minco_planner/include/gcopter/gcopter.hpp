@@ -33,7 +33,6 @@
 #include <iostream>
 #include <vector>
 
-#include "gcopter/flatness.hpp"
 #include "gcopter/lbfgs.hpp"
 #include "gcopter/minco.hpp"
 
@@ -49,11 +48,12 @@ public:
 private:
   minco::MINCO_S3NU minco;
   minco::MINCO_S3NU yaw_minco;
-  flatness::FlatnessMap flatmap;
 
   double rho;
   Eigen::Matrix3d headPVA;
   Eigen::Matrix3d tailPVA;
+  Eigen::Vector2d initialStateWeights;
+  Eigen::Vector3d terminalStateWeights;
 
   PolyhedraV vPolytopes;
   PolyhedraH hPolytopes;
@@ -73,11 +73,9 @@ private:
   double dilate_radius_ = 0.2;
   double smoothEps;
   int integralRes;
-  Eigen::VectorXd magnitudeBd;
-  Eigen::VectorXd penaltyWt;
-  Eigen::VectorXd physicalPm;
-  double allocSpeed;
-  double minTimeBound;
+  double maxVelocity;
+  double maxAcceleration;
+  Eigen::Vector3d runningPenaltyWeights;
 
   // yaw minco
   double yaw_rho_vis;
@@ -85,10 +83,8 @@ private:
   double yaw_time_fwd;
   int integralResolution_yaw;
   double yaw_diff_eps;
-  double trig_gradient_eps;
   double vector_norm_eps;
   double min_segment_time;
-  double flatness_norm_eps;
   double linear_solve_pivot_eps;
   bool use_shorten_path = false;
   Eigen::Matrix3Xd guide_path;
@@ -378,84 +374,58 @@ private:
   static inline void attachPenaltyFunctional(
   const Eigen::VectorXd &T, const Eigen::MatrixX3d &coeffs, const Eigen::VectorXi &hIdx,
   const PolyhedraH &hPolys, const double &smoothFactor, const int &integralResolution,
-  const Eigen::VectorXd &magnitudeBounds, const Eigen::VectorXd &penaltyWeights,
-  flatness::FlatnessMap &flatMap, double &cost, Eigen::VectorXd &gradT, Eigen::MatrixX3d &gradC,
-  double &dilate_radius_, const double trigGradientEps) {
-    const double velSqrMax = magnitudeBounds(0) * magnitudeBounds(0);
-    const double omgSqrMax = magnitudeBounds(1) * magnitudeBounds(1);
-    const double thetaMax = magnitudeBounds(2);
-    const double thrustMean = 0.5 * (magnitudeBounds(3) + magnitudeBounds(4));
-    const double thrustRadi = 0.5 * fabs(magnitudeBounds(4) - magnitudeBounds(3));
-    const double thrustSqrRadi = thrustRadi * thrustRadi;
-
+  const double maxVelocity, const double maxAcceleration,
+  const Eigen::Vector3d &penaltyWeights, double &cost,
+  Eigen::VectorXd &gradT, Eigen::MatrixX3d &gradC) {
+    const double velSqrMax = maxVelocity * maxVelocity;
+    const double accSqrMax = maxAcceleration * maxAcceleration;
     const double weightPos = penaltyWeights(0);
     const double weightVel = penaltyWeights(1);
-    const double weightOmg = penaltyWeights(2);
-    const double weightTheta = penaltyWeights(3);
-    const double weightThrust = penaltyWeights(4);
+    const double weightAcc = penaltyWeights(2);
 
-    Eigen::Vector3d pos, vel, acc, jer, sna;
-    Eigen::Vector3d totalGradPos, totalGradVel, totalGradAcc, totalGradJer;
-    double totalGradPsi, totalGradPsiD;
-    double thr, cos_theta;
-    Eigen::Vector4d quat;
-    Eigen::Vector3d omg;
-    double gradThr;
-    Eigen::Vector4d gradQuat;
-    Eigen::Vector3d gradPos, gradVel, gradOmg;
+    Eigen::Vector3d pos, vel, acc, jer;
+    Eigen::Vector3d gradPos, gradVel, gradAcc;
 
     double step, alpha;
-    // double s1, s2, s3, s4, s5;
     double s1, s2, s3, s4, s5;
-    Eigen::Matrix<double, 6, 1> beta0_xy, beta1_xy, beta2_xy,
-        beta3_xy, beta4_xy;
+    Eigen::Matrix<double, 6, 1> beta0, beta1, beta2, beta3;
 
     Eigen::Vector3d outerNormal;
     int K, L;
-    double violaPos, violaVel, violaAcc, violaOmg, violaTheta, violaThrust;
-    double violaPosPenaD, violaVelPenaD, violaAccPenaD, violaOmgPenaD, violaThetaPenaD, violaThrustPenaD;
-    double violaPosPena, violaVelPena, violaAccPena, violaOmgPena, violaThetaPena, violaThrustPena;
+    double violaPos, violaVel, violaAcc;
+    double violaPosPenaD, violaVelPenaD, violaAccPenaD;
+    double violaPosPena, violaVelPena, violaAccPena;
     double node, pena;
 
     const int pieceNum = T.size();
     const double integralFrac = 1.0 / integralResolution;
     for (int i = 0; i < pieceNum; i++) {
-      const Eigen::Matrix<double, 6, 3> &c_xy =
+      const Eigen::Matrix<double, 6, 3> &coeff =
           coeffs.block<6, 3>(i * 6, 0);
 
       step = T(i) * integralFrac;
-      for (int j = 1; j < integralResolution; j++) {
+      for (int j = 0; j <= integralResolution; j++) {
         s1 = j * step;
         s2 = s1 * s1;
         s3 = s2 * s1;
         s4 = s2 * s2;
         s5 = s4 * s1;
-        beta0_xy << 1.0, s1, s2, s3, s4, s5;
-        beta1_xy << 0.0, 1.0, 2.0 * s1, 3.0 * s2, 4.0 * s3,
+        beta0 << 1.0, s1, s2, s3, s4, s5;
+        beta1 << 0.0, 1.0, 2.0 * s1, 3.0 * s2, 4.0 * s3,
             5.0 * s4;
-        beta2_xy << 0.0, 0.0, 2.0, 6.0 * s1, 12.0 * s2,
+        beta2 << 0.0, 0.0, 2.0, 6.0 * s1, 12.0 * s2,
             20.0 * s3;
-        beta3_xy << 0.0, 0.0, 0.0, 6.0, 24.0 * s1, 60.0 * s2;
-        beta4_xy << 0.0, 0.0, 0.0, 0.0, 24.0, 120.0 * s1;
-        pos = c_xy.transpose() * beta0_xy;
-        vel = c_xy.transpose() * beta1_xy;
-        acc = c_xy.transpose() * beta2_xy;
-        jer = c_xy.transpose() * beta3_xy;
-        sna = c_xy.transpose() * beta4_xy;
-
-        flatMap.forward(vel, acc, jer, 0.0, 0.0, thr, quat, omg);
+        beta3 << 0.0, 0.0, 0.0, 6.0, 24.0 * s1, 60.0 * s2;
+        pos = coeff.transpose() * beta0;
+        vel = coeff.transpose() * beta1;
+        acc = coeff.transpose() * beta2;
+        jer = coeff.transpose() * beta3;
 
         violaVel = vel.squaredNorm() - velSqrMax;
-        violaOmg = omg.squaredNorm() - omgSqrMax;
-        violaAcc = acc.squaredNorm() - 3.0;
-        cos_theta = 1.0 - 2.0 * (quat(1) * quat(1) + quat(2) * quat(2));
-        cos_theta = std::max(-1.0, std::min(1.0, cos_theta));
-        violaTheta = acos(cos_theta) - thetaMax;
-        violaThrust = (thr - thrustMean) * (thr - thrustMean) - thrustSqrRadi;
-
-        gradThr = 0.0;
-        gradQuat.setZero();
-        gradPos.setZero(), gradVel.setZero(), gradOmg.setZero();
+        violaAcc = acc.squaredNorm() - accSqrMax;
+        gradPos.setZero();
+        gradVel.setZero();
+        gradAcc.setZero();
         pena = 0.0;
 
         L = hIdx(i);
@@ -476,40 +446,22 @@ private:
           pena += weightVel * violaVelPena;
         }
 
-
-
-        if (smoothedL1(violaOmg, smoothFactor, violaOmgPena, violaOmgPenaD)) {
-          gradOmg += weightOmg * violaOmgPenaD * 2.0 * omg;
-          pena += weightOmg * violaOmgPena;
+        if (smoothedL1(violaAcc, smoothFactor, violaAccPena,
+                       violaAccPenaD)) {
+          gradAcc += weightAcc * violaAccPenaD * 2.0 * acc;
+          pena += weightAcc * violaAccPena;
         }
-
-        if (smoothedL1(violaTheta, smoothFactor, violaThetaPena, violaThetaPenaD)) {
-          const double sin_theta =
-              sqrt(std::max(1.0 - cos_theta * cos_theta,
-                            trigGradientEps * trigGradientEps));
-          gradQuat += weightTheta * violaThetaPenaD / sin_theta * 4.0 *
-                      Eigen::Vector4d(0.0, quat(1), quat(2), 0.0);
-          pena += weightTheta * violaThetaPena;
-        }
-
-        if (smoothedL1(violaThrust, smoothFactor, violaThrustPena, violaThrustPenaD)) {
-          gradThr += weightThrust * violaThrustPenaD * 2.0 * (thr - thrustMean);
-          pena += weightThrust * violaThrustPena;
-        }
-
-        flatMap.backward(gradPos, gradVel, gradThr, gradQuat, gradOmg, totalGradPos, totalGradVel,
-                         totalGradAcc, totalGradJer, totalGradPsi, totalGradPsiD);
 
         node = (j == 0 || j == integralResolution) ? 0.5 : 1.0;
         alpha = j * integralFrac;
 
         gradC.block<6, 3>(i * 6, 0) +=
-        (beta0_xy * totalGradPos.transpose() + beta1_xy * totalGradVel.transpose() +
-         beta2_xy * totalGradAcc.transpose() + beta3_xy * totalGradJer.transpose()) *
-        node * step;
+            (beta0 * gradPos.transpose() + beta1 * gradVel.transpose() +
+             beta2 * gradAcc.transpose()) *
+            node * step;
 
-        gradT(i) += (totalGradPos.dot(vel) + totalGradVel.dot(acc) + totalGradAcc.dot(jer) +
-                     totalGradJer.dot(sna)) *
+        gradT(i) +=
+            (gradPos.dot(vel) + gradVel.dot(acc) + gradAcc.dot(jer)) *
                     alpha * node * step +
                     node * integralFrac * pena;
         cost += node * step * pena;
@@ -608,56 +560,99 @@ private:
     GCOPTER_PolytopeSFC &obj = *(GCOPTER_PolytopeSFC *)ptr;
     const int dimTau = obj.temporalDim;
     const int dimXi = obj.spatialDim;
+    const int boundaryOffset = dimTau + dimXi;
     const double weightT = obj.rho;
     Eigen::Map<const Eigen::VectorXd> tau(x.data(), dimTau);
     Eigen::Map<const Eigen::VectorXd> xi(x.data() + dimTau, dimXi);
+    Eigen::Map<const Eigen::Matrix<double, 3, 2>> optimizedHeadVA(
+        x.data() + boundaryOffset);
+    Eigen::Map<const Eigen::Matrix3d> optimizedTailPVA(
+        x.data() + boundaryOffset + 6);
     Eigen::Map<Eigen::VectorXd> gradTau(g.data(), dimTau);
     Eigen::Map<Eigen::VectorXd> gradXi(g.data() + dimTau, dimXi);
+    Eigen::Map<Eigen::Matrix<double, 3, 2>> gradHeadVA(
+        g.data() + boundaryOffset);
+    Eigen::Map<Eigen::Matrix3d> gradTailPVA(
+        g.data() + boundaryOffset + 6);
+    g.setZero();
 
     forwardT(tau, obj.times, obj.min_segment_time);
     forwardP(xi, obj.vPolyIdx, obj.vPolytopes, obj.points,
              obj.vector_norm_eps);
-    if (!obj.times.allFinite() || !obj.points.allFinite()) {
+    Eigen::Matrix3d currentHeadPVA = obj.headPVA;
+    currentHeadPVA.rightCols<2>() = optimizedHeadVA;
+    const Eigen::Matrix3d currentTailPVA = optimizedTailPVA;
+    if (!obj.times.allFinite() || !obj.points.allFinite() ||
+        !currentHeadPVA.allFinite() || !currentTailPVA.allFinite() ||
+        !obj.minco.setBoundaryConditions(currentHeadPVA, currentTailPVA)) {
       g.setZero();
       return std::numeric_limits<double>::infinity();
     }
 
-    double cost;
+    double cost = 0.0;
     if (!obj.minco.setParameters(obj.points, obj.times,
                                  obj.linear_solve_pivot_eps)) {
       g.setZero();
       return std::numeric_limits<double>::infinity();
     }
-    obj.minco.getEnergy(cost);
-    obj.minco.getEnergyPartialGradByCoeffs(obj.partialGradByCoeffs);
-    obj.minco.getEnergyPartialGradByTimes(obj.partialGradByTimes);
+    obj.partialGradByCoeffs.setZero();
+    obj.partialGradByTimes.setZero();
 
-    attachPenaltyFunctional(obj.times, obj.minco.getCoeffs(), obj.hPolyIdx, obj.hPolytopes,
-                            obj.smoothEps, obj.integralRes, obj.magnitudeBd, obj.penaltyWt,
-                            obj.flatmap, cost, obj.partialGradByTimes, obj.partialGradByCoeffs,
-                            obj.dilate_radius_, obj.trig_gradient_eps);
+    attachPenaltyFunctional(
+        obj.times, obj.minco.getCoeffs(), obj.hPolyIdx, obj.hPolytopes,
+        obj.smoothEps, obj.integralRes, obj.maxVelocity,
+        obj.maxAcceleration, obj.runningPenaltyWeights, cost,
+        obj.partialGradByTimes, obj.partialGradByCoeffs);
 
+    Eigen::Matrix3d gradByHeadPVA;
+    Eigen::Matrix3d gradByTailPVAState;
     if (!obj.minco.propogateGrad(obj.partialGradByCoeffs,
                                  obj.partialGradByTimes, obj.gradByPoints,
-                                 obj.gradByTimes)) {
+                                 obj.gradByTimes, &gradByHeadPVA,
+                                 &gradByTailPVAState)) {
       g.setZero();
       return std::numeric_limits<double>::infinity();
     }
-    double cost_time, grad_time;
-    if (smoothedL1(obj.times.sum() - obj.minTimeBound, 1.5e-1, cost_time, grad_time)) {
-      cost += weightT * cost_time;
-      obj.gradByTimes.array() += weightT * grad_time;
-    } else if (smoothedL1(obj.minTimeBound - obj.times.sum(), 1.5e-1, cost_time, grad_time)) {
-      cost += weightT * cost_time;
-      obj.gradByTimes.array() -= weightT * grad_time;
+
+    const Eigen::Vector3d initialVelocityError =
+        currentHeadPVA.col(1) - obj.headPVA.col(1);
+    const Eigen::Vector3d initialAccelerationError =
+        currentHeadPVA.col(2) - obj.headPVA.col(2);
+    cost += obj.initialStateWeights(0) *
+                initialVelocityError.squaredNorm() +
+            obj.initialStateWeights(1) *
+                initialAccelerationError.squaredNorm();
+    gradByHeadPVA.col(1) +=
+        2.0 * obj.initialStateWeights(0) * initialVelocityError;
+    gradByHeadPVA.col(2) +=
+        2.0 * obj.initialStateWeights(1) * initialAccelerationError;
+
+    for (int derivative = 0; derivative < 3; ++derivative) {
+      const Eigen::Vector3d terminalError =
+          currentTailPVA.col(derivative) -
+          obj.tailPVA.col(derivative);
+      cost += obj.terminalStateWeights(derivative) *
+              terminalError.squaredNorm();
+      gradByTailPVAState.col(derivative) +=
+          2.0 * obj.terminalStateWeights(derivative) * terminalError;
     }
+
+    // Shorter feasible trajectories are preferred. Velocity, acceleration and
+    // corridor penalties oppose excessive time reduction; there is no
+    // yaw-derived symmetric target duration.
+    cost += weightT * obj.times.sum();
+    obj.gradByTimes.array() += weightT;
 
     backwardGradT(tau, obj.gradByTimes, gradTau);
     backwardGradP(xi, obj.vPolyIdx, obj.vPolytopes, obj.gradByPoints, gradXi,
                   obj.vector_norm_eps);
     normRetrictionLayer(xi, obj.vPolyIdx, obj.vPolytopes, cost, gradXi);
+    gradHeadVA = gradByHeadPVA.rightCols<2>();
+    gradTailPVA = gradByTailPVAState;
 
-    return cost;
+    return std::isfinite(cost) && g.allFinite()
+               ? cost
+               : std::numeric_limits<double>::infinity();
   }
 
   static inline double costFunctional_yaw(void *ptr, const Eigen::VectorXd &x, Eigen::VectorXd &g) {
@@ -889,8 +884,12 @@ private:
     return true;
   }
 
-  static inline void setInitial(const Eigen::Matrix3Xd &path, const double &speed,
-                                const Eigen::VectorXi &intervalNs, Eigen::Matrix3Xd &innerPoints,
+  static inline void setInitial(const Eigen::Matrix3Xd &path,
+                                const double maxVelocity,
+                                const double maxAcceleration,
+                                const double minSegmentTime,
+                                const Eigen::VectorXi &intervalNs,
+                                Eigen::Matrix3Xd &innerPoints,
                                 Eigen::VectorXd &timeAlloc) {
     const int sizeM = intervalNs.size();
     const int sizeN = intervalNs.sum();
@@ -903,7 +902,13 @@ private:
       a = path.col(i);
       b = path.col(i + 1);
       c = (b - a) / l;
-      timeAlloc.segment(j, l).setConstant(c.norm() / speed);
+      const double distance = c.norm();
+      const double velocityTime = 1.875 * distance / maxVelocity;
+      const double accelerationTime =
+          std::sqrt(5.7735026919 * distance / maxAcceleration);
+      timeAlloc.segment(j, l).setConstant(
+          std::max(minSegmentTime,
+                   std::max(velocityTime, accelerationTime)));
       j += l;
       for (int m = 0; m < l; m++) {
         if (i > 0 || m > 0) {
@@ -914,26 +919,27 @@ private:
   }
 
 public:
-  // magnitudeBounds = [v_max, omg_max, theta_max, thrust_min, thrust_max]^T
-  // penaltyWeights = [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]^T
-  // physicalParams = [vehicle_mass,gravitational_acceleration, horitonral_drag_coeff,
-  // vertical_drag_coeff, parasitic_drag_coeff, speed_smooth_factor]^T
+  // magnitudeBounds = [v_max, a_max]^T
+  // penaltyWeights = [corridor_weight, velocity_weight, acceleration_weight]^T
+  // initialWeights = [velocity_reference_weight, acceleration_reference_weight]^T
+  // terminalWeights = [position_weight, velocity_weight, acceleration_weight]^T
   inline bool setup(const double &timeWeight, const double &dilate_radius,
                     const Eigen::Matrix3d &initialPVA,
                     const Eigen::Matrix3d &terminalPVA,
                     const PolyhedraH &safeCorridor,
                     const double &lengthPerPiece, const double &smoothingFactor,
-                    const int &integralResolution, const Eigen::VectorXd &magnitudeBounds,
-                    const Eigen::VectorXd &penaltyWeights, const Eigen::VectorXd &physicalParams,
-                    const double &trigGradientEps, const double &vectorNormEps,
-                    const double &minSegmentTime, const double &flatnessNormEps,
+                    const int &integralResolution,
+                    const Eigen::Vector2d &magnitudeBounds,
+                    const Eigen::Vector3d &penaltyWeights,
+                    const Eigen::Vector2d &initialWeights,
+                    const Eigen::Vector3d &terminalWeights,
+                    const double &vectorNormEps,
+                    const double &minSegmentTime,
                     const double &linearSolvePivotEps) {
-    if (integralResolution <= 0 || !std::isfinite(trigGradientEps) ||
-        !std::isfinite(vectorNormEps) || !std::isfinite(minSegmentTime) ||
-        !std::isfinite(flatnessNormEps) ||
-        !std::isfinite(linearSolvePivotEps) || trigGradientEps <= 0.0 ||
-        vectorNormEps <= 0.0 || minSegmentTime <= 0.0 ||
-        flatnessNormEps <= 0.0 || linearSolvePivotEps <= 0.0) {
+    if (integralResolution <= 0 || !std::isfinite(vectorNormEps) ||
+        !std::isfinite(minSegmentTime) ||
+        !std::isfinite(linearSolvePivotEps) || vectorNormEps <= 0.0 ||
+        minSegmentTime <= 0.0 || linearSolvePivotEps <= 0.0) {
       return false;
     }
     if (!std::isfinite(timeWeight) || timeWeight < 0.0 ||
@@ -942,18 +948,17 @@ public:
          !(std::isinf(lengthPerPiece) && lengthPerPiece > 0.0)) ||
         !std::isfinite(smoothingFactor) || smoothingFactor <= 0.0 ||
         !initialPVA.allFinite() || !terminalPVA.allFinite() ||
-        magnitudeBounds.size() != 5 || penaltyWeights.size() != 5 ||
-        physicalParams.size() != 6 || !magnitudeBounds.allFinite() ||
-        !penaltyWeights.allFinite() || !physicalParams.allFinite() ||
-        magnitudeBounds(0) <= 0.0 || physicalParams(0) <= 0.0 ||
-        physicalParams(1) <= 0.0 || physicalParams(5) <= 0.0 ||
+        !magnitudeBounds.allFinite() || !penaltyWeights.allFinite() ||
+        !initialWeights.allFinite() || !terminalWeights.allFinite() ||
+        (magnitudeBounds.array() <= 0.0).any() ||
+        (penaltyWeights.array() < 0.0).any() ||
+        (initialWeights.array() < 0.0).any() ||
+        (terminalWeights.array() < 0.0).any() ||
         safeCorridor.empty()) {
       return false;
     }
-    trig_gradient_eps = trigGradientEps;
     vector_norm_eps = vectorNormEps;
     min_segment_time = minSegmentTime;
-    flatness_norm_eps = flatnessNormEps;
     linear_solve_pivot_eps = linearSolvePivotEps;
     dilate_radius_ = dilate_radius; // 膨胀半径
     rho = timeWeight;
@@ -980,10 +985,11 @@ public:
     polyN = hPolytopes.size();
     smoothEps = smoothingFactor;
     integralRes = integralResolution;
-    magnitudeBd = magnitudeBounds;
-    penaltyWt = penaltyWeights;
-    physicalPm = physicalParams;
-    allocSpeed = std::max(magnitudeBd(0) * 3.0, vector_norm_eps);
+    maxVelocity = magnitudeBounds(0);
+    maxAcceleration = magnitudeBounds(1);
+    runningPenaltyWeights = penaltyWeights;
+    initialStateWeights = initialWeights;
+    terminalStateWeights = terminalWeights;
 
     if (!getShortestPath(headPVA.col(0), tailPVA.col(0), vPolytopes,
                          smoothEps, vector_norm_eps, shortPath) ||
@@ -1013,10 +1019,9 @@ public:
       }
     }
 
-    // Setup for MINCO_S3NU, FlatnessMap, and L-BFGS solver
+    // MINCO supplies the differentiable quintic representation. Its internal
+    // waypoints and segment times remain optimization variables.
     minco.setConditions(headPVA, tailPVA, pieceN);
-    flatmap.reset(physicalPm(0), physicalPm(1), physicalPm(2), physicalPm(3),
-                  physicalPm(4), physicalPm(5), flatness_norm_eps);
 
     // Allocate temp variables
     points.resize(3, pieceN - 1);
@@ -1048,15 +1053,22 @@ public:
     return true;
   }
 
-  inline double optimize(Trajectory<5> &traj, const double &relCostTol,
-                         const double &time_lb) {
-    Eigen::VectorXd x(temporalDim + spatialDim);
+  inline double optimize(Trajectory<5> &traj, const double &relCostTol) {
+    constexpr int boundaryDim = 15;
+    Eigen::VectorXd x(temporalDim + spatialDim + boundaryDim);
     Eigen::Map<Eigen::VectorXd> tau(x.data(), temporalDim);
     Eigen::Map<Eigen::VectorXd> xi(x.data() + temporalDim, spatialDim);
+    Eigen::Map<Eigen::Matrix<double, 3, 2>> optimizedHeadVA(
+        x.data() + temporalDim + spatialDim);
+    Eigen::Map<Eigen::Matrix3d> optimizedTailPVA(
+        x.data() + temporalDim + spatialDim + 6);
 
-    setInitial(shortPath, allocSpeed, pieceIdx, points, times);
+    setInitial(shortPath, maxVelocity, maxAcceleration, min_segment_time,
+               pieceIdx, points, times);
     backwardT(times, tau, min_segment_time);
     backwardP(points, vPolyIdx, vPolytopes, xi, vector_norm_eps);
+    optimizedHeadVA = headPVA.rightCols<2>();
+    optimizedTailPVA = tailPVA;
 
     double minCostFunctional;
     lbfgs_params.mem_size = 256;
@@ -1065,8 +1077,6 @@ public:
     lbfgs_params.g_epsilon = FLT_EPSILON;
     lbfgs_params.delta = relCostTol;
 
-    minTimeBound =
-        std::isfinite(time_lb) ? std::max(0.0, time_lb) : times.sum();
     int ret = lbfgs::lbfgs_optimize(x, minCostFunctional, &GCOPTER_PolytopeSFC::costFunctional,
                                     nullptr, nullptr, this, lbfgs_params);
     // if (ret == lbfgs::LBFGSERR_MINIMUMSTEP) {
@@ -1081,8 +1091,6 @@ public:
     //     points.resize(3, 1);
     //     points.col(0) = center;
     //     times.resize(2);
-    //     times[0] = time_lb / 2.0;
-    //     times[1] = time_lb / 2.0;
     //     minco.setParameters(points, times);
     //     minco.getTrajectory(traj);
     //   }
@@ -1091,7 +1099,11 @@ public:
     if (ret >= 0 && std::isfinite(minCostFunctional) && x.allFinite()) {
       forwardT(tau, times, min_segment_time);
       forwardP(xi, vPolyIdx, vPolytopes, points, vector_norm_eps);
-      if (!minco.setParameters(points, times, linear_solve_pivot_eps)) {
+      Eigen::Matrix3d optimizedHeadPVA = headPVA;
+      optimizedHeadPVA.rightCols<2>() = optimizedHeadVA;
+      if (!minco.setBoundaryConditions(optimizedHeadPVA,
+                                       optimizedTailPVA) ||
+          !minco.setParameters(points, times, linear_solve_pivot_eps)) {
         return INFINITY;
       }
       minco.getTrajectory(traj);

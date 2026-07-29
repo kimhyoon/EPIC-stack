@@ -45,6 +45,7 @@ struct GcopterConfig {
   double dilateRadiusSoft, dilateRadiusHard;
   double timeoutRRT;
   double maxVelMag;
+  double maxAccMag;
   double maxBdrMag;
   double maxTiltAngle;
   double minThrust;
@@ -58,6 +59,9 @@ struct GcopterConfig {
   double weightT;
   double WeightSafeT;
   std::vector<double> chiVec;
+  std::vector<double> pvaRunningWeights;
+  std::vector<double> pvaInitialWeights;
+  std::vector<double> pvaTerminalWeights;
   double smoothingEps;
   int integralIntervs;
   double relCostTol;
@@ -107,6 +111,7 @@ struct GcopterConfig {
     requireDouble("DilateRadiusSoft", dilateRadiusSoft);
     requireDouble("DilateRadiusHard", dilateRadiusHard);
     requireDouble("MaxVelMag", maxVelMag);
+    requireDouble("MaxAccMag", maxAccMag);
     requireDouble("maxBdrMag", maxBdrMag);
     requireDouble("MaxTiltAngle", maxTiltAngle);
     requireDouble("MinThrust", minThrust);
@@ -120,6 +125,9 @@ struct GcopterConfig {
     requireDouble("WeightT", weightT);
     requireDouble("WeightSafeT", WeightSafeT);
     requireVector("ChiVec", chiVec);
+    requireVector("PvaRunningWeights", pvaRunningWeights);
+    requireVector("PvaInitialWeights", pvaInitialWeights);
+    requireVector("PvaTerminalWeights", pvaTerminalWeights);
     requireDouble("SmoothingEps", smoothingEps);
     requireInt("IntegralIntervs", integralIntervs);
     requireDouble("RelCostTol", relCostTol);
@@ -172,6 +180,7 @@ struct GcopterConfig {
     validatePositive("DilateRadiusSoft", dilateRadiusSoft);
     validatePositive("DilateRadiusHard", dilateRadiusHard);
     validatePositive("MaxVelMag", maxVelMag);
+    validatePositive("MaxAccMag", maxAccMag);
     validatePositive("maxBdrMag", maxBdrMag);
     validatePositive("MaxTiltAngle", maxTiltAngle);
     validatePositive("MinThrust", minThrust);
@@ -216,8 +225,21 @@ struct GcopterConfig {
     validateFinite("yaw_rho_vis", yaw_rho_vis);
     validateFinite("yaw_time_fwd", yaw_time_fwd);
     if (maxThrust <= minThrust || yaw_rho_vis < 0.0 || yaw_time_fwd < 0.0 ||
-        chiVec.size() != 5 ||
+        chiVec.size() != 5 || pvaRunningWeights.size() != 3 ||
+        pvaInitialWeights.size() != 2 || pvaTerminalWeights.size() != 3 ||
         !std::all_of(chiVec.begin(), chiVec.end(),
+                     [](double value) {
+                       return std::isfinite(value) && value >= 0.0;
+                     }) ||
+        !std::all_of(pvaRunningWeights.begin(), pvaRunningWeights.end(),
+                     [](double value) {
+                       return std::isfinite(value) && value >= 0.0;
+                     }) ||
+        !std::all_of(pvaInitialWeights.begin(), pvaInitialWeights.end(),
+                     [](double value) {
+                       return std::isfinite(value) && value >= 0.0;
+                     }) ||
+        !std::all_of(pvaTerminalWeights.begin(), pvaTerminalWeights.end(),
                      [](double value) {
                        return std::isfinite(value) && value >= 0.0;
                      })) {
@@ -272,8 +294,6 @@ public:
   void YawLookforwardwithoutOpt(double &start, double &end, vector<double> &newYaw,
                                 vector<double> &newDur, double &CompT, bool use_short_path);
   void angleLimite(double &angle);
-  void calculateTimelb(const vector<Eigen::Vector3d> &path2next_goal,
-                                 const double &current_yaw, const double &goal_yaw, double &time_lb);
 
   double start_yaw, end_yaw;
   double is_static_yaw = false;

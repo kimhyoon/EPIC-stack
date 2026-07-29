@@ -51,7 +51,8 @@
     <param name="auto_arm"     value="$(arg auto_arm)"/>
     <param name="cmd_timeout"  value="0.5"/>
     <param name="use_accel_ff" value="false"/>
-    <param name="use_yawrate"  value="true"/>
+    <!-- EPIC의 연속 Yaw 궤적을 각도 setpoint로 전달한다. yaw_dot은 계획용 제한값으로만 사용한다. -->
+    <param name="use_yawrate"  value="false"/>
     <!-- 반사회피 MUX(flag=1 동안 /target_avoidance 우선)는 코드 기본값으로 동작.
          on/off 는 브리지가 profile yaml 의 local_avoidance/enable 을 직접 읽어 결정. -->
   </node>

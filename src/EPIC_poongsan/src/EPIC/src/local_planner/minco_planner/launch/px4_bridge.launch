@@ -13,7 +13,8 @@
   <arg name="auto_arm"     default="false"/>
   <arg name="cmd_timeout"  default="0.5"/>
   <arg name="use_accel_ff" default="false"/>
-  <arg name="use_yawrate"  default="true"/>
+  <!-- false: EPIC yaw angle 사용, true: yaw를 무시하고 yaw_rate만 사용 -->
+  <arg name="use_yawrate"  default="false"/>
 
   <node pkg="plan_manage" type="px4_ctrl_bridge" name="px4_ctrl_bridge"
         output="screen">

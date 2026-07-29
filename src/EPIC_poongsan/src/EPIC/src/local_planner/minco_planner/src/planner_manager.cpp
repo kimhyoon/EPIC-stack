@@ -654,19 +654,17 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   Eigen::Matrix3d iniState;
   Eigen::Matrix3d finState;
-  double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
-  if (is_static) {
-    // TSP、更新地图等会阻塞里程计回调函数，导致这里的数据不准，所以只有static才用
-    iniState << local_data_.curr_pos_, Eigen::Vector3d::Zero(),
-        Eigen::Vector3d::Zero();
-  } else {
-    time_now =
-        time_now > local_data_.duration_ ? local_data_.duration_ : time_now;
-    Eigen::Vector3d current_pose = local_data_.minco_traj_.getPos(time_now);
-    Eigen::Vector3d curr_vel = local_data_.minco_traj_.getVel(time_now);
-    Eigen::Vector3d curr_acc = local_data_.minco_traj_.getAcc(time_now);
-    iniState << current_pose, curr_vel, curr_acc;
+  Eigen::Vector3d initialVelocity = local_data_.curr_vel_;
+  if (!initialVelocity.allFinite()) {
+    initialVelocity.setZero();
+  } else if (initialVelocity.norm() > gcopter_config_->maxVelMag) {
+    initialVelocity =
+        initialVelocity.normalized() * gcopter_config_->maxVelMag;
   }
+  // Position comes directly from the latest odometry. Velocity is only a soft
+  // reference inside GCOPTER, and acceleration starts from a neutral reference.
+  iniState << local_data_.curr_pos_, initialVelocity,
+      Eigen::Vector3d::Zero();
 
   Eigen::Vector4d bh;
   bh << iniState.topLeftCorner<3, 1>(), 1.0;
@@ -789,35 +787,28 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   publishDebugHPolys(hPolys, debug_clipped_hpolys_pub_);
 
   gcopter::GCOPTER_PolytopeSFC gcopter;
-  Eigen::VectorXd magnitudeBounds(5);
-  Eigen::VectorXd penaltyWeights(5);
-  Eigen::VectorXd physicalParams(6);
-  magnitudeBounds(0) = gcopter_config_->maxVelMag;
-  magnitudeBounds(1) = gcopter_config_->maxBdrMag;
-  magnitudeBounds(2) = gcopter_config_->maxTiltAngle;
-  magnitudeBounds(3) = gcopter_config_->minThrust;
-  magnitudeBounds(4) = gcopter_config_->maxThrust;
-  penaltyWeights(0) = (gcopter_config_->chiVec)[0];
-  penaltyWeights(1) = (gcopter_config_->chiVec)[1];
-  penaltyWeights(2) = (gcopter_config_->chiVec)[2];
-  penaltyWeights(3) = (gcopter_config_->chiVec)[3];
-  penaltyWeights(4) = (gcopter_config_->chiVec)[4];
-  physicalParams(0) = gcopter_config_->vehicleMass;
-  physicalParams(1) = gcopter_config_->gravAcc;
-  physicalParams(2) = gcopter_config_->horizDrag;
-  physicalParams(3) = gcopter_config_->vertDrag;
-  physicalParams(4) = gcopter_config_->parasDrag;
-  physicalParams(5) = gcopter_config_->speedEps;
+  const Eigen::Vector2d magnitudeBounds(gcopter_config_->maxVelMag,
+                                        gcopter_config_->maxAccMag);
+  const Eigen::Vector3d penaltyWeights(
+      gcopter_config_->pvaRunningWeights[0],
+      gcopter_config_->pvaRunningWeights[1],
+      gcopter_config_->pvaRunningWeights[2]);
+  const Eigen::Vector2d initialWeights(
+      gcopter_config_->pvaInitialWeights[0],
+      gcopter_config_->pvaInitialWeights[1]);
+  const Eigen::Vector3d terminalWeights(
+      gcopter_config_->pvaTerminalWeights[0],
+      gcopter_config_->pvaTerminalWeights[1],
+      gcopter_config_->pvaTerminalWeights[2]);
   const int quadratureRes = gcopter_config_->integralIntervs;
 
   if (!gcopter.setup(
           gcopter_config_->weightT, gcopter_config_->dilateRadiusSoft, iniState,
           finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
-          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams,
-          gcopter_config_->trigGradientEps,
+          quadratureRes, magnitudeBounds, penaltyWeights, initialWeights,
+          terminalWeights,
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
-          gcopter_config_->flatnessNormEps,
           gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = "gcopter setup failed (corridor/start-state infeasible)";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
@@ -825,15 +816,12 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   }
   auto local_data_backup = local_data_;
   local_data_.minco_traj_.clear();
-  double time_lb;
-  calculateTimelb(path_shorten, local_data_.curr_yaw_, local_data_.end_yaw_,
-                  time_lb);
 
   // Measure trajectory generation time
   ros::Time traj_gen_start = ros::Time::now();
   const double position_cost =
       gcopter.optimize(local_data_.minco_traj_,
-                       gcopter_config_->relCostTol, time_lb);
+                       gcopter_config_->relCostTol);
   if (!std::isfinite(position_cost)) {
     last_plan_fail_reason_ = "minco optimize failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
@@ -1048,22 +1036,12 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
   Eigen::Matrix3d iniStateYaw, finStateYaw;
   Eigen::MatrixXd wpsYaw;
   Eigen::VectorXd opt_times_Yaw;
-  double end_yaw_temp;
-  double init_yaw;
-  double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
-  double yaw_sp, yaw_sv(0.0), yaw_sa(0.0), yaw_ep(end_yaw), yaw_ev(0.0),
-      yaw_ea(0.0);
+  double yaw_sp, yaw_sv(0.0), yaw_sa(0.0), yaw_ep(end_yaw);
 
-  if (is_static) {
-    yaw_sp = start_yaw;
-  } else {
-    time_now = time_now > local_data_.minco_yaw_traj_.getTotalDuration()
-                   ? local_data_.minco_yaw_traj_.getTotalDuration()
-                   : time_now;
-    yaw_sp = local_data_.minco_yaw_traj_.getPos(time_now).x();
-    yaw_sv = local_data_.minco_yaw_traj_.getVel(time_now).x();
-    yaw_sa = local_data_.minco_yaw_traj_.getAcc(time_now).x();
-  }
+  // Replanning starts from the latest odometry yaw. Subsequent waypoints add
+  // wrapped shortest-angle deltas to this value, producing one continuous
+  // unwrapped yaw sequence even when the measured angle crosses +/-pi.
+  yaw_sp = start_yaw;
   angleLimite(yaw_sp);
   static double yaw_dur = 0.3;
   // double yaw_dur = local_data_.duration_ / 12.0;
@@ -1109,8 +1087,6 @@ bool FastPlannerManager::YawTrajOpt(double &start_yaw, double &end_yaw,
   std::mt19937 gen(rd()); // 使用Mersenne Twister作为随机数引擎
 
   std::normal_distribution<double> dist(0, 2e-3);
-  bool turn2end = false;
-
   for (int i = 0; i < look_fwd_wp.size(); i++) {
     if (i == 0) {
       wp.push_back(look_fwd_wp[i]);
@@ -1336,35 +1312,28 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   }
   gcopter_viz_->visualizePolytope(hPolys);
   gcopter::GCOPTER_PolytopeSFC gcopter;
-  Eigen::VectorXd magnitudeBounds(5);
-  Eigen::VectorXd penaltyWeights(5);
-  Eigen::VectorXd physicalParams(6);
-  magnitudeBounds(0) = gcopter_config_->maxVelMag;
-  magnitudeBounds(1) = gcopter_config_->maxBdrMag;
-  magnitudeBounds(2) = gcopter_config_->maxTiltAngle;
-  magnitudeBounds(3) = gcopter_config_->minThrust;
-  magnitudeBounds(4) = gcopter_config_->maxThrust;
-  penaltyWeights(0) = (gcopter_config_->chiVec)[0] * 2.0;
-  penaltyWeights(1) = (gcopter_config_->chiVec)[1] / 2.0;
-  penaltyWeights(2) = (gcopter_config_->chiVec)[2] / 2.0;
-  penaltyWeights(3) = (gcopter_config_->chiVec)[3] / 2.0;
-  penaltyWeights(4) = (gcopter_config_->chiVec)[4] / 2.0;
-  physicalParams(0) = gcopter_config_->vehicleMass;
-  physicalParams(1) = gcopter_config_->gravAcc;
-  physicalParams(2) = gcopter_config_->horizDrag;
-  physicalParams(3) = gcopter_config_->vertDrag;
-  physicalParams(4) = gcopter_config_->parasDrag;
-  physicalParams(5) = gcopter_config_->speedEps;
+  const Eigen::Vector2d magnitudeBounds(gcopter_config_->maxVelMag,
+                                        gcopter_config_->maxAccMag);
+  const Eigen::Vector3d penaltyWeights(
+      gcopter_config_->pvaRunningWeights[0] * 2.0,
+      gcopter_config_->pvaRunningWeights[1],
+      gcopter_config_->pvaRunningWeights[2]);
+  const Eigen::Vector2d initialWeights(
+      gcopter_config_->pvaInitialWeights[0],
+      gcopter_config_->pvaInitialWeights[1]);
+  const Eigen::Vector3d terminalWeights(
+      gcopter_config_->pvaTerminalWeights[0],
+      gcopter_config_->pvaTerminalWeights[1],
+      gcopter_config_->pvaTerminalWeights[2]);
   const int quadratureRes = gcopter_config_->integralIntervs;
 
   if (!gcopter.setup(
           gcopter_config_->WeightSafeT, gcopter_config_->dilateRadiusSoft,
           iniState, finState, hPolys, INFINITY, gcopter_config_->smoothingEps,
-          quadratureRes, magnitudeBounds, penaltyWeights, physicalParams,
-          gcopter_config_->trigGradientEps,
+          quadratureRes, magnitudeBounds, penaltyWeights, initialWeights,
+          terminalWeights,
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
-          gcopter_config_->flatnessNormEps,
           gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = "escape: gcopter setup failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
@@ -1374,7 +1343,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   local_data_.minco_traj_.clear();
   const double escape_cost =
       gcopter.optimize(local_data_.minco_traj_,
-                       gcopter_config_->relCostTol, 0.0);
+                       gcopter_config_->relCostTol);
   if (!std::isfinite(escape_cost)) {
     last_plan_fail_reason_ = "escape: minco optimize failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
@@ -1460,48 +1429,4 @@ void FastPlannerManager::polyYawTraj2ROSMsg(traj_utils::PolyTraj &poly_msg,
   }
 }
 
-void FastPlannerManager::calculateTimelb(
-    const vector<Eigen::Vector3d> &path2next_goal, const double &current_yaw,
-    const double &goal_yaw, double &time_lb) {
-  double start2fwd = 0.0, fwd2end = 0.0;
-  if (path2next_goal.size() == 2) {
-    Eigen::Vector3d diff = path2next_goal.back() - path2next_goal.front();
-    if (pow(diff.x(), 2) + pow(diff.y(), 2) >= pow(diff.z(), 2) &&
-        (diff.squaredNorm() - pow(diff.z(), 2) > 0.01)) {
-      double fwd_yaw = atan2(diff.y(), diff.x());
-      start2fwd = fwd_yaw - current_yaw;
-      angleLimite(start2fwd);
-      fwd2end = goal_yaw - fwd_yaw;
-      angleLimite(fwd2end);
-
-    } else {
-      double diff = goal_yaw - current_yaw;
-      angleLimite(diff);
-      time_lb = fabs(diff) / gcopter_config_->yaw_max_vel;
-      return;
-    }
-  } else {
-    Eigen::Vector3d diff = path2next_goal[1] - path2next_goal[0];
-    if (pow(diff.x(), 2) + pow(diff.y(), 2) >= pow(diff.z(), 2)) {
-      double fwd_yaw = atan2(diff.y(), diff.x());
-      start2fwd = fwd_yaw - current_yaw;
-      angleLimite(start2fwd);
-    } else {
-      start2fwd = 0.0;
-    }
-    diff = path2next_goal[path2next_goal.size() - 1] -
-           path2next_goal[path2next_goal.size() - 2];
-    if (pow(diff.x(), 2) + pow(diff.y(), 2) >= pow(diff.z(), 2)) {
-      double fwd_yaw = atan2(diff.y(), diff.x());
-      fwd2end = fwd_yaw - goal_yaw;
-      angleLimite(fwd2end);
-    } else {
-      fwd2end = 0.0;
-    }
-  }
-
-  time_lb = fabs(start2fwd) / gcopter_config_->yaw_max_vel +
-            fabs(fwd2end) / gcopter_config_->yaw_max_vel;
-  return;
-}
 } // namespace fast_planner

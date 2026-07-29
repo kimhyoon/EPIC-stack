@@ -362,6 +362,10 @@ MaxCorridorSize: 4.0    # Corridor 한 구간의 최대 크기[m]
 # 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
 MaxVelMag: 0.9  # 최대 비행 속도[m/s]
 
+# [PVA 가속도 제한]
+# 위치 궤적 최적화에서 허용할 최대 가속도이며 PX4의 실제 가속도 하드 제한은 아니다.
+MaxAccMag: 2.0  # 최대 계획 가속도[m/s^2]
+
 # [이동 궤적에 따른 기체 자세 변화율]
 # 급가속·급감속·경로 굴곡을 따라가기 위해 필요한 기체 기울기 변화율의 최대 크기를 MINCO가 계산할 때 사용한다.
 # 급격한 기울기 변화와 진동이 발생하면 낮추고, 가속·방향 전환 궤적 생성이 지나치게 제한되면 높인다.
@@ -391,6 +395,9 @@ SpeedEps: 0.0001
 WeightT: 700.0
 WeightSafeT: 200.0
 ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6] # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
+PvaRunningWeights: [1.1e+5, 1.5e+4, 1.1e+4]  # Corridor, 속도, 가속도 위반 비용
+PvaInitialWeights: [1.0e+2, 1.0e+2]           # 초기 odometry 속도, 0 가속도 reference 비용
+PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4] # 목표 위치, 정지 속도, 정지 가속도 비용
 #원본: 2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5
 #
 SmoothingEps: 0.015
