@@ -69,6 +69,10 @@ struct FrontierParam {
   // frontier 로 승격하지 않는다 (경계 너머 관측 불가 → 해소 안 되는 frontier 방지).
   // 기본 0 = 비활성. yaml 의 FrontierManager/box_boundary_margin 으로만 켠다.
   int box_boundary_margin_ = 0;
+  // [feature: obs-breakdown] bad_obs 를 far/fov_edge/gap 세 토픽으로도 발행할지.
+  // 진단 전용이며 판정 로직에는 영향이 없다. bad_obs 와 같은 양의 점군이 한 벌
+  // 더 나가므로(약 2배) 대역폭·bag 크기가 늘어난다. 원인 규명이 끝나면 끌 것.
+  bool viz_obs_breakdown_ = true;
   float cluster_min_size_;
   Eigen::Vector3f map_min_;
   Eigen::Vector3f map_max_;
@@ -103,6 +107,30 @@ struct ViewpointParam {
   // circle_sample_num 을 올리면 후보가 클러스터당 수백 개가 되어 메시지당 수천
   // 점이 나오고, 그대로 그리면 rviz 가 버거워진다. VALID 는 이 상한을 받지 않는다.
   int viz_max_points_per_status_ = 4000;
+  // [feature: topo-timeout] removeUnreachableViewpoints 의 topo A* 예산 [s].
+  // 원래 3e-4(0.3ms) 로 박혀 있었는데, 같은 graphSearch 를 쓰는 다른 호출부는
+  // 10ms(getPathCost) / 100ms(planGoalPath) 를 준다 — 33~333 배 차이다.
+  // graphSearch 는 시간 초과와 "경로 없음"을 모두 false 로 돌려주므로, 예산이
+  // 모자라면 그래프가 멀쩡히 연결돼 있어도 VP_INVALID_UNREACHABLE(주황) 이 된다.
+  // 실측(5회차 09-08-30): topo A* 소요 median 0.119ms / p90 0.290ms / max 0.958ms.
+  // 즉 0.3ms 는 p90 에 정확히 걸쳐 있어 먼 목표부터 시간만으로 탈락했다.
+  double reachability_search_timeout_ = 3e-4;
+  // [feature: vp-reached-clear] "뷰포인트까지 갔는데 프론티어가 그대로"인 클러스터를
+  // 강제 해소한다. 원 저자가 CR_ODOM_DRIFT 로 의도했던 경로인데 세 가지가 깨져 있어
+  // 한 번도 발동한 적이 없었다: 임계값 1cm/0.57deg, is_reachable_ 체크가 먼저 오는
+  // continue, 그리고 index 를 id 로 비교하는 제거 조건.
+  // 실측(4회차 09-23-37): 드론이 뷰포인트 0.07m 앞에 33초를 떠 있었고 클러스터 #519
+  // (frt 25, see 17) 는 끝까지 살아남아 탐사가 비행 내내 한 목표에 묶였다.
+  bool vp_reached_clear_enable_ = true;
+  float vp_reached_pos_tol_ = 0.3f;   // [m]   best_vp_ 와의 거리 허용치
+  float vp_reached_yaw_tol_ = 0.35f;  // [rad] best_vp_yaw_ 와의 차이 허용치 (~20deg)
+  // [feature: vp-reached-clear-radius] 위 조건이 걸렸을 때, 목표 클러스터 하나만
+  // 지우는 대신 드론 반경 이 거리 안의 프론티어를 전부 해소한다 [m]. 0 = 비활성.
+  // 목표만 지우면 바로 옆 클러스터가 다음 목표가 되어 같은 자리에 다시 묶이는
+  // 일이 있어서, "여기서는 더 볼 게 없다"를 한 번에 정리하는 강한 선택지다.
+  // SPARSE 가 아니라 DENSE 로 찍는다 — 분류 루프에서 건너뛰는 상태는 DENSE 뿐이라
+  // SPARSE 로 두면 다음 프레임에 곧바로 프론티어로 되돌아온다.
+  float vp_reached_clear_radius_ = 0.0f;
 };
 
 // [feature: vp-viz] viewpoint 후보 하나의 최종 판정. 파이프라인이 후보를 버리는
@@ -313,13 +341,24 @@ struct VpPipelineStats {
   int no_visibility = 0;    // selectBestViewpoint: 가시 프론티어 셀 부족(score 0)
   int ok = 0;               // 최종 살아남은 클러스터(=뷰포인트 수)
 
+  // [feature: topo-timeout] 위의 topo_unreachable 은 "클러스터가 통째로 죽은 수"라
+  // 원인을 못 가린다 — 그래프가 정말 끊겨서인지, A* 가 예산 안에 못 끝내서인지.
+  // 아래는 그 판정을 내리는 vp_cluster 단위 탐색의 결과 내역이다. reach_timeout 이
+  // 0 이 아니면 "도달 불가"의 일부는 기하가 아니라 시간 때문이라는 뜻이다.
+  int reach_ok = 0;      // graphSearch 성공 (경로 확인됨)
+  int reach_timeout = 0; // graphSearch 가 TIME_OUT 으로 실패 (예산 부족)
+  int reach_nopath = 0;  // graphSearch 가 경로 없음으로 실패 (진짜 단절)
+  int reach_noedge = 0;  // 삽입한 vp 노드가 이웃을 하나도 못 얻음 (raycast 실패)
+
   std::string str() const {
-    char b[256];
+    char b[384];
     snprintf(b, sizeof(b),
              "pipeline[total=%d dormant=%d prev_unreachable=%d evaluated=%d "
-             "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d]",
+             "no_candidate=%d topo_unreachable=%d no_visibility=%d survived=%d] "
+             "reach[ok=%d timeout=%d nopath=%d noedge=%d]",
              total, dormant, unreachable_pre, considered, no_candidates,
-             topo_unreachable, no_visibility, ok);
+             topo_unreachable, no_visibility, ok, reach_ok, reach_timeout,
+             reach_nopath, reach_noedge);
     return b;
   }
 };

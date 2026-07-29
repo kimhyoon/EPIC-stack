@@ -46,6 +46,18 @@ global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 
+# [TSP 비용 행렬 계산의 topology A* 제한시간]
+# viewpoint 들 사이의 이동 비용을 채울 때 각 경로 탐색에 허용하는 연산시간이다.
+# 초과하면 그 쌍은 도달 불가(비용 2e3)로 처리되어 TSP 순서가 왜곡되거나 목표가 탈락한다.
+# 값 증가 시 먼 viewpoint 쌍도 정상 평가되지만 후보 수의 제곱에 비례해 계획 시간이 늘고,
+# 값 감소 시 계획은 빨라지지만 먼 목표가 도달 불가로 잘못 표시될 수 있다.
+global_planning/topo_cost_search_timeout: 0.01  # TSP 비용용 topo A* 제한시간[s]
+
+# [목표 경로 topology A* 제한시간]
+# RTH 나 /srv_rth 목표까지의 topology 경로를 찾을 때 허용하는 연산시간이다.
+# 위 두 값보다 넉넉해야 한다 — 여기서 실패하면 귀환 경로 자체가 없어진다.
+global_planning/goal_search_timeout: 0.1  # 목표 경로 topo A* 제한시간[s]
+
 # global_planning/* : 전역 탐사 목표 선택 끝
 # ====================================================================
 
@@ -138,8 +150,8 @@ lidar_perception/max_ray_length: 30
 # --- 계획용 보수 FOV: 반드시 위 물리값 이내 (규칙 1) ---
 # 뷰포인트 yaw 선택 시 "이 각 안에 든 프론티어만 보인다"고 친다.
 # 360 미만이면 도착 yaw 가 프론티어를 향하도록 최적화된다.
-lidar_perception/fov_viewpoint_up: 15.0
-lidar_perception/fov_viewpoint_down: -15.0
+lidar_perception/fov_viewpoint_up: 10.0
+lidar_perception/fov_viewpoint_down: -10.0
 lidar_perception/fov_viewpoint_horizontal: 100.0
 
 # --- 독립된 두 스위치 (규칙 2 — 일치시킬 필요 없음) ---
@@ -149,7 +161,7 @@ lidar_perception/is_360lidar: false         # FOV-edge 스캔 사용
 lidar_perception/yaw_fov: 120.0             # cone clip 수평각
 
 # --- 장착 회전 [deg]: "odometry 프레임 대비" 회전임에 주의 ---
-lidar_perception/lidar_pitch: 0.0
+lidar_perception/lidar_pitch: 10.0
 lidar_perception/lidar_yaw: 0.0
 
 # --- 점군 좌표계 ---
@@ -199,10 +211,6 @@ FrontierManager/good_observation_direction_score: 0.6  # 관측 방향 신뢰 �
 # 값 증가 시 근거리 Frontier 묶음과 viewpoint 목표가 빠르게 줄지만 실제 미관측 영역까지 제거할 수 있고, 값 감소 시 근거리 Frontier와 viewpoint가 오래 남아 반복 목표가 될 수 있다.
 FrontierManager/good_observation_force_trust_length: 0.5  # 강제 관측 완료 거리[m]
 # 위 값은 "라이다 -> 셀" 거리 기준의 매핑용이다. 예전에는 이 값 하나를 viewpoint
-# 평가에도 같이 썼는데, 그쪽은 기준점이 "후보 viewpoint -> 셀"이라 의미가 다르다.
-# 값이 묶여 있어서 매핑을 보수적으로 낮추면(0.5) viewpoint 평가가 조용히 망가졌다
-# — 후보는 sample_pillar_min_radius(1.0) 밖에만 생기므로 FRONTIER_DIR 셀이 어떤
-# 후보에서도 카운트되지 못했다. 이제 아래 값으로 분리한다.
 
 # [Viewpoint 평가: FRONTIER_DIR 셀 신뢰 거리]
 # gap/FOV-edge 로 표시된 Frontier 셀을 후보 viewpoint 에서 "보인다"고 인정할 최대 거리.
@@ -255,6 +263,19 @@ FrontierManager/cluster_minmum_point_num: 3  # 신규 Frontier 최소 셀 수[�
 # 값 증가 시 박스 경계의 반복 viewpoint와 불필요한 탐사는 줄지만 경계 근처의 유효 viewpoint도 사라질 수 있고, 값 감소 시 경계 viewpoint는 늘지만 해소되지 않는 목표를 반복 방문할 수 있다.
 FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 0이면 비활성
 
+# [관측 거부 사유별 점군 발행][진단용]
+# bad_obs(관측됐지만 거부되어 frontier 로 남는 셀)를 사유별로 나눠 함께 발행한다.
+#   bad_obs_far      거리 > good_observation_trust_length
+#   bad_obs_fovedge  깊이영상에서 관측 데이터의 바깥 테두리 (열/행의 최외곽 유효 픽셀)
+#   bad_obs_gap      이웃 픽셀에 데이터가 없거나 깊이가 불연속
+# far -> fov_edge -> gap 우선순위로 배타 분류하므로 셋의 합 = bad_obs 다.
+# 판정 로직에는 영향이 없고 시각화/기록만 추가된다.
+# 주의: fov_edge 로 거부된 셀은 good_observation_force_trust_length 를 키워도
+# 해소되지 않는다 (force-trust 경로에 !is_fov_edge 조건이 있다). 즉 이 값이
+# frontier 가 안 없어지는 문제를 거리 문턱으로 고칠 수 있는지 판단하는 근거다.
+# bad_obs 와 같은 양의 점군이 한 벌 더 나가므로 bag 크기가 늘어난다.
+FrontierManager/viz_obs_breakdown: true  # 사유별 점군 발행
+
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
 
@@ -301,6 +322,31 @@ ViewpointManager/min_obstacle_clearance: 0.6  # 장애물과 확보할 최소 �
 # Frontier가 남았는데 viewpoint 0개로 탐사가 끝나면 높이고, viewpoint 계산이 너무 느리면 낮춘다.
 # 후보 위치 모양을 바꾸는 값은 아니며, 이번 주기에 검사하는 Frontier 범위만 바꾼다.
 ViewpointManager/local_tsp_size: 8  # 한 주기에 검사할 Frontier 묶음 수[개]
+
+# [Viewpoint 도달성 판정 제한시간]
+# 후보 viewpoint 까지 topology graph 로 경로가 있는지 A* 로 확인할 때 허용하는 연산시간이다.
+# 이 시간 안에 못 끝내면 경로가 실제로 있어도 "도달 불가"로 처리되어 rviz 에서 주황색이 된다
+# (코드가 시간초과와 경로없음을 구분하지 않는다 — 어느 쪽인지는 이벤트 로그의 reach[...] 로 본다).
+ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[s]
+
+# [도달했는데 안 없어지는 Frontier 강제 해소]
+# 뷰포인트까지 갔는데도 그 클러스터의 Frontier 가 그대로면, 그 위치에서는 실제로
+# 관측되지 않는다고 보고 클러스터의 셀 전부를 관측 완료(DENSE)로 표시하고 제거한다.
+# 원저자가 의도했던 경로인데 임계값이 1cm/0.57deg 라 한 번도 발동한 적이 없었다.
+# 주의: 실제로 보지 못한 공간을 본 것으로 처리하는 조치다. 영구적이며 되돌릴 수
+# 없고, 예측 가시 셀(see)보다 많은 셀까지 함께 지운다. 대신 탐사가 한 목표에
+# 묶여 비행 내내 멈추는 것을 막는다 (4회차 09-23-37: 52초 동안 한 목표 고정).
+# 근본 원인(gap/FOV-edge 로 관측이 거부되는 것)을 고치는 것이 아니라 증상 처리다.
+# enable=false 로 끄면 기존(발동 안 함) 동작으로 되돌아간다.
+ViewpointManager/vp_reached_clear_enable: true    # 강제 해소 사용
+ViewpointManager/vp_reached_pos_tol: 0.3         # best_vp 와의 거리 허용치[m]
+ViewpointManager/vp_reached_yaw_tol_deg: 20.0    # best_vp yaw 와의 차이 허용치[deg]
+
+# [도달 지점 주변 Frontier 일괄 해소][강한 옵션]
+# 위 강제 해소가 걸렸을 때, 목표 클러스터 하나만 지우는 대신 드론 반경 이 거리
+# 안의 Frontier 를 전부 관측 완료(DENSE)로 처리하고 제거한다. 0 = 사용 안 함.
+# 반경에 닿은 클러스터는 일부만 걸쳐도 통째로 지운다
+ViewpointManager/vp_reached_clear_radius: 0.0  # 일괄 해소 반경[m], 0이면 사용 안 함
 
 
 # ViewpointManager/* : Viewpoint 생성·선택 끝
@@ -387,7 +433,7 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 # MINCO가 생성하는 3차원 궤적의 최대 속도를 결정한다.
 # 탐사가 너무 느리면 높이고, 경로 추종 오차·진동·제동거리 문제가 발생하면 낮춘다.
 # 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
-MaxVelMag: 1.0  # 최대 비행 속도[m/s]
+MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [PVA 가속도 제한]
 # 위치 궤적 최적화에서 허용할 최대 가속도이며 PX4의 실제 가속도 하드 제한은 아니다.
@@ -427,7 +473,6 @@ PvaInitialWeights: [1.0e+2, 1.0e+2]           # 초기 odometry 속도, 0 가속
 PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4] # 목표 위치, 정지 속도, 정지 가속도 비용
 SmoothingEps: 0.015
 IntegralIntervs: 32
-
 # [NaN 방지 수치 안정화][절대 수정 금지]
 # 아래 7개 값은 0 나눗셈, 영벡터 정규화, 짧은 경로 구간 및 작은 LU pivot을 방지하는 검증값이다.
 # 값을 변경하지 말 것. 항목이 누락되거나 0·음수·비정상 값이면 Planner가 실행을 거부한다.
@@ -451,7 +496,7 @@ RelCostTol: 1.1e-6
 # 드론의 기수가 이동 경로와 viewpoint를 바라보도록 생성하는 Yaw 궤적의 최대 회전속도를 결정한다.
 # 기수 회전이 너무 느리면 높이고, 좌우 급회전·흔들림·Yaw 추종 오차가 발생하면 낮춘다.
 # PX4의 실제 Yaw rate 하드 제한이 아니라 EPIC이 생성하는 Yaw 궤적의 계획값이다.
-yaw_max_vel: 1.0  # 1.0 rad/s = 57.3 deg/s
+yaw_max_vel: 1.5  # 1.0 rad/s = 57.3 deg/s
 
 # [Yaw 목표 방향 추종 가중치]
 # 생성되는 Yaw 궤적이 이동 경로와 viewpoint를 보고 계산한 목표 Yaw 방향을 얼마나 강하게 따라갈지 결정한다.

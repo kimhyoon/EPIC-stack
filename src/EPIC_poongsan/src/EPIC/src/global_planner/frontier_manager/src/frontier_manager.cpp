@@ -50,6 +50,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.getParam("FrontierManager/update_length", frtp_.update_length_);
   // [feature: box-margin] yaml 로만 활성화 (키 없으면 0 = 기존 동작).
   nh.param("FrontierManager/box_boundary_margin", frtp_.box_boundary_margin_, 0);
+  // [feature: obs-breakdown] 거부 사유별 점군 발행 (진단용, 판정에 영향 없음)
+  nh.param("FrontierManager/viz_obs_breakdown", frtp_.viz_obs_breakdown_, true);
   nh.getParam("FrontierManager/view_frt", frtp_.view_frt_);
   nh.getParam("FrontierManager/view_cluster", frtp_.view_cluster_);
 
@@ -91,6 +93,27 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.param("ViewpointManager/viz_max_yaw_arrows", vpp_.viz_max_yaw_arrows_, 300);
   nh.param("ViewpointManager/viz_max_points_per_status",
            vpp_.viz_max_points_per_status_, 4000);
+  // [feature: topo-timeout] 뷰포인트 도달성 판정의 topo A* 예산 [s].
+  // 키가 없으면 3e-4 = 기존 하드코딩 값이라 동작이 바뀌지 않는다.
+  nh.param("ViewpointManager/reachability_search_timeout",
+           vpp_.reachability_search_timeout_, 3e-4);
+  // [feature: vp-reached-clear] 도달-후-미해소 클러스터 강제 해소.
+  nh.param("ViewpointManager/vp_reached_clear_enable",
+           vpp_.vp_reached_clear_enable_, true);
+  nh.param("ViewpointManager/vp_reached_pos_tol", vpp_.vp_reached_pos_tol_,
+           0.3f);
+  float vp_reached_yaw_deg = 20.0f;
+  nh.param("ViewpointManager/vp_reached_yaw_tol_deg", vp_reached_yaw_deg,
+           20.0f);
+  vpp_.vp_reached_yaw_tol_ = vp_reached_yaw_deg * static_cast<float>(M_PI) / 180.0f;
+  nh.param("ViewpointManager/vp_reached_clear_radius",
+           vpp_.vp_reached_clear_radius_, 0.0f);
+  ROS_INFO("[FrontierManager] vp-reached clear: %s  pos_tol=%.2fm yaw_tol=%.1fdeg "
+           "radius_sweep=%.2fm(%s)",
+           vpp_.vp_reached_clear_enable_ ? "on" : "off",
+           vpp_.vp_reached_pos_tol_, vp_reached_yaw_deg,
+           vpp_.vp_reached_clear_radius_,
+           vpp_.vp_reached_clear_radius_ > 0.0f ? "on" : "off");
 
   nh.getParam("lidar_perception/fov_viewpoint_up", vpp_.fov_up_);
   nh.getParam("lidar_perception/lidar_pitch", vpp_.lidar_pitch_);
@@ -932,19 +955,44 @@ void FrontierManager::updateFrontierClusters(
   Eigen::Vector3f lidar_position =
       lidar_map_interface_->ld_->lidar_pose_.cast<float>();
 
+  // [feature: obs-breakdown] bad_obs 를 거부 사유별로 쪼개서 함께 발행한다.
+  // 하나로 묶여 있으면 "관측은 됐는데 거부됐다"까지만 알 수 있고, 그 다음
+  // 판단(문턱을 키우면 해결되는가)을 못 한다. 특히 아래 Step2 의 force-trust
+  // 경로에는 `&& !is_fov_edge` 가 붙어 있어서, fov_edge 로 거부된 셀은
+  // good_observation_force_trust_length 를 아무리 키워도 해소되지 않는다.
+  // 즉 fov_edge 개수 = "거리 문턱으로는 못 고치는 셀 수" 다.
+  //
+  // 세 사유는 겹칠 수 있으므로 far -> fov_edge -> gap 우선순위로 배타 분류해
+  // 합이 bad_obs 와 정확히 같게 둔다 (비율을 그대로 읽을 수 있도록).
   PointVector bad_observation, good_observation;
+  PointVector bad_far, bad_fovedge, bad_gap;
   for (auto &cell : cells_2_update) {
     PointType pt;
     idx2pos(cell, pt);
-    if (is_gap_point(pt) || is_fov_edge(pt) ||
-        (pt.getVector3fMap() - lidar_position).norm() >
-            frtp_.good_observation_trust_length_) {
+    const bool far = (pt.getVector3fMap() - lidar_position).norm() >
+                     frtp_.good_observation_trust_length_;
+    const bool edge = is_fov_edge(pt);
+    const bool gap = is_gap_point(pt);
+    if (far || edge || gap) {
       bad_observation.push_back(pt);
+      if (frtp_.viz_obs_breakdown_) {
+        if (far)
+          bad_far.push_back(pt);
+        else if (edge)
+          bad_fovedge.push_back(pt);
+        else
+          bad_gap.push_back(pt);
+      }
     } else
       good_observation.push_back(pt);
   }
   viz_point(bad_observation, "bad_obs");
   viz_point(good_observation, "good_obs");
+  if (frtp_.viz_obs_breakdown_) {
+    viz_point(bad_far, "bad_obs_far");         // 거리 > good_observation_trust_length
+    viz_point(bad_fovedge, "bad_obs_fovedge"); // 깊이영상에서 관측 데이터의 바깥 테두리
+    viz_point(bad_gap, "bad_obs_gap");         // 이웃 픽셀 무데이터/깊이 불연속
+  }
   // cout << "update and vizgap: " << (ros::Time::now() - t2).toSec() * 1000
   // <<"----------------------------------------"<< endl;
   unordered_set<Eigen::Vector3i, Vector3i_Hash> old_frt_cells;
@@ -1499,14 +1547,26 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     cluster->best_vp_ = vps[best_vp_idx].getVector3fMap();
     cluster->best_vp_score_ = (int)score[best_vp_idx];
     cluster->reason_ = CR_OK;
-    if (((cluster->best_vp_ - graph_->odom_node_->center_).norm() < 1e-2) &&
-        (fabs(cluster->best_vp_yaw_ - graph_->odom_node_->yaw_) < 1e-2)) {
-      // 뷰포인트에 이미 도달했는데도 프론티어가 안 없어짐 -> odom 드리프트 의심.
-      // 원 저자 주석: "飞到但看不到，说明odom漂了" (이 연구에서는 처리하지 않음)
-      cluster->is_reachable_ = false;
-      cluster->is_dormant_ = true;
-      cluster->reason_ = CR_ODOM_DRIFT;
-      cluster->vp_clusters_.clear();
+    // [feature: vp-reached-clear] 뷰포인트에 도달했는데도 프론티어가 안 없어지는
+    // 클러스터를 강제 해소한다. 원 저자 주석: "飞到但看不到，说明odom漂了".
+    // 원래 임계값은 1e-2 (위치 1cm / yaw 0.57deg) 라 실질적으로 발동한 적이 없다 —
+    // best_vp_ 는 origin_viewpoints_ 의 이산 샘플이고 best_vp_yaw_ 는 45deg 격자라
+    // 실제 자세와 그 정도로 일치할 일이 없다. 이제 실도달 허용치를 쓰되, 지나가다
+    // 우연히 겹친 클러스터를 지우지 않도록 hold_time 만큼 연속 유지를 요구한다.
+    if (vpp_.vp_reached_clear_enable_) {
+      const float dpos =
+          (cluster->best_vp_ - graph_->odom_node_->center_).norm();
+      float dyaw = cluster->best_vp_yaw_ - graph_->odom_node_->yaw_;
+      // 원래 코드에 없던 wrap. +179deg 와 -179deg 는 2deg 차이지 358deg 가 아니다.
+      while (dyaw > M_PI) dyaw -= 2.0 * M_PI;
+      while (dyaw < -M_PI) dyaw += 2.0 * M_PI;
+      if (dpos < vpp_.vp_reached_pos_tol_ &&
+          fabs(dyaw) < vpp_.vp_reached_yaw_tol_) {
+        cluster->is_reachable_ = false;
+        cluster->is_dormant_ = true;
+        cluster->reason_ = CR_ODOM_DRIFT;
+        cluster->vp_clusters_.clear();
+      }
     }
     int tmp_idx = best_vp_idx;
     for (auto &vpc : cluster->vp_clusters_) {
@@ -1680,6 +1740,7 @@ void FrontierManager::removeUnreachableViewpoints(
   for (int i = 0; i < nodes2insert.size(); i++) {
     if (nodes2insert[i]->neighbors_.empty()) {
       vp_cluster_kept[i] = false;
+      vp_stats_.reach_noedge++;
       continue;
     }
     vector<TopoNode::Ptr> topo_path;
@@ -1693,9 +1754,20 @@ void FrontierManager::removeUnreachableViewpoints(
         closest_node = hodom;
       }
     }
-    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path, 3e-4)) {
+    // [feature: topo-timeout] graphSearch 는 시간 초과와 경로 없음을 똑같이 false 로
+    // 돌려준다. result_code 를 받아 둘을 갈라 기록해야 "도달 불가"가 기하 때문인지
+    // 예산 때문인지 사후에 판정할 수 있다 (rviz 에서는 둘 다 주황으로만 보인다).
+    int search_result = ParallelBubbleAstar::NO_PATH;
+    if (!graph_->graphSearch(closest_node, nodes2insert[i], topo_path,
+                             vpp_.reachability_search_timeout_, false, {},
+                             &search_result)) {
       vp_cluster_kept[i] = false;
+      if (search_result == ParallelBubbleAstar::TIME_OUT)
+        vp_stats_.reach_timeout++;
+      else
+        vp_stats_.reach_nopath++;
     } else {
+      vp_stats_.reach_ok++;
       clusters[nodeidx2clusteridx[i]]
           ->vp_clusters_[nodeidx2vpclusteridx[i]]
           .distance_ = graph_->getPathLength(topo_path);

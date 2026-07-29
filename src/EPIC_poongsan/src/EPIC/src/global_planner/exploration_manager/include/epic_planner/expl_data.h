@@ -86,6 +86,12 @@ struct ExplorationParam {
   bool view_graph_;
   string tsp_dir_; // resource dir of tsp solver
   double max_segment_length_; // maximum segment length for path simplification
+  // [feature: topo-timeout] topo graph A* 예산 [s]. 셋 다 같은 graphSearch 를
+  // 호출하는데 원래는 호출부마다 다른 값이 박혀 있었다 (10ms / 100ms, 그리고
+  // 뷰포인트 도달성은 0.3ms — ViewpointManager/reachability_search_timeout).
+  // 예산이 모자라면 그래프가 연결돼 있어도 "경로 없음"과 구분되지 않는다.
+  double topo_cost_search_timeout_;  // getPathCost: TSP 비용 행렬용
+  double goal_search_timeout_;       // planGoalPath: RTH/서비스 목표 경로용
 };
 
 } // namespace fast_planner

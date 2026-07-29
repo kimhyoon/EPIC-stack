@@ -1,0 +1,46 @@
+<launch>
+  <!-- ===================================================================
+       Bag 원본 재생 뷰어  (플래너 없음, 기록된 EPIC 출력 그대로 보기)
+
+         roslaunch epic_planner bag_view.launch          # rviz + TF 만 띄움
+         (rosbag play 는 view.sh 가 포그라운드에서 돌린다 — 키보드 조작용)
+
+       bag_replay.launch 와의 차이:
+         bag_replay = EPIC "입력"만 재생하고 플래너를 새로 돌린다
+                      -> 기록된 출력은 버려지고 새로 계획한 결과가 보인다
+         bag_view   = 아무것도 걸러내지 않고 bag 전체를 재생한다
+                      -> 그날 실제로 EPIC 이 뭘 publish 했는지 그대로 보인다
+                         (/global_tour, /planning/*, /visualizer/*, 마커 전부)
+                      플래너 노드를 아예 띄우지 않으므로 토픽 충돌이 없다.
+
+       용도: "몇 초 지점에서 문제가 생겼는지" 특정하기. rosbag play 를
+             포그라운드로 돌리므로 space=일시정지, s=한 프레임씩 진행이 먹는다.
+       =================================================================== -->
+
+  <arg name="rviz"      default="true"  doc="rviz 자동 실행"/>
+  <arg name="rviz_config" doc="rviz 레이아웃. 기본은 실비행/리플레이와 같은 real.rviz"
+       default="$(find epic_planner)/config/real.rviz"/>
+  <arg name="static_tf" default="false"
+       doc="bag 에 TF 가 없을 때만 true. identity odom/world/camera_init 브릿지.
+            실비행 bag 은 /tf,/tf_static 이 들어 있으므로 기본 false"/>
+
+  <!-- rosbag play 를 clock 플래그로 재생하므로 sim time.
+       노드보다 먼저 올라가야 한다. -->
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- TF 가 없는 bag(FAST-LIO 계열 camera_init/body 프레임)용 브릿지 -->
+  <group if="$(arg static_tf)">
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_camera_init_world"
+          args="0 0 0 0 0 0 camera_init world"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_odom_camera_init"
+          args="0 0 0 0 0 0 odom camera_init"/>
+    <node pkg="tf2_ros" type="static_transform_publisher" name="tf_body_base_link"
+          args="0 0 0 0 0 0 body base_link"/>
+  </group>
+
+  <!-- rviz: 리플레이와 같은 레이아웃(real.rviz, Fixed Frame=odom).
+       rviz_on_param.py 는 /exploration_node/rviz/* 를 읽는데 여기선 플래너가
+       없어 그 파라미터가 없으므로 rviz 를 직접 띄운다. -->
+  <node if="$(arg rviz)" pkg="rviz" type="rviz" name="rviz_bag_view" output="log"
+        args="-d $(arg rviz_config)"/>
+</launch>

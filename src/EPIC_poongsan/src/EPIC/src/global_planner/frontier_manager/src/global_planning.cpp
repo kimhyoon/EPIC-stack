@@ -151,16 +151,25 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   for (int i = 0; i < clusters_can_be_searched_.size(); i++) {
     auto cluster = clusters_can_be_searched_[i];
     selectBestViewpoint(cluster);
+    // [feature: vp-reached-clear] 아래 두 줄이 원래 `if (!is_reachable_) continue;`
+    // 뒤에 있었다. selectBestViewpoint 의 도달-후-미해소 분기는 is_dormant_ 와
+    // is_reachable_=false 를 함께 세팅하므로 continue 가 먼저 걸려 제거 등록에
+    // 영원히 도달하지 못했다. 또 넣는 값이 clusters_can_be_searched_ 의 인덱스
+    // i 였는데 제거 조건은 cluster->id_(전역 증가 카운터)와 비교하고 있어서,
+    // 설령 도달했더라도 엉뚱한 클러스터가 지워졌다.
+    if (cluster->is_dormant_) {
+      mtx.lock();
+      cluster2remove.insert(cluster->id_);
+      mtx.unlock();
+    }
     if (!cluster->is_reachable_)
       continue;
     mtx.lock();
     tsp_clusters.push_back(cluster);
-    if (cluster->is_dormant_) {
-      cluster2remove.insert(i);
-    }
     mtx.unlock();
   }
   // 飞到但看不到，说明odom漂了，这篇工作不处理，直接跳过
+  int reached_clusters = 0, reached_cells = 0;
   cluster_list_.remove_if([&](ClusterInfo::Ptr cluster) {
     bool remove = cluster2remove.count(cluster->id_);
     if (remove) {
@@ -171,9 +180,65 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
         idx2bytes(idx, bytes);
         frtd_.label_map_[bytes] = DENSE;
       }
+      reached_clusters++;
+      reached_cells += (int)cluster->cells_.size();
     }
     return remove;
   });
+  // 실제로 보지 못한 공간을 관측 완료로 기록하는 동작이라 조용히 지나가면 안 된다.
+  // DENSE 는 되돌릴 수 없으므로 몇 번 발동했는지가 곧 비행 품질 지표다.
+  if (reached_clusters > 0)
+    ROS_WARN("[vp-reached-clear] %d clusters / %d cells forced DENSE "
+             "(reached the viewpoint but the frontier did not clear)",
+             reached_clusters, reached_cells);
+
+  // [feature: vp-reached-clear-radius] 강한 버전.
+  // 위에서 "뷰포인트에 도달했는데 해소 안 됨"이 한 번이라도 걸렸다면, 목표 클러스터
+  // 하나만 지우는 것으로는 부족한 경우가 있다 — 바로 옆 클러스터가 곧바로 다음
+  // 목표가 되어 같은 자리에 다시 묶인다(실측: 리플레이에서 같은 목표가 4회 재등장).
+  // 그래서 드론 반경 안의 프론티어를 한 번에 정리한다.
+  //
+  // 셀 단위로 자르지 않고 "반경에 닿은 클러스터는 통째로" 지운다. 일부만 지우면
+  // 남은 셀이 곧 새 클러스터가 되어 같은 루프가 재시작되고, center_/box_/norms_
+  // 같은 파생값도 다시 계산해야 해서 오히려 상태가 꼬인다.
+  //
+  // 주의: 실제로 보지 못한 공간을 관측 완료로 처리하는 조치이며 DENSE 는 되돌릴
+  // 수 없다. 반경을 키울수록 미탐사 영역을 통째로 잃을 수 있으므로, 탐사가 한
+  // 자리에 묶이는 것이 더 나쁘다고 판단될 때만 켤 것. 0 = 비활성(기본).
+  if (vpp_.vp_reached_clear_enable_ && vpp_.vp_reached_clear_radius_ > 0.0f &&
+      !cluster2remove.empty()) {
+    const Eigen::Vector3f odom_pos = graph_->odom_node_->center_;
+    const float r2 =
+        vpp_.vp_reached_clear_radius_ * vpp_.vp_reached_clear_radius_;
+    int swept_clusters = 0, swept_cells = 0;
+    cluster_list_.remove_if([&](ClusterInfo::Ptr cluster) {
+      bool touches = false;
+      for (auto &cell : cluster->cells_) {
+        if ((cell.getVector3fMap() - odom_pos).squaredNorm() <= r2) {
+          touches = true;
+          break;
+        }
+      }
+      if (!touches)
+        return false;
+      for (auto &cell : cluster->cells_) {
+        Eigen::Vector3i idx;
+        pos2idx(cell, idx);
+        ByteArrayRaw bytes;
+        idx2bytes(idx, bytes);
+        frtd_.label_map_[bytes] = DENSE;
+      }
+      swept_clusters++;
+      swept_cells += (int)cluster->cells_.size();
+      return true;
+    });
+    if (swept_clusters > 0)
+      ROS_WARN("[vp-reached-clear] radius sweep: %d clusters / %d cells within "
+               "%.2fm of (%.2f, %.2f, %.2f) forced DENSE",
+               swept_clusters, swept_cells, vpp_.vp_reached_clear_radius_,
+               odom_pos.x(), odom_pos.y(), odom_pos.z());
+  }
+
   ros::Time t4 = ros::Time::now();
   // cout << "select best viewpoint cost: " << (t4 - t3).toSec() * 1000 << "ms" << endl;
   vp_stats_.ok = (int)tsp_clusters.size();

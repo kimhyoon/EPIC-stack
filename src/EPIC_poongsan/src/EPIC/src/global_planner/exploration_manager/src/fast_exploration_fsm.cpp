@@ -1228,6 +1228,19 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              geti("ViewpointManager/local_tsp_size", -1));
     param_lines_.push_back(l);
 
+    // [feature: topo-timeout] 같은 graphSearch 를 쓰는 세 예산을 한 줄에 모은다.
+    // 뷰포인트가 대량으로 "도달 불가"가 된 비행을 사후에 볼 때, 기하 문제인지
+    // 예산 문제인지 판단하려면 이 값들이 세션 스냅샷에 남아 있어야 한다.
+    snprintf(l, sizeof(l),
+             "topo_timeout | vp_reachability=%.4f tsp_cost=%.4f goal=%.4f "
+             "astar_insert=%.4f astar_update=%.4f [s]",
+             getd("ViewpointManager/reachability_search_timeout", 3e-4),
+             getd("global_planning/topo_cost_search_timeout", 1e-2),
+             getd("global_planning/goal_search_timeout", 0.1),
+             getd("parallel_astar/insert_node_timeout", -1),
+             getd("parallel_astar/update_connection_timeout", -1));
+    param_lines_.push_back(l);
+
     snprintf(l, sizeof(l),
              "fsm | takeoff_height=%.2f goal_tolerance=%.2f replan_time=%.2f "
              "emergency_replan_error=%.1f local_plan_max_hz=%.0f "
