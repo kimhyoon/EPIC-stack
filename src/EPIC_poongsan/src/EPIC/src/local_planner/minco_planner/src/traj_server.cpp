@@ -38,6 +38,13 @@ bool yaw_initialized_ = false;
 bool yaw_command_started_ = false;
 ros::Time last_yaw_cmd_time_;
 
+double max_setpoint_velocity_, max_setpoint_acceleration_;
+Eigen::Vector3d last_cmd_pos_ = Eigen::Vector3d::Zero();
+Eigen::Vector3d last_cmd_vel_ = Eigen::Vector3d::Zero();
+bool position_initialized_ = false;
+bool position_command_started_ = false;
+ros::Time last_position_cmd_time_;
+
 // RTH mode detection
 bool is_rth_mode_ = false;
 std::string current_state_ = "";
@@ -73,6 +80,67 @@ bool quaternionToYaw(const geometry_msgs::Quaternion &q, double &yaw) {
   yaw = std::atan2(2.0 * (w * z + x * y),
                    1.0 - 2.0 * (y * y + z * z));
   return std::isfinite(yaw);
+}
+
+Eigen::Vector3d clampVectorNorm(const Eigen::Vector3d &value,
+                                const double max_norm) {
+  const double norm = value.norm();
+  if (!std::isfinite(norm))
+    return Eigen::Vector3d::Zero();
+  if (norm <= max_norm || norm <= 1.0e-12)
+    return value;
+  return value * (max_norm / norm);
+}
+
+void limitPositionSetpoint(Eigen::Vector3d &position,
+                           Eigen::Vector3d &velocity,
+                           Eigen::Vector3d &acceleration,
+                           Eigen::Vector3d &jerk,
+                           const ros::Time &time_now) {
+  double dt = 0.0;
+  if (position_command_started_)
+    dt = (time_now - last_position_cmd_time_).toSec();
+  if (!std::isfinite(dt) || dt <= 0.0)
+    dt = 0.0;
+
+  if (!position.allFinite()) {
+    ROS_ERROR_THROTTLE(
+        1.0,
+        "[traj_server] non-finite position trajectory sample; holding the "
+        "last valid position command");
+    position = last_cmd_pos_;
+    velocity.setZero();
+    acceleration.setZero();
+    jerk.setZero();
+  } else if (dt > 0.0) {
+    // Prevent a replacement trajectory from creating a position step. The
+    // velocity field follows the limited position motion, and its change is
+    // acceleration-limited before publication.
+    const Eigen::Vector3d requested_step = position - last_cmd_pos_;
+    const Eigen::Vector3d limited_step =
+        clampVectorNorm(requested_step, max_setpoint_velocity_ * dt);
+    position = last_cmd_pos_ + limited_step;
+
+    const Eigen::Vector3d requested_velocity = limited_step / dt;
+    const Eigen::Vector3d velocity_delta = clampVectorNorm(
+        requested_velocity - last_cmd_vel_,
+        max_setpoint_acceleration_ * dt);
+    velocity = clampVectorNorm(last_cmd_vel_ + velocity_delta,
+                               max_setpoint_velocity_);
+    acceleration = velocity_delta / dt;
+    if (!jerk.allFinite())
+      jerk.setZero();
+  } else {
+    position = last_cmd_pos_;
+    velocity.setZero();
+    acceleration.setZero();
+    jerk.setZero();
+  }
+
+  position_command_started_ = true;
+  last_cmd_pos_ = position;
+  last_cmd_vel_ = velocity;
+  last_position_cmd_time_ = time_now;
 }
 
 std::pair<double, double> get_yaw(double current_yaw, double t_cur) {
@@ -290,6 +358,12 @@ void cmdCallback(const ros::TimerEvent &e) {
         "[traj_server] waiting for a valid odometry yaw before publishing");
     return;
   }
+  if (!position_initialized_) {
+    ROS_WARN_THROTTLE(
+        1.0,
+        "[traj_server] waiting for a valid odometry position before publishing");
+    return;
+  }
 
   ros::Time time_now = ros::Time::now();
   static bool printed;
@@ -334,6 +408,8 @@ void cmdCallback(const ros::TimerEvent &e) {
   } else {
     yaw_yawdot = std::make_pair(last_yaw_, 0.0);
   }
+
+  limitPositionSetpoint(pos, vel, acc, jer, time_now);
 
   // A replacement yaw trajectory can start far from the command currently
   // being executed. Limit the final setpoint delta as well as the optimizer so
@@ -389,6 +465,18 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
   }
 
   real_pos_ = current_pos;
+
+  if (!position_command_started_ && current_pos.allFinite()) {
+    last_cmd_pos_ = current_pos;
+    last_cmd_vel_.setZero();
+    last_position_cmd_time_ = ros::Time::now();
+    if (!position_initialized_) {
+      position_initialized_ = true;
+      ROS_INFO("[traj_server] initial position from odometry: "
+               "(%.3f, %.3f, %.3f) m",
+               current_pos.x(), current_pos.y(), current_pos.z());
+    }
+  }
 
   if (!yaw_command_started_) {
     double odom_yaw = 0.0;
@@ -635,6 +723,25 @@ int main(int argc, char **argv) {
   }
   ROS_INFO("[Traj server]: final yaw setpoint rate limit: %.3f rad/s",
            yaw_max_vel_);
+  if (!ros::param::get("/exploration_node/MaxVelMag",
+                       max_setpoint_velocity_) ||
+      !std::isfinite(max_setpoint_velocity_) ||
+      max_setpoint_velocity_ <= 0.0) {
+    ROS_FATAL("[Traj server] /exploration_node/MaxVelMag must be finite "
+              "and greater than zero");
+    return 1;
+  }
+  if (!ros::param::get("/exploration_node/MaxAccMag",
+                       max_setpoint_acceleration_) ||
+      !std::isfinite(max_setpoint_acceleration_) ||
+      max_setpoint_acceleration_ <= 0.0) {
+    ROS_FATAL("[Traj server] /exploration_node/MaxAccMag must be finite "
+              "and greater than zero");
+    return 1;
+  }
+  ROS_INFO("[Traj server]: final position setpoint limits: "
+           "%.3f m/s, %.3f m/s^2",
+           max_setpoint_velocity_, max_setpoint_acceleration_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);
