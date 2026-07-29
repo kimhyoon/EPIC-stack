@@ -210,7 +210,7 @@ FrontierManager/good_observation_force_trust_length: 0.5  # 강제 관측 완료
 FrontierManager/viewpoint_dir_trust_length: 4.5  # [m] 다른 프로파일의 force_trust 값과 정합
 
 # [Viewpoint 유효 판정 최소 가시 셀 수]
-# 후보에서 raycast 로 실제 보이는 Frontier 셀이 이 개수 미만이면 yaw 스캔도 하지 않고 탈락한다(NO_VIS). 
+# 후보에서 raycast 로 실제 보이는 Frontier 셀이 이 개수 미만이면 yaw 스캔도 하지 않고 탈락한다(NO_VIS).
 # 값 증가 시 노이즈성 viewpoint 는 줄지만 유효 후보도 함께 줄고, 감소 시 후보는 늘지만 셀 한두 개만 보이는 빈약한 목표가 선택될 수 있다.
 FrontierManager/viewpoint_min_visible_cells: 3  # [개]
 
@@ -321,6 +321,58 @@ dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 
 # 충돌·Corridor·topology 연결 실패로 궤적 자체가 생성되지 않는 문제는 이 값을 늘려도 해결되지 않으며, 값이 크면 궤적 생성 연산량이 증가할 수 있다.
 max_traj_len: 5.0  # 한 번에 생성할 국소 궤적의 최대 길이[m]
 
+# [Corridor 장애물 입력 해상도][현장 튜닝]
+# Guide path 주변 장애물 점군을 몇 m 간격의 Voxel로 줄인 뒤 FIRI에 전달할지 결정한다.
+# 값 증가 시 연산량은 감소하지만 얇은 벽과 작은 장애물 형상이 누락될 수 있고, 값 감소 시 장애물 표현은 촘촘해지지만 연산량과 메모리 사용량이 증가한다.
+local_planning/corridor/obstacle_voxel_size: 0.28  # Corridor 생성용 장애물 Voxel 크기[m]
+
+# [Corridor 장애물 검색 범위][현장 튜닝]
+# 잘린 Guide path의 바깥쪽으로 장애물 점을 추가 검색할 X·Y 및 Z 방향 여유 거리를 결정한다.
+# 값 증가 시 더 먼 벽까지 반영하지만 검색 점과 연산량이 증가하고, 값 감소 시 가까운 장애물이 검색 범위 밖으로 빠져 Corridor가 벽을 포함할 수 있다.
+local_planning/corridor/search_margin_xy: 3.0  # Guide path 좌우·전후 장애물 검색 여유[m]
+local_planning/corridor/search_margin_z: 1.0   # Guide path 상하 장애물 검색 여유[m]
+
+# [Corridor 진행 구간 길이][현장 튜닝]
+# max_traj_len으로 잘린 전체 Guide path를 FIRI Corridor 조각으로 나눌 때 한 조각이 진행할 최대 길이를 결정한다.
+# 값 증가 시 Corridor 조각 수와 연산량은 줄지만 긴 구간의 복잡한 장애물 형상을 하나의 Corridor가 처리해야 하고, 값 감소 시 짧고 많은 Corridor가 생성되어 굴곡을 세밀하게 따르지만 연산량이 증가한다.
+# max_traj_len은 이번 국소 계획의 전체 Guide path 길이이고, 이 값은 그 경로를 나누는 조각 길이이므로 전체 목적지 거리를 늘리지 않는다.
+local_planning/corridor/progress_length: 7.0  # FIRI Corridor 한 조각의 최대 진행 길이[m]
+
+# [Corridor 장애물 샘플 상한][현장 튜닝]
+# VoxelGrid를 통과한 장애물 중 FIRI 한 구간에서 사용할 최대 점 개수를 결정한다.
+# 값 증가 시 벽 형상을 더 많이 반영하지만 FIRI 연산량이 증가하고, 값 감소 시 연산은 빨라지지만 샘플에서 빠진 장애물이 Corridor 내부에 들어갈 수 있다.
+local_planning/corridor/max_obstacle_samples: 500  # 구간별 최대 장애물 점 수[개]
+
+# [FIRI 장애물 처리 거리][현장 튜닝]
+# FIRI 내부 변환 좌표에서 이 값보다 먼 장애물 후보를 분리 평면 계산에서 제외한다.
+# 값 증가 시 먼 장애물을 더 많이 반영하지만 연산량이 증가하고, 값 감소 시 가까운 장애물만 처리하여 벽이나 장애물 평면이 누락될 수 있다.
+local_planning/corridor/firi_obstacle_distance_limit: 10.0
+
+# [FIRI 평면 처리 상한][현장 튜닝]
+# 한 번의 FIRI 계산에서 경계면과 장애물 분리 평면을 최대 몇 개까지 처리할지 결정한다.
+# 값 증가 시 복잡한 벽 형상을 더 많이 반영하지만 연산량이 증가하고, 값 감소 시 연산은 빨라지지만 처리 상한 뒤의 장애물이 누락될 수 있다.
+# 탐색 경계의 기본 6개 면을 처리해야 하므로 6 미만으로 설정할 수 없다.
+local_planning/corridor/firi_max_plane_count: 50  # FIRI 반복당 최대 평면 수[개]
+
+# [Corridor Gap 생성 기준][주의]
+# 앞뒤 Corridor 연결점에서 위반된 평면 수가 이 값 이상이면 연결 보완용 Gap Corridor를 추가한다.
+# 값 증가 시 Gap 생성이 줄어 Corridor가 끊길 수 있고, 값 감소 시 Gap이 자주 생성되어 불필요하게 넓은 연결 영역이 생길 수 있다.
+# 현재 Gap Corridor에는 DilateRadiusSoft 축소가 적용되지 않으므로 이 값으로 장애물 안전거리를 조정하지 않는다.
+local_planning/corridor/gap_violation_plane_threshold: 3  # Gap 생성 위반 평면 수[개]
+
+# [Corridor 겹침 판정 여유][주의]
+# 두 Corridor가 면 접촉이 아닌 충분한 내부 겹침을 갖는지 판정하는 수치 여유값이다.
+# 값 증가 시 겹침 판정이 엄격해져 Shortcut이 줄고 Corridor 조각이 더 남으며, 값 감소 시 얇은 겹침도 연결로 인정해 Shortcut이 늘어난다.
+# 물리적인 장애물 안전거리나 m 단위 Corridor 폭을 직접 설정하는 값은 아니다.
+local_planning/corridor/overlap_tolerance: 0.01
+
+# [Corridor 연결 단절 시 임시 목표][현장 튜닝]
+# Corridor가 원래 목표 전에 끊기면 임의의 내부점 대신 연결된 Corridor 안의 Guide path에서 가장 멀리 전진한 점을 임시 목표로 사용한다.
+# fallback_target_margin 증가 시 목표가 Corridor 경계에서 더 멀어져 안정적이지만 전진거리가 짧아지고, 감소 시 더 멀리 전진하지만 경계에 가까워질 수 있다.
+# fallback_min_progress 증가 시 의미 있게 전진하는 궤적만 허용하지만 좁은 공간에서 계획 실패가 늘고, 감소 시 짧은 궤적이 반복 생성될 수 있다.
+local_planning/corridor/fallback_target_margin: 0.1  # 임시 목표와 Corridor 경계 사이의 최소 여유[m]
+local_planning/corridor/fallback_min_progress: 0.5   # 임시 목표로 인정할 Guide path 최소 전진거리[m]
+
 # [Corridor·충돌 안전 설정][수정 금지]
 # 아래 값은 미관측 영역 진입 방지, 장애물 안전거리 및 Corridor 크기에 관여하는 검증값이므로 변경하지 않는다.
 local_planning/clip_corridor_to_observed: true  # 관측 영역 내부로 Corridor 제한
@@ -375,6 +427,18 @@ PvaInitialWeights: [1.0e+2, 1.0e+2]           # 초기 odometry 속도, 0 가속
 PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4] # 목표 위치, 정지 속도, 정지 가속도 비용
 SmoothingEps: 0.015
 IntegralIntervs: 32
+
+# [NaN 방지 수치 안정화][절대 수정 금지]
+# 아래 7개 값은 0 나눗셈, 영벡터 정규화, 짧은 경로 구간 및 작은 LU pivot을 방지하는 검증값이다.
+# 값을 변경하지 말 것. 항목이 누락되거나 0·음수·비정상 값이면 Planner가 실행을 거부한다.
+numerical/yaw_diff_eps: 1.0e-9       # Yaw 차이 계산의 분모 하한
+numerical/trig_gradient_eps: 1.0e-9  # acos·sqrt 경계의 gradient 하한
+numerical/vector_norm_eps: 1.0e-6    # 벡터 정규화 분모 하한
+numerical/min_segment_time: 5.0e-2   # MINCO/Yaw 궤적 구간의 최소 시간[s]
+numerical/flatness_norm_eps: 1.0e-6  # Flatness 변환의 norm·분모 하한
+numerical/min_path_segment_length: 5.0e-2  # 서로 붙은 guide point를 하나로 합칠 거리[m]
+numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 pivot 절대값 하한
+
 RelCostTol: 1.1e-6
 
 # local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 끝
