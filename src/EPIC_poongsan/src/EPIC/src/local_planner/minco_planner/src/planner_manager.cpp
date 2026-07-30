@@ -958,7 +958,10 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
         positionBoundaryError.x(), positionBoundaryError.y(),
         positionBoundaryError.z(), yawBoundaryError.x(),
         yawBoundaryError.y(), yawBoundaryError.z());
+    // trajectory_start_time is what local_data_.start_time_ is set to below;
+    // the FOV-frustum fade is keyed off it (planned time, not odometry).
     gcopter_viz_->visualize(local_data_.minco_traj_,
+                            local_data_.minco_yaw_traj_, trajectory_start_time,
                             gcopter_config_->maxVelMag);
   } else {
     local_data_ = local_data_backup;
@@ -1447,7 +1450,13 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     // ROS_INFO_STREAM(
     // "local_data_.minco_traj_.getPieceNum(): " <<
     // local_data_.minco_traj_.getPieceNum());
+    // hpoly_gen_end is what local_data_.start_time_ is set to below. The
+    // escape path runs no new YawTrajOpt, but the carried-over minco_yaw_traj_
+    // is what fast_exploration_fsm re-publishes against the new start_time_,
+    // so it is the yaw the drone will actually track -- draw the frustums
+    // from it.
     gcopter_viz_->visualize(local_data_.minco_traj_,
+                            local_data_.minco_yaw_traj_, hpoly_gen_end,
                             gcopter_config_->maxVelMag);
   } else {
     local_data_ = local_data_backup;

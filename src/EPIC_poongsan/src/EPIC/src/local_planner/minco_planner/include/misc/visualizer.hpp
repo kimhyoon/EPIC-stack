@@ -9,10 +9,12 @@
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <vector>
 
 #include "gcopter/geo_utils.hpp"
 #include "gcopter/quickhull.hpp"
@@ -52,6 +54,32 @@ private:
   ros::Publisher collision_check_cost_pub_;
   ros::Publisher velocity_check_cost_pub_;
 
+  // ---- /visualizer/trajectory : LA-Planner-style red path + green FOV
+  // frustums that vanish as the *planned* time advances.
+  // Port of la_planner PlanningVisualization::setFOVmarker / drawYawFOVTraj
+  // (the same viz the JAX local planner publishes on
+  // /local_planner/optimal_trajectory). The fade is driven purely by the
+  // trajectory's own time parameterization -- where the drone is *supposed*
+  // to be at t = now - traj_start_time -- never by odometry.
+  struct FovSample {
+    Eigen::Vector3d pos;
+    double yaw;
+    double t;
+  };
+  std::vector<geometry_msgs::Point> traj_line_pts_;
+  std::vector<FovSample> traj_fov_samples_;
+  ros::Time traj_start_time_;
+  bool traj_valid_ = false;
+  int last_skip_count_ = -1;
+  ros::Timer traj_viz_timer_;
+
+  double fov_depth_ = 0.3;
+  double fov_h_rad_ = 79.1396 * M_PI / 180.0;
+  double fov_v_rad_ = 63.5803 * M_PI / 180.0;
+  double fov_sample_dt_ = 0.3;
+  int fov_max_slots_ = 50;
+  double traj_line_sample_dt_ = 0.05;
+
 public:
   ros::Publisher speedPub;
   ros::Publisher thrPub;
@@ -67,7 +95,7 @@ public:
     routePub = nh.advertise<visualization_msgs::Marker>("/visualizer/route", 10);
     routeIdPub = nh.advertise<visualization_msgs::MarkerArray>("/visualizer/routeid", 10);
     wayPointsPub = nh.advertise<visualization_msgs::Marker>("/visualizer/waypoints", 10);
-    trajectoryPub = nh.advertise<visualization_msgs::Marker>("/visualizer/trajectory", 10);
+    trajectoryPub = nh.advertise<visualization_msgs::MarkerArray>("/visualizer/trajectory", 10);
     meshPub = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh", 1000, true);
     edgePub = nh.advertise<visualization_msgs::Marker>("/visualizer/edge", 1000, true);
     meshPubOrig = nh.advertise<visualization_msgs::Marker>("/visualizer/mesh_origin", 1000, true);
@@ -91,6 +119,21 @@ public:
     path_collision_check_cost_pub_ = nh.advertise<std_msgs::Float64>("/visualizer/path_collision_check_cost", 1000);
     collision_check_cost_pub_ = nh.advertise<std_msgs::Float64>("/visualizer/collision_check_cost", 1000);
     velocity_check_cost_pub_ = nh.advertise<std_msgs::Float64>("/visualizer/velocity_check_cost", 1000);
+
+    double fov_h_deg = 79.1396, fov_v_deg = 63.5803, traj_viz_rate = 20.0;
+    nh.param("visualizer/fov_depth", fov_depth_, 0.3);
+    nh.param("visualizer/fov_horizontal_deg", fov_h_deg, 79.1396);
+    nh.param("visualizer/fov_vertical_deg", fov_v_deg, 63.5803);
+    nh.param("visualizer/fov_sample_dt", fov_sample_dt_, 0.3);
+    nh.param("visualizer/fov_max_slots", fov_max_slots_, 50);
+    nh.param("visualizer/traj_line_sample_dt", traj_line_sample_dt_, 0.05);
+    nh.param("visualizer/traj_viz_rate", traj_viz_rate, 20.0);
+    fov_h_rad_ = fov_h_deg * M_PI / 180.0;
+    fov_v_rad_ = fov_v_deg * M_PI / 180.0;
+    fov_max_slots_ = std::max(1, fov_max_slots_);
+
+    traj_viz_timer_ = nh.createTimer(ros::Duration(1.0 / traj_viz_rate),
+                                     &Visualizer::trajVizTimerCallback, this);
   }
 
   inline Eigen::Vector3d jetColorMap(double value) {
@@ -163,8 +206,131 @@ public:
 
   }
 
-  template <int D> inline void visualize(const Trajectory<D> &traj, double max_vel) {
-    visualization_msgs::Marker wayPointsMarker, trajMarker;
+  // Build one green LINE_LIST frustum with its apex at `pos`, +X_body along
+  // `yaw`. Yaw-only rotation (the camera stays level), matching the JAX port.
+  inline visualization_msgs::Marker buildFovMarker(const Eigen::Vector3d &pos,
+                                                   const double yaw,
+                                                   const int id,
+                                                   const ros::Time &stamp) const {
+    visualization_msgs::Marker mk;
+    mk.header.frame_id = "odom";
+    mk.header.stamp = stamp;
+    mk.ns = "optimal_trajectory_fov";
+    mk.id = id;
+    mk.type = visualization_msgs::Marker::LINE_LIST;
+    mk.action = visualization_msgs::Marker::ADD;
+    mk.pose.orientation.w = 1.00;
+    mk.scale.x = fov_depth_ * 0.1;
+    mk.color.r = 0.00;
+    mk.color.g = 1.00;
+    mk.color.b = 0.00;
+    mk.color.a = 1.00;
+
+    const double half_w = std::tan(fov_h_rad_ / 2.0) * fov_depth_;
+    const double half_h = std::tan(fov_v_rad_ / 2.0) * fov_depth_;
+    const double c = std::cos(yaw), s = std::sin(yaw);
+    // camera frame (+X forward): the 4 far-plane corners
+    const double cam_corners[4][3] = {
+        {fov_depth_, -half_w, -half_h},
+        {fov_depth_, half_w, -half_h},
+        {fov_depth_, half_w, half_h},
+        {fov_depth_, -half_w, half_h},
+    };
+    geometry_msgs::Point world[4];
+    for (int i = 0; i < 4; i++) {
+      world[i].x = c * cam_corners[i][0] - s * cam_corners[i][1] + pos.x();
+      world[i].y = s * cam_corners[i][0] + c * cam_corners[i][1] + pos.y();
+      world[i].z = cam_corners[i][2] + pos.z();
+    }
+    geometry_msgs::Point apex;
+    apex.x = pos.x();
+    apex.y = pos.y();
+    apex.z = pos.z();
+
+    for (int i = 0; i < 4; i++) {  // far-plane rectangle
+      mk.points.push_back(world[i]);
+      mk.points.push_back(world[(i + 1) % 4]);
+    }
+    for (int i = 0; i < 4; i++) {  // apex -> corner rays
+      mk.points.push_back(apex);
+      mk.points.push_back(world[i]);
+    }
+    return mk;
+  }
+
+  inline visualization_msgs::Marker staleFovMarker(const int id,
+                                                   const ros::Time &stamp) const {
+    visualization_msgs::Marker mk;
+    mk.header.frame_id = "odom";
+    mk.header.stamp = stamp;
+    mk.ns = "optimal_trajectory_fov";
+    mk.id = id;
+    mk.action = visualization_msgs::Marker::DELETE;
+    return mk;
+  }
+
+  // Republish the cached trajectory. Frustums whose planned timestamp has
+  // already elapsed are DELETEd, so they vanish one-by-one ahead of where the
+  // drone is scheduled to be. The red path line always stays full-length
+  // (LA parity: only the frustums shrink). Publishes only when the set of
+  // surviving frustums actually changes, unless `force`.
+  inline void publishTrajViz(const bool force) {
+    if (!traj_valid_) return;
+
+    const ros::Time stamp = ros::Time::now();
+    const double elapsed = (stamp - traj_start_time_).toSec();
+    int skip = 0;
+    while (skip < static_cast<int>(traj_fov_samples_.size()) &&
+           traj_fov_samples_[skip].t < elapsed) {
+      skip++;
+    }
+    if (!force && skip == last_skip_count_) return;
+    last_skip_count_ = skip;
+
+    visualization_msgs::MarkerArray arr;
+
+    visualization_msgs::Marker lineMarker;
+    lineMarker.header.frame_id = "odom";
+    lineMarker.header.stamp = stamp;
+    lineMarker.ns = "optimal_trajectory";
+    lineMarker.id = 0;
+    lineMarker.type = visualization_msgs::Marker::LINE_STRIP;
+    lineMarker.action = visualization_msgs::Marker::ADD;
+    lineMarker.pose.orientation.w = 1.00;
+    lineMarker.scale.x = 0.08;
+    lineMarker.color.r = 1.00;
+    lineMarker.color.g = 0.00;
+    lineMarker.color.b = 0.00;
+    lineMarker.color.a = 1.00;
+    lineMarker.points = traj_line_pts_;
+    arr.markers.push_back(lineMarker);
+
+    const int n = static_cast<int>(traj_fov_samples_.size());
+    for (int i = skip; i < n; i++) {
+      arr.markers.push_back(buildFovMarker(traj_fov_samples_[i].pos,
+                                           traj_fov_samples_[i].yaw, i + 1,
+                                           stamp));
+    }
+    for (int i = 0; i < skip; i++) {  // already flown past
+      arr.markers.push_back(staleFovMarker(i + 1, stamp));
+    }
+    for (int i = n; i < fov_max_slots_; i++) {  // horizon shrank since last plan
+      arr.markers.push_back(staleFovMarker(i + 1, stamp));
+    }
+
+    trajectoryPub.publish(arr);
+  }
+
+  void trajVizTimerCallback(const ros::TimerEvent &) { publishTrajViz(false); }
+
+  // `traj_start_time` must be the same stamp the trajectory is executed
+  // against (local_data_.start_time_) -- that is what makes the frustum fade
+  // track planned time rather than wall-clock.
+  template <int D, int DY>
+  inline void visualize(const Trajectory<D> &traj,
+                        const Trajectory<DY> &yaw_traj,
+                        const ros::Time &traj_start_time, double max_vel) {
+    visualization_msgs::Marker wayPointsMarker;
     visualization_msgs::Marker routeMarker;
     routeMarker.id = 0;
     routeMarker.type = visualization_msgs::Marker::LINE_LIST;
@@ -193,18 +359,6 @@ public:
     wayPointsMarker.scale.y = 0.35;
     wayPointsMarker.scale.z = 0.35;
 
-    trajMarker = wayPointsMarker;
-    trajMarker.type = visualization_msgs::Marker::SPHERE_LIST;
-    trajMarker.header.frame_id = "odom";
-    trajMarker.id = 0;
-    trajMarker.ns = "trajectory";
-    trajMarker.color.r = 0.00;
-    trajMarker.color.g = 0.50;
-    trajMarker.color.b = 1.00;
-    trajMarker.scale.x = 0.10;
-    trajMarker.scale.y = 0.10;
-    trajMarker.scale.z = 0.10;
-
     if (traj.getPieceNum() > 0) {
       Eigen::MatrixXd wps = traj.getPositions();
       for (int i = 0; i < wps.cols(); i++) {
@@ -218,24 +372,60 @@ public:
       wayPointsPub.publish(wayPointsMarker);
     }
 
-    if (traj.getPieceNum() > 0) {
-      double T = 0.01;
-      for (double t = T; t < traj.getTotalDuration(); t += T) {
-        geometry_msgs::Point point;
-        Eigen::Vector3d X = traj.getPos(t);
-        double vel = traj.getVel(t).norm() / max_vel;
-        Eigen::Vector3d color = jetColorMap(vel);
-        point.x = X(0);
-        point.y = X(1);
-        point.z = X(2);
-        trajMarker.color.r = color(0);
-        trajMarker.color.g = color(1);
-        trajMarker.color.b = color(2);
-        trajMarker.colors.push_back(trajMarker.color);
-        trajMarker.points.push_back(point);
-      }
-      trajectoryPub.publish(trajMarker);
+    (void)max_vel;  // velocity jet-colormap dropped in favour of the FOV view
+
+    const double dur = traj.getTotalDuration();
+    if (traj.getPieceNum() <= 0 || !std::isfinite(dur) || dur <= 0.0) {
+      traj_valid_ = false;
+      return;
     }
+
+    // Yaw along the trajectory. The escape path carries the previous yaw traj
+    // over, which can be shorter than the new position traj -- clamp to its
+    // own duration. Only if there is no yaw traj at all (very first plan) fall
+    // back to the velocity heading.
+    const double yaw_dur =
+        yaw_traj.getPieceNum() > 0 ? yaw_traj.getTotalDuration() : 0.0;
+    const bool yaw_ok = std::isfinite(yaw_dur) && yaw_dur > 0.0;
+    auto yawAt = [&](double t) -> double {
+      if (yaw_ok) return yaw_traj.getPos(std::min(t, yaw_dur)).x();
+      const Eigen::Vector3d v = traj.getVel(t);
+      return v.head<2>().norm() > 1e-6 ? std::atan2(v.y(), v.x()) : 0.0;
+    };
+
+    traj_line_pts_.clear();
+    traj_fov_samples_.clear();
+
+    geometry_msgs::Point point;
+    for (double t = 0.0; t < dur; t += traj_line_sample_dt_) {
+      const Eigen::Vector3d X = traj.getPos(t);
+      point.x = X(0);
+      point.y = X(1);
+      point.z = X(2);
+      traj_line_pts_.push_back(point);
+    }
+    const Eigen::Vector3d Xend = traj.getPos(dur);
+    point.x = Xend(0);
+    point.y = Xend(1);
+    point.z = Xend(2);
+    traj_line_pts_.push_back(point);
+
+    // Sparse frustums, never more than fov_max_slots_ (the DELETE-sweep range).
+    const double fov_dt = std::max(fov_sample_dt_, dur / fov_max_slots_);
+    for (double t = 0.0;
+         t < dur && static_cast<int>(traj_fov_samples_.size()) < fov_max_slots_;
+         t += fov_dt) {
+      FovSample s;
+      s.pos = traj.getPos(t);
+      s.yaw = yawAt(t);
+      s.t = t;
+      traj_fov_samples_.push_back(s);
+    }
+
+    traj_start_time_ = traj_start_time;
+    traj_valid_ = true;
+    last_skip_count_ = -1;
+    publishTrajViz(true);
   }
 
   inline void renderPolytope(const std::vector<Eigen::MatrixX4d> &hPolys,

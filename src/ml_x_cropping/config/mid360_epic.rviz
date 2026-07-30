@@ -171,12 +171,13 @@ Visualization Manager:
       Name: global_planner
     - Class: rviz/Group
       Displays:
-        - Class: rviz/Marker
+        - Class: rviz/MarkerArray
           Enabled: true
           Marker Topic: /visualizer/trajectory
-          Name: Marker
+          Name: local_traj
           Namespaces:
-            trajectory: true
+            optimal_trajectory: true
+            optimal_trajectory_fov: true
           Queue Size: 105
           Value: true
         - Class: rviz/Marker
