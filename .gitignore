@@ -18,3 +18,16 @@ __pycache__
 # sim_bringup's result_root ($(find sim_bringup)/../../result) — per-run
 # experiment output written by sim_result_manager.py, not source.
 result/
+
+# LKH TSP solver scratch. fast_exploration_manager.cpp:68,817 rewrites
+# single.par/.tsp with ofstream on every solve and reads single.txt back
+# (:849,:852), so these are per-run output, not source. test.par/.tsp/.txt
+# stay tracked, which also keeps the resource/ directory in a fresh clone.
+single.par
+single.tsp
+single.txt
+
+# minco_planner/config/traj.rviz — rviz rewrites its config on exit, so this
+# churned ~100 lines per run. No launch file references it (the traj.rviz in
+# the launch files is test_interface's, a different file).
+traj.rviz
