@@ -33,6 +33,9 @@ public:
   ros::NodeHandle nh_;
   ros::Publisher viz_graph_pub_, global_tour_pub_;
   typedef std::shared_ptr<GraphVisualizer> Ptr;
+  // vizTour: ns -> 직전 프레임에 발행한 구간 수. ns 단위로만 마커를 지우기 위한
+  // 상태다 (DELETEALL 은 ns 를 가리지 않고 디스플레이 전체를 지운다).
+  std::unordered_map<std::string, int> tour_seg_num_;
 
   void init(ros::NodeHandle &nh) {
     nh_ = nh;
@@ -148,38 +151,37 @@ public:
     box_marker.points.push_back(p3);
   }
 
+  // global tour 를 ns 단위로 그린다.
+  //
+  // 예전엔 매 호출마다 Marker::DELETEALL 을 먼저 쐈는데, rviz 의 DELETEALL 은
+  // "그 Marker 디스플레이 전체"를 지운다 — ns 를 가리지 않는다. 그래서 같은
+  // 토픽에 서로 다른 ns 로 두 번 그리면(예: ns "global" 파란 tour + ns
+  // "global_efp" 자주색 EFP leg) 두 번째 호출이 첫 번째를 지워버려 한쪽만 남는다.
+  // 여기서는 ns 별로 "직전 프레임에 쓴 id 중 이번에 안 쓰는 것" 만 골라 DELETE
+  // 한다. 단일 ns 사용자(예: ns "goal")의 동작은 이전과 동일하고, 여러 ns 를
+  // 동시에 그리는 것이 안전해진다. 덤으로 DELETEALL 뒤의 1ms sleep 도 사라진다
+  // (계획 스레드에서 호출되므로 sleep 은 그대로 계획 지연이었다).
+  //
+  // line_width: 같은 구간에 두 ns 를 겹쳐 그릴 때 z-fighting 을 피하려고 EFP leg
+  // 쪽만 굵게 줄 수 있다. 기본값은 기존 하드코딩 값(0.1)과 같다.
   void inline vizTour(const vector<Eigen::Vector3f> &path, VizColor color,
-                      string ns) {
-    // First, publish DELETEALL markers separately to ensure RViz processes them
-    MarkerArray clear_marker_array;
-    Marker clear_marker;
-    clear_marker.header.frame_id = "odom";
-    clear_marker.header.stamp = ros::Time::now();
-    clear_marker.action = Marker::DELETEALL;
-    clear_marker.ns = ns + "_path";
-    clear_marker_array.markers.push_back(clear_marker);
-    clear_marker.ns = ns + "_path_order";
-    clear_marker_array.markers.push_back(clear_marker);
-    global_tour_pub_.publish(clear_marker_array);
-
-    // Small delay to ensure RViz processes the delete command
-    ros::Duration(0.001).sleep();
-
-    // Now publish the new markers
+                      string ns, float line_width = 0.1f) {
     MarkerArray tour_marker_array;
-    if (path.size() >= 2) {
+    const int seg_num = path.size() >= 2 ? (int)path.size() - 1 : 0;
+    if (seg_num > 0) {
       Marker global_path_marker, global_path_order_marker;
-      int id = 0;
       global_path_marker.type = Marker::LINE_LIST;
       global_path_order_marker.type = Marker::TEXT_VIEW_FACING;
-      this->SetMarker(color, ns + "_path", 0.1f, 1.0f, global_path_marker,
+      this->SetMarker(color, ns + "_path", line_width, 1.0f, global_path_marker,
                       1.0f);
       this->SetMarker(VizColor::WHITE, ns + "_path_order", 0.7f, 1.0f,
                       global_path_order_marker, 1.0f);
+      // 경로 전체가 LINE_LIST 마커 하나이므로 id 는 항상 0 이다 (예전엔 마지막
+      // 구간 번호를 id 로 써서 경로 길이가 바뀌면 옛 id 가 남을 수 있었다).
+      global_path_marker.id = 0;
       geometry_msgs::Point p1, p2;
-      for (int i = 0; i < path.size() - 1; i++) {
-        global_path_marker.id = id;
-        global_path_order_marker.id = id++;
+      for (int i = 0; i < seg_num; i++) {
+        global_path_order_marker.id = i;
 
         p1.x = path[i].x();
         p1.y = path[i].y();
@@ -197,6 +199,29 @@ public:
       }
       tour_marker_array.markers.emplace_back(global_path_marker);
     }
+
+    // 이번에 안 쓰는 id 를 ns 안에서만 지운다.
+    int &last_seg_num = tour_seg_num_[ns];
+    for (int i = seg_num; i < last_seg_num; i++) {
+      Marker del;
+      del.header.frame_id = "odom";
+      del.header.stamp = ros::Time::now();
+      del.ns = ns + "_path_order";
+      del.id = i;
+      del.action = Marker::DELETE;
+      tour_marker_array.markers.emplace_back(del);
+    }
+    if (seg_num == 0 && last_seg_num > 0) {
+      Marker del;
+      del.header.frame_id = "odom";
+      del.header.stamp = ros::Time::now();
+      del.ns = ns + "_path";
+      del.id = 0;
+      del.action = Marker::DELETE;
+      tour_marker_array.markers.emplace_back(del);
+    }
+    last_seg_num = seg_num;
+
     global_tour_pub_.publish(tour_marker_array);
   }
 

@@ -100,11 +100,18 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   // [feature: vp-reached-clear] 도달-후-미해소 클러스터 강제 해소.
   nh.param("ViewpointManager/vp_reached_clear_enable",
            vpp_.vp_reached_clear_enable_, true);
+  // [도달 허용치 통일] 이 pos_tol 은 EARLY_FINISH probe(EFP) 도달 판정
+  // (exploration_manager/src/fast_exploration_fsm.cpp) 과 공유한다. 새 설계에서
+  // EFP 는 TSP 의 viewpoint 후보 하나이므로 같은 허용치를 쓰는 게 의미상 맞다
+  // (fsm/early_finish_reach_tol 은 그래서 폐지됐다). yaw 쪽은 여기서만 쓴다.
+  // 기본값이 예전(0.3 m / 20 deg)보다 느슨한 이유: 아래 도달 판정의 기준점을 topo
+  // 노드(graph_->odom_node_->center_) 에서 raw odom 으로 옮겨 판정 자체가 그만큼
+  // 엄격해졌기 때문이다. 값 완화와 기준점 정렬은 세트다.
   nh.param("ViewpointManager/vp_reached_pos_tol", vpp_.vp_reached_pos_tol_,
-           0.3f);
-  float vp_reached_yaw_deg = 20.0f;
+           0.6f);
+  float vp_reached_yaw_deg = 60.0f;
   nh.param("ViewpointManager/vp_reached_yaw_tol_deg", vp_reached_yaw_deg,
-           20.0f);
+           60.0f);
   vpp_.vp_reached_yaw_tol_ = vp_reached_yaw_deg * static_cast<float>(M_PI) / 180.0f;
   nh.param("ViewpointManager/vp_reached_clear_radius",
            vpp_.vp_reached_clear_radius_, 0.0f);
@@ -1554,8 +1561,21 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
     // 실제 자세와 그 정도로 일치할 일이 없다. 이제 실도달 허용치를 쓰되, 지나가다
     // 우연히 겹친 클러스터를 지우지 않도록 hold_time 만큼 연속 유지를 요구한다.
     if (vpp_.vp_reached_clear_enable_) {
+      // [도달 허용치 통일] 기준점은 topo 노드가 아니라 **raw odom** 이다.
+      // ld_->lidar_pose_ 는 FSM 의 fd_->odom_pos_ 와 완전히 같은 값이고
+      // (fsm_utils.cpp: fd_->odom_pos_ = ld->lidar_pose_), 클라우드 프레임마다
+      // 20Hz 로 갱신된다. graph_->odom_node_->center_ 는 같은 값을 받아쓰지만
+      // 그 대입이 CloudOdomCallback / updateOdomNode 두 경로에 걸쳐 있어
+      // (updateOdomNode 는 이웃 연결이 하나도 검증되지 않으면 갱신 없이 반환한다)
+      // 갱신 시점이 보장되지 않는다. EFP 도달 판정도 raw odom 을 쓰므로, 같은
+      // vp_reached_pos_tol 을 두 곳에서 쓰려면 기준점부터 같아야 한다.
       const float dpos =
-          (cluster->best_vp_ - graph_->odom_node_->center_).norm();
+          (cluster->best_vp_ - lidar_map_interface_->ld_->lidar_pose_).norm();
+      // yaw 는 raw 값을 얻을 경로가 이것뿐이다. odom_node_->yaw_ 는 양자화된 값이
+      // 아니라 tf::getYaw(odometry orientation) 원본 그대로다 (updateOdomNode 가
+      // fd_->odom_yaw_ 를 그대로 대입한다). ld_->lidar_q_ 는 라이다 장착
+      // 회전(lidar_pitch 25deg 등)이 곱해져 있어 body yaw 가 아니므로 쓸 수 없다.
+      // 다만 갱신은 계획 주기(5Hz)라 위치보다 최대 한 주기 늦을 수 있다.
       float dyaw = cluster->best_vp_yaw_ - graph_->odom_node_->yaw_;
       // 원래 코드에 없던 wrap. +179deg 와 -179deg 는 2deg 차이지 358deg 가 아니다.
       while (dyaw > M_PI) dyaw -= 2.0 * M_PI;

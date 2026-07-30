@@ -283,6 +283,16 @@ void FrontierManager::viz_pocc() {
   frt_pub.publish(frt_msg);
 }
 
+// [EARLY_FINISH] FSM -> viszer 경계. 값만 보관하고 그리기는 vizBestViewpoint 가
+// 한다 (그 함수가 viewpoint_candidates 토픽을 DELETEALL 로 초기화하므로).
+void FrontierManager::setEarlyFinishMarker(bool active,
+                                           const Eigen::Vector3f &pos,
+                                           float yaw) {
+  efp_marker_active_ = active;
+  efp_marker_pos_ = pos;
+  efp_marker_yaw_ = yaw;
+}
+
 // [feature: vp-viz] 샘플링된 viewpoint 후보 전체를 탈락 사유별 색으로,
 // 유효(가시) 후보는 각자의 최적 yaw 화살표까지 발행한다.
 //
@@ -290,14 +300,59 @@ void FrontierManager::viz_pocc() {
 //   ns=vp/<STATUS>  : 상태별 SPHERE_LIST (상태당 마커 1개 -> 후보가 수천 개여도 저렴)
 //   ns=vp_yaw       : 유효 후보별 ARROW (최적 yaw). viz_max_yaw_arrows_ 로 상한
 //   ns=vp_best      : 클러스터별 best viewpoint 의 굵은 화살표
+//   ns=vp/EFP       : EARLY_FINISH 목표점(EFP) 의 마젠타 화살표. vp_best 와 같은
+//                     모양/크기이고 viz_candidates_ 가 꺼져 있어도 발행된다
 //
 // 클러스터 박스(sf_cluster_marker)가 "이 클러스터가 왜 죽었나"를 보여준다면,
 // 이쪽은 "후보 하나하나가 어느 단계에서 걸러졌나"를 보여준다.
 void FrontierManager::vizBestViewpoint() {
-  if (!vpp_.viz_candidates_)
-    return;
   static ros::Publisher vp_pub =
       nh_.advertise<visualization_msgs::MarkerArray>("viewpoint_candidates", 5);
+
+  // [EARLY_FINISH] EFP(early-finish point) 화살표. best-viewpoint 화살표(:vp_best)
+  // 와 같은 모양/크기(ARROW, scale 0.10/0.22/0.25, 길이 1.2m)에 색만 마젠타로
+  // 바꾼다. 조기 리턴 경로/통상 경로 양쪽에서 그대로 재사용한다.
+  auto makeEfpMarker = [&]() -> visualization_msgs::Marker {
+    visualization_msgs::Marker m;
+    SetMarker(VizColor::MAGNA, "vp/EFP", 1.0, 1.0, m, 1.0);
+    m.id = 0;
+    m.type = visualization_msgs::Marker::ARROW;
+    m.scale.x = 0.10;
+    m.scale.y = 0.22;
+    m.scale.z = 0.25;
+    // 공용 VizColor 팔레트는 두지 않고 RGB 를 직접 지정한다 (아래 상태별 색과
+    // 같은 이유 — MAGNA 팔레트 값이 다른 팔레트 색과 헷갈릴 수 있어 확실한
+    // 마젠타로 덮어쓴다).
+    m.color.r = 1.0f;
+    m.color.g = 0.0f;
+    m.color.b = 1.0f;
+    m.color.a = 1.0f;
+    geometry_msgs::Point p;
+    p.x = efp_marker_pos_.x();
+    p.y = efp_marker_pos_.y();
+    p.z = efp_marker_pos_.z();
+    m.points.push_back(p);
+    geometry_msgs::Point tip = p;
+    tip.x += 1.2 * cos(efp_marker_yaw_);
+    tip.y += 1.2 * sin(efp_marker_yaw_);
+    m.points.push_back(tip);
+    return m;
+  };
+
+  if (!vpp_.viz_candidates_) {
+    // viz_candidates_ 는 후보 디버그 그림 전용 스위치다. EFP 는 "탐사가 곧
+    // 끝난다"는 별개의 신호라 이 플래그와 무관하게 항상 보여야 한다. EFP 도
+    // 없으면 원래 동작(무발행) 그대로 리턴한다.
+    if (!efp_marker_active_)
+      return;
+    visualization_msgs::MarkerArray efp_only;
+    visualization_msgs::Marker del;
+    del.action = visualization_msgs::Marker::DELETEALL;
+    efp_only.markers.push_back(del);
+    efp_only.markers.push_back(makeEfpMarker());
+    vp_pub.publish(efp_only);
+    return;
+  }
 
   // 상태별 색. 공용 VizColor 팔레트를 쓰지 않고 RGB 를 직접 지정한다 —
   // 그쪽 ORANGE(1,0.45,0.1)/YELLOW(0.9,0.9,0.1) 와 PURPLE/MAGNA 는 서로 너무
@@ -440,6 +495,13 @@ void FrontierManager::vizBestViewpoint() {
                         "[vp-viz] %s subsampled 1/%zu (%zu candidates; raise "
                         "ViewpointManager/viz_max_points_per_status)",
                         kStatusNs[s], stride[s], status_total[s]);
+
+  // [EARLY_FINISH] EFP 마커도 같은 arr 에 담아 발행한다 — 별도 퍼블리셔로 쏘면
+  // 이 함수가 매 주기 앞에서 하는 DELETEALL 에 곧바로 지워진다. active 가
+  // false 가 되면(=EFP 소멸) 다음 주기부터 이 push_back 이 실행되지 않고,
+  // 위 DELETEALL 이 이전 주기의 EFP 마커까지 지우므로 유령 마커 없이 사라진다.
+  if (efp_marker_active_)
+    arr.markers.push_back(makeEfpMarker());
 
   vp_pub.publish(arr);
 }

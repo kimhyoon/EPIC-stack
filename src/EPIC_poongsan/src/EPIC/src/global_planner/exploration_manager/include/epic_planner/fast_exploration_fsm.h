@@ -28,6 +28,7 @@
 #include <std_msgs/String.h>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/Float32.h>
@@ -211,30 +212,55 @@ private:
   Eigen::Vector3f last_traveled_pos_ = Eigen::Vector3f::Zero();     // 직전 적분 기준점
   bool   traveled_valid_ = false;                                   // 기준점이 유효한가
 
-  /* EARLY_FINISH: 조기 종료로 판단되면 가장 먼 도달 가능 topology node 까지의
-     기존 graph path 를 global tour 로 설치하고 탐사를 한 번 더 시도한다. */
+  /* EARLY_FINISH: 조기 종료로 판단되면 "가장 먼 도달 가능 topology node" 를
+     EFP(early-finish point)로 잡고, **도달할 때까지 죽지 않는 목표**로 관리한다.
+     EARLY_FINISH 상태 진입은 예전처럼 1회뿐이고, 바뀌는 건 EFP 가 생긴 "이후"의
+     수명 관리다. EFP 는 매 전역계획 주기마다 TSP 후보 목록에 한 개 더 얹힌다
+     (fast_exploration_manager.cpp planGlobalPath). 그 결과 아래 셋이 FSM 상태
+     분기 없이 자연히 창발한다:
+       1) 도달  : reach_tol 안에 들어오면 후보에서 빠지고 원래 흐름으로 복귀
+                  (남은 vp 소진 -> NO_FRONTIER -> FINISH -> RTH)
+       2) 새 vp : viewpoints = {실제 vp들} U {EFP} 라서 LKH 가 순수 거리로 순서만
+                  정한다. EFP 를 버리는 분기가 없다
+       3) 끊김  : 매 주기 odom_node 와의 연결을 확인하고, 끊겼으면 그 자리에서
+                  "도달 가능 노드 중 옛 EFP 좌표에 최근접" 노드로 재바인딩
+     "EFP 에 도달해야만 RTH" 는 별도 게이트 코드가 아니라, EFP 가 살아있는 한
+     viewpoints 가 비지 않아 NO_FRONTIER 가 안 난다는 사실에서 나온다. */
   bool   early_finish_enable_ = true;
   double early_finish_dist_thresh_ = 3.0;      // [m] 누적 이동거리가 이 미만이면 조기종료로 본다
   int    early_finish_max_retry_ = 1;          // 재시도 횟수 상한 (무한루프 방지 래치)
-  double early_finish_reach_tol_ = 0.5;        // [m] rescue target 도착 판정
+  // [m] EFP 도착 판정 (순수 3D 유클리드, yaw 조건 없음).
+  // 파라미터는 ViewpointManager/vp_reached_pos_tol — frontier viewpoint 도달
+  // 판정과 같은 값을 공유한다 (EFP 도 결국 TSP 의 viewpoint 후보 하나다).
+  double early_finish_reach_tol_ = 0.6;
   int    early_finish_count_ = 0;              // 자동 재시도 횟수
-  bool   early_finish_active_ = false;         // rescue graph path 실행 중
+  bool   early_finish_active_ = false;         // EFP outstanding (도달 전까지 true)
   bool   early_finish_force_requested_ = false;
   bool   early_finish_forced_attempt_ = false;
-  double early_finish_graph_distance_ = 0.0;
+  double early_finish_graph_distance_ = 0.0;   // odom -> EFP 그래프 거리[m] (매 주기 갱신)
+  TopoNode::Ptr early_finish_node_;            // 현재 EFP 에 바인딩된 실제 topo node
+  // EFP 좌표. 노드 포인터가 그래프에서 사라져도 이 좌표는 남아야 한다 —
+  // 재바인딩이 "옛 EFP 좌표에 최근접" 기준이라 이게 유일한 기준점이다.
   Eigen::Vector3f early_finish_target_pos_ = Eigen::Vector3f::Zero();
-  vector<TopoNode::Ptr> early_finish_topo_path_;
-  vector<Eigen::Vector3f> early_finish_global_tour_;
+  float  early_finish_yaw_ = 0.0f;             // EFP 로 향할 때 바라볼 방향 (바인딩 시점 진행방향)
+  int    early_finish_rebind_count_ = 0;       // 재바인딩 횟수 (진단용)
   string early_finish_status_ = "IDLE";
 
   /* helper functions */
-  // odom_node_ 에서 Dijkstra 를 한 번 흘려 가장 먼 도달 가능 node 와 parent path 를
-  // 함께 반환한다. 이 path 를 그대로 사용하므로 synthetic viewpoint 재삽입이 없다.
-  bool selectFarthestReachablePath(vector<TopoNode::Ptr> &path_out,
-                                   double &dist_out);
-  bool installEarlyFinishPath(const vector<TopoNode::Ptr> &path,
-                              double graph_distance);
-  void restoreEarlyFinishPath();
+  // 탐사 박스(lp_->global_box_*) 안인가. box_num_<=0 이면 제한 없음(true).
+  bool insideExplorationBox(const Eigen::Vector3f &p) const;
+  // odom_node_ 에서 Dijkstra 를 한 번 흘려 "도달 가능한 노드 -> 그래프 거리[m]"
+  // 를 통째로 반환한다. EFP 선정(가장 먼 노드)과 매 주기 연결성 확인/재바인딩이
+  // 모두 이 한 함수를 공유한다.
+  bool computeReachableNodes(std::unordered_map<TopoNode::Ptr, double> &dist_out);
+  bool selectFarthestReachableNode(TopoNode::Ptr &node_out, double &dist_out);
+  bool installEarlyFinishProbe(const TopoNode::Ptr &node, double graph_distance);
+  // 매 전역계획 직전: 도달 판정 -> 연결성 확인/재바인딩 -> planner 로 값 push.
+  void updateEarlyFinishProbe();
+  // 도달 판정만 (FSM 틱마다 상시 감시). 도달하면 EFP 를 소멸시킨다.
+  void checkEarlyFinishReached();
+  // 현재 EFP 를 ed_(planGlobalPath 가 읽는다) 와 rviz 마커로 밀어넣는다.
+  void pushEarlyFinishProbe();
   void clearEarlyFinishPath(const string &status);
   void publishEarlyFinishStatus(const string &status,
                                 const string &detail = "");

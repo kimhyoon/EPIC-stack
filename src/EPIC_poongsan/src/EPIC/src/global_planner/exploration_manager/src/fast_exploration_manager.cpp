@@ -27,6 +27,33 @@ using namespace std;
 using namespace Eigen;
 
 namespace fast_planner {
+
+namespace {
+// global tour 색 분리.
+//   ns "global"     : tour 전체. BLUE=이번 주기에 실제로 성공한 탐사 tour /
+//                     MAGNA=이번 주기에 갱신되지 않은 직전 tour / RED=빈 tour
+//   ns "global_efp" : EFP 로 **들어가는 한 구간만** 자주색
+//                     ({tour[idx-1], tour[idx]}, idx = tour 안의 EFP 위치)
+// 반드시 서로 다른 ns 여야 한다. 같은 ns 에 두 색을 섞으면 0.2s 주기로 서로를
+// 덮어써서 rviz 에서 깜빡이고 심지어 서로 다른 경로가 보인다 (실측: 18초 창에서
+// MAGNA 13회 / BLUE 6회, 마지막 점이 각각 달랐다).
+// efp_idx < 1 이면 EFP leg 를 지운다 (유령 마커 방지).
+void vizTourWithEfpLeg(const GraphVisualizer::Ptr &viz,
+                       const vector<Eigen::Vector3f> &tour, VizColor main_color,
+                       int efp_idx) {
+  if (!viz)
+    return;
+  viz->vizTour(tour, main_color, "global");
+  if (efp_idx >= 1 && efp_idx < (int)tour.size()) {
+    const vector<Eigen::Vector3f> leg{tour[efp_idx - 1], tour[efp_idx]};
+    // 같은 자리에 겹쳐 그리므로 z-fighting 을 피하려 EFP leg 만 굵게 그린다.
+    viz->vizTour(leg, VizColor::MAGNA, "global_efp", 0.18f);
+  } else {
+    viz->vizTour({}, VizColor::MAGNA, "global_efp");
+  }
+}
+} // namespace
+
 // SECTION interfaces for setup and query
 
 FastExplorationManager::FastExplorationManager() {}
@@ -212,6 +239,9 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
       planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
 
   // --- debug diagnostics: cluster / viewpoint counts ---
+  // 여기 카운트는 "진짜 frontier 뷰포인트" 만 센다. 아래에서 얹는 EFP 는 frontier
+  // 가 아니므로 제외해야 FSM 의 warmup 래치(diag_num_reachable_vp_>0)가 EFP 때문에
+  // 잘못 풀리지 않는다.
   ed_->diag_num_clusters_ = (int)frontier_manager_ptr_->cluster_list_.size();
   ed_->diag_num_clusters_reachable_ = 0;
   for (auto &c : frontier_manager_ptr_->cluster_list_)
@@ -219,6 +249,22 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
       ed_->diag_num_clusters_reachable_++;
   ed_->diag_num_viewpoints_ = (int)viewpoints.size();
   ed_->diag_num_reachable_vp_ = 0;
+
+  // ---- EARLY_FINISH probe(EFP) 주입 -------------------------------------
+  // EFP 가 outstanding 인 동안 TSP 후보를 하나 더 얹는다. 이 한 줄이 요구사항
+  // 셋을 전부 만든다:
+  //   - 새 vp 가 생겨도 EFP 는 후보로 남고 LKH 가 순수 거리로 순회 순서만 정한다
+  //   - EFP 가 살아있는 한 viewpoints 가 비지 않아 NO_FRONTIER 가 안 나고,
+  //     따라서 FINISH -> RTH 가 자동으로 봉쇄된다 (별도 게이트 코드가 없다)
+  //   - EFP 가 도달돼 사라지면 목록이 그냥 원래대로 돌아온다
+  // EFP 는 **이미 그래프 안에 있는 실제 노드**이므로 insertNodes/removeNodes 대상
+  // 목록(vp_inserted)에서는 반드시 빼야 한다. removeNodes 는 노드를 이웃과 region
+  // 에서 통째로 뜯어내므로, 넣었다간 매 주기 실제 토폴로지가 파괴된다.
+  vector<TopoNode::Ptr> vp_inserted = viewpoints;
+  TopoNode::Ptr efp = (ed_->efp_active_ && ed_->efp_node_) ? ed_->efp_node_ : nullptr;
+  ed_->efp_tour_index_ = -1;
+  if (efp)
+    viewpoints.push_back(efp);  // EFP 는 항상 viewpoints 의 마지막 원소다
 
   if (viewpoints.empty()) {
     ed_->diag_result_ = "NO_VIEWPOINTS";
@@ -229,20 +275,19 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
     // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
     // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다.
-    // MAGNA = "이번 주기에 갱신되지 않은 tour" (EARLY_FINISH 가 설치한 rescue
-    // 경로이거나, 전역 계획 실패로 남은 직전 tour). 어느 쪽인지는 같은 시점의
-    // diag_result_ 와 EARLY_FINISH 이벤트 로그로 구분한다.
-    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour
-    if (ed_->global_tour_.size() >= 2)
-      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
-                                                   VizColor::MAGNA, "global");
-    else
-      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // MAGNA = "이번 주기에 갱신되지 않은 tour". EFP leg 는 이번 주기 tour 가
+    // 없으므로 지운다 (efp_idx=-1).
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour / EFP leg=자주색
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
+                                                    : VizColor::RED,
+                      -1);
     return NO_FRONTIER;
   }
 
   ros::Time t1 = ros::Time::now();
-  planner_manager_->topo_graph_->insertNodes(viewpoints, false);
+  // EFP 는 이미 그래프에 있는 실제 노드라 여기서 다시 넣지 않는다 (vp_inserted).
+  planner_manager_->topo_graph_->insertNodes(vp_inserted, false);
   updateGoalNode();
   ros::Time t2 = ros::Time::now();
   // cout << "insert viewpoint to graph time: " << (t2 - t1).toSec() * 1000
@@ -323,8 +368,25 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     cout << "cost mat point cloud: " << cost_mat_without_topo << "ms" << endl;
   }
 
+  // EFP 는 "그래프상 도달 가능" 이 방금 Dijkstra 로 확인된 노드다. 그런데
+  // getPathCost 내부 topoSearch 는 topo_cost_search_timeout(기본 10ms) 예산이라
+  // 먼 노드일수록 거짓 NO_PATH(=2e3) 를 돌려준다 — EFP 는 하필 "가장 먼 도달 가능
+  // 노드" 라 이 함정에 정면으로 걸린다. 그 경우에만 Dijkstra 가 준 그래프 거리[m]
+  // 를 같은 단위(시간)로 환산해 대입한다. 안 그러면 EFP 가 매 주기 도달 불가로
+  // 걸러져 NO_FRONTIER -> FINISH -> RTH 로 새고, "EFP 에 도달해야 RTH" 라는 전제가
+  // 깨진다. (EFP 가 없을 때는 아무 일도 하지 않으므로 정상 경로 동작은 불변)
+  if (efp && ed_->efp_graph_dist_ > 0.0 && !viewpoints.empty()) {
+    const int ei = (int)viewpoints.size() - 1;  // EFP 는 항상 마지막
+    const double fallback = ed_->efp_graph_dist_ / (ep_->v_max_ / 2.0);
+    if (distance_odom2vp[ei] > 2e3)
+      distance_odom2vp[ei] = fallback;
+    if (distance_lastgoal2vp[ei] > 2e3)
+      distance_lastgoal2vp[ei] = fallback;
+  }
+
   vector<TopoNode::Ptr> viewpoint_reachable;
   vector<double> viewpoint_reachable_distance, viewpoint_reachable_distance2;
+  bool efp_reachable = false;
   for (int i = 0; i < distance_lastgoal2vp.size(); ++i) {
     if (distance_odom2vp[i] > 2e3)
       continue;
@@ -336,9 +398,14 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     }
     viewpoint_reachable_distance2.emplace_back(distance_odom2vp[i]);
     viewpoint_reachable.emplace_back(viewpoints[i]);
+    if (efp && viewpoints[i] == efp)
+      efp_reachable = true;
   }
 
-  ed_->diag_num_reachable_vp_ = (int)viewpoint_reachable.size();
+  // EFP 는 frontier 뷰포인트가 아니므로 진단 카운트에서 뺀다 (FSM 의 warmup
+  // 래치가 "실제로 경로가 나온 frontier 뷰포인트" 기준을 유지하도록).
+  ed_->diag_num_reachable_vp_ =
+      (int)viewpoint_reachable.size() - (efp_reachable ? 1 : 0);
 
   if (viewpoint_reachable.empty()) {
     ed_->diag_result_ = "NO_REACHABLE_VP";
@@ -346,19 +413,16 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
         " viewpoints exist but NONE reachable via topo graph (clusters=" +
         std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
         std::to_string(ed_->diag_num_clusters_reachable_) + ")";
-    planner_manager_->topo_graph_->removeNodes(viewpoints);
+    planner_manager_->topo_graph_->removeNodes(vp_inserted);
     // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
     // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
-    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다.
-    // MAGNA = "이번 주기에 갱신되지 않은 tour" (EARLY_FINISH 가 설치한 rescue
-    // 경로이거나, 전역 계획 실패로 남은 직전 tour). 어느 쪽인지는 같은 시점의
-    // diag_result_ 와 EARLY_FINISH 이벤트 로그로 구분한다.
-    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour
-    if (ed_->global_tour_.size() >= 2)
-      planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
-                                                   VizColor::MAGNA, "global");
-    else
-      planner_manager_->graph_visualizer_->vizTour({}, VizColor::RED, "global");
+    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다. EFP leg 는 이번 주기
+    // tour 가 없으므로 지운다 (efp_idx=-1).
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour / EFP leg=자주색
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
+                                                    : VizColor::RED,
+                      -1);
     return NO_FRONTIER;
   }
 
@@ -371,8 +435,13 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
 
     ed_->global_tour_.emplace_back(viewpoint_reachable.front()->center_);
 
-    planner_manager_->local_data_.end_yaw_ = viewpoint_reachable.front()->yaw_;
-    planner_manager_->topo_graph_->removeNodes(viewpoints);
+    // 유일한 후보가 EFP 인 경우: topo skeleton node 의 yaw_ 는 아무도 채우지
+    // 않아 항상 0(=+x) 이므로, FSM 이 계산한 접근 방향 yaw 를 쓴다.
+    const bool only_efp = (efp && viewpoint_reachable.front() == efp);
+    planner_manager_->local_data_.end_yaw_ =
+        only_efp ? ed_->efp_yaw_ : viewpoint_reachable.front()->yaw_;
+    ed_->efp_tour_index_ = only_efp ? 1 : -1;
+    planner_manager_->topo_graph_->removeNodes(vp_inserted);
     // 다중(TSP) 분기와 동일하게 마무리한다. 이 두 줄이 빠져 있어서 뷰포인트가
     // 정확히 1개인 주기마다 어긋났다:
     //   - vizTour 를 안 불러 /global_tour 에는 직전 주기 경로가 그대로 남고
@@ -382,8 +451,8 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     // 실측 로그에서 viewpoints=1(path_reachable 1) 이 반복되는 동안 next_goal 이
     // (1.7,4.9) -> (1.5,6.5) 로 뒤늦게 따라오는 것으로 나타났다.
     updateGoalNode();
-    planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_,
-                                                 VizColor::BLUE, "global");
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      VizColor::BLUE, ed_->efp_tour_index_);
     return SUCCEED;
   }
 
@@ -446,6 +515,9 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
       ed_->global_tour_.push_back(
           planner_manager_->topo_graph_->odom_node_->center_);
     } else {
+      // EFP 가 tour 어디에 있든 그 인덱스를 기록해 둔다 (색 분리용).
+      if (efp && viewpoint_reachable[i - 1] == efp)
+        ed_->efp_tour_index_ = (int)ed_->global_tour_.size();
       ed_->global_tour_.emplace_back(viewpoint_reachable[i - 1]->center_);
     }
   }
@@ -453,13 +525,17 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     last_frame_value = viewpoint_reachable_distance[indices[1]];
 
   ros::Time end = ros::Time::now();
-  planner_manager_->topo_graph_->removeNodes(viewpoints);
+  planner_manager_->topo_graph_->removeNodes(vp_inserted);
 
-  // Visualize the tour
-  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::BLUE, "global");
+  // Visualize the tour (BLUE=tour 전체 / MAGNA=EFP 로 들어가는 한 구간)
+  vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                    VizColor::BLUE, ed_->efp_tour_index_);
 
+  // 첫 목표가 EFP 면 skeleton node 의 빈 yaw_(=0) 대신 접근 방향 yaw 를 쓴다.
   planner_manager_->local_data_.end_yaw_ =
-      viewpoint_reachable[indices[1] - 1]->yaw_;
+      (efp && viewpoint_reachable[indices[1] - 1] == efp)
+          ? ed_->efp_yaw_
+          : viewpoint_reachable[indices[1] - 1]->yaw_;
   updateGoalNode();
   ed_->diag_result_ = "OK";
   ed_->diag_reason_ = "OK";
@@ -713,6 +789,10 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
   // RTH(원점복귀/좌표이동) 경로. 탐사 경로(BLUE)와 색으로 구분한다 — 예전엔 둘 다
   // BLUE 라 ns(global_path / goal_path)로만 갈렸고 화면에서는 분간이 안 됐다.
   planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::ORANGE, "goal");
+  // vizTour 의 삭제는 ns 단위이므로(그래야 "global" 과 "global_efp" 를 동시에 그릴
+  // 수 있다) RTH 중에 남는 직전 탐사 tour 를 명시적으로 지워준다.
+  planner_manager_->graph_visualizer_->vizTour({}, VizColor::BLUE, "global");
+  planner_manager_->graph_visualizer_->vizTour({}, VizColor::MAGNA, "global_efp");
 
   ros::Time end = ros::Time::now();
   ROS_DEBUG("[Goal Planning] Total planning time: %.2f ms",

@@ -342,8 +342,16 @@ ViewpointManager/reachability_search_timeout: 0.01  # 도달성 A* 제한시간[
 # 근본 원인(gap/FOV-edge 로 관측이 거부되는 것)을 고치는 것이 아니라 증상 처리다.
 # enable=false 로 끄면 기존(발동 안 함) 동작으로 되돌아간다.
 ViewpointManager/vp_reached_clear_enable: true    # 강제 해소 사용
-ViewpointManager/vp_reached_pos_tol: 0.3         # best_vp 와의 거리 허용치[m]
-ViewpointManager/vp_reached_yaw_tol_deg: 20.0    # best_vp yaw 와의 차이 허용치[deg]
+# 예전 값(0.3 m / 20 deg)보다 느슨한 이유: 도달 판정의 기준점을 topo 노드
+# (graph_->odom_node_->center_) 에서 raw odom(ld_->lidar_pose_) 으로 옮겨 판정
+# 자체가 그만큼 엄격해졌기 때문이다. 값 완화와 기준점 정렬은 세트다.
+# 같은 pos_tol 을 EARLY_FINISH probe(EFP) 도달 판정(FSM)도 읽는다 — 새 설계에서
+# EFP 는 실제로 TSP 의 viewpoint 후보 하나이므로 같은 허용치를 쓰는 게 맞다.
+# 단 EFP 는 위치 조건만 본다. FSM 이 EFP 접근 종단 yaw 를 atan2(EFP-odom)=접근
+# 방향으로 잡는데 EFP 노드의 yaw_ 는 그와 무관하므로, yaw 조건까지 걸면 구조적으로
+# 만족될 수 없어 EFP 가 은퇴하지 못하고 RTH 가 영구 봉쇄된다.
+ViewpointManager/vp_reached_pos_tol: 0.6         # 도달로 인정할 거리[m] (viewpoint 도달 + EFP 도달 공용)
+ViewpointManager/vp_reached_yaw_tol_deg: 60.0    # 도달로 인정할 yaw 차[deg] (viewpoint 도달 판정에만)
 
 # [도달 지점 주변 Frontier 일괄 해소][강한 옵션]
 # 위 강제 해소가 걸렸을 때, 목표 클러스터 하나만 지우는 대신 드론 반경 이 거리
@@ -587,11 +595,6 @@ fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 누적 이동거
 # 재시도 후에도 또 짧게 끝나는 상황이 반복되지 않도록 시도 횟수를 제한한다.
 # 상한에 도달하면 이후 종료는 무조건 기존 복귀 동작으로 처리한다.
 fsm/early_finish_max_retry: 1            # 최대 재시도 횟수[회]
-
-# [목표 도착 허용치]
-# 재시도 목표 지점에 이만큼 가까워지면 도착으로 처리하고 통상 종료 판정으로 돌아간다.
-# 값이 너무 작으면 실기체 위치오차 때문에 도착 판정이 나지 않아 그 자리에 머물 수 있다.
-fsm/early_finish_reach_tol: 0.5          # 도착으로 인정할 거리[m]
 
 # fsm/* : 탐사 상태·재계획·이륙·복귀 끝
 # ====================================================================

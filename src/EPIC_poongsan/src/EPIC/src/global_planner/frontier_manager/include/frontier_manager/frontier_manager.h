@@ -460,6 +460,19 @@ public:
                   const std::vector<Eigen::Vector3f> &normals);
   void visfrtcluster();
   void vizBestViewpoint();
+
+  // [EARLY_FINISH] EFP(early-finish point) 마커용 경계 인터페이스.
+  // EFP 는 FSM 쪽 상태라 FrontierManager 는 그 존재를 모른다. FSM 이 매 계획
+  // 주기마다 이 setter 로 최신 값을 밀어넣고, 그리는 쪽(vizBestViewpoint)은
+  // 아래 세 멤버만 읽는다. 마커를 vizBestViewpoint 안에서 그려야 하는 이유는
+  // 그 함수가 viewpoint_candidates 토픽에 매 주기 DELETEALL 을 먼저 쏘기
+  // 때문이다 — 밖에서 따로 발행하면 0.2s 마다 지워진다.
+  // EFP 가 소멸하면 active=false 로 꺼야 유령 마커가 남지 않는다.
+  void setEarlyFinishMarker(bool active, const Eigen::Vector3f &pos, float yaw);
+  bool efp_marker_active_ = false;
+  Eigen::Vector3f efp_marker_pos_ = Eigen::Vector3f::Zero();
+  float efp_marker_yaw_ = 0.0f;
+
   void updateFrontierClusters(vector<ClusterInfo::Ptr> &cluster_updated,
                               vector<int> &cluster_removed);
   void generateTSPViewpoints(Eigen::Vector3f &center_pose,

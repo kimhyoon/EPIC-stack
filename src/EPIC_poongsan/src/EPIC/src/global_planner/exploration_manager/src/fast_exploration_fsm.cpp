@@ -41,8 +41,35 @@ bool FastExplorationFSM::explorationReallyFinished() {
   return (ros::Time::now() - explore_start_time_).toSec() > explore_warmup_timeout_;
 }
 
-// odom_node_ 를 시작점으로 topology graph 에 Dijkstra 를 한 번 흘려, 그래프
-// 경로거리가 가장 먼 도달 가능 node 와 그 parent path 를 함께 반환한다.
+// 동점 판정 여유. 그래프 거리[m]와 제곱거리[m^2] 양쪽에 쓰는데, 1e-9 는 어느
+// 쪽으로 봐도 기하학적으로 의미 없는 차이(<0.03mm)라 "진짜 동점" 만 잡는다.
+static constexpr double kDistTieEps = 1e-9;
+
+// 좌표 사전순(x -> y -> z). 동점일 때 결정적으로 하나를 고르기 위한 기준이다.
+// 노드 포인터(주소) 비교는 실행마다 결과가 달라지므로 절대 쓰면 안 된다.
+static bool lexLess(const Eigen::Vector3f &a, const Eigen::Vector3f &b) {
+  if (a.x() != b.x())
+    return a.x() < b.x();
+  if (a.y() != b.y())
+    return a.y() < b.y();
+  return a.z() < b.z();
+}
+
+bool FastExplorationFSM::insideExplorationBox(const Eigen::Vector3f &p) const {
+  const auto &lp = planner_manager_->lidar_map_interface_->lp_;
+  if (lp->box_num_ <= 0)
+    return true;
+  for (int i = 0; i < lp->box_num_; i++) {
+    const Eigen::Vector3f &lo = lp->global_box_min_boundary_vec_[i];
+    const Eigen::Vector3f &hi = lp->global_box_max_boundary_vec_[i];
+    if ((p.array() >= lo.array()).all() && (p.array() <= hi.array()).all())
+      return true;
+  }
+  return false;
+}
+
+// odom_node_ 를 시작점으로 topology graph 에 Dijkstra 를 한 번 흘려, 도달 가능한
+// 노드 전부와 그 그래프 거리[m]를 돌려준다.
 //
 // 노드마다 getPathCost() 를 부르지 않는 이유:
 //   1) 도달 불가 시 2e3 + 직선거리를 돌려주므로(fast_exploration_manager.cpp), 비용
@@ -51,51 +78,24 @@ bool FastExplorationFSM::explorationReallyFinished() {
 //      우리는 하필 가장 먼 노드를 찾는 중이라 이 함정에 정면으로 걸린다.
 // Dijkstra 는 둘 다 없다. 못 닿는 성분은 아예 방문되지 않고, 타임아웃 개념이 없다.
 // 엣지 가중치(weight_)는 calculatePathCost = 순수 유클리드 경로 길이[m] 이므로
-// dist_out 은 미터 단위로 그대로 해석된다.
-bool FastExplorationFSM::selectFarthestReachablePath(
-    vector<TopoNode::Ptr> &path_out, double &dist_out) {
-  path_out.clear();
-  dist_out = 0.0;
+// 거리값은 미터 단위로 그대로 해석된다.
+//
+// next_goal_node_(가상 goal adapter)는 그래프에서 떼어내지 않는다. 예전 구현은
+// Dijkstra 전에 그 이웃 연결을 전부 끊었는데, planGlobalPath 가 NO_FRONTIER 로
+// 조기 리턴하면 updateGoalNode() 까지 못 가서 goal 이 끊긴 채로 남는다. 여기서는
+// "후보에서만 제외" 하면 충분하다 — 그 위치의 실제 topo node 는 별도 포인터라
+// 여전히 후보로 남고, 가상 goal 을 경유하는 경로는 updateGoalNode 가 A* 로 검증한
+// 실제 통과 가능 경로라 도달성 판정을 왜곡하지 않는다.
+bool FastExplorationFSM::computeReachableNodes(
+    std::unordered_map<TopoNode::Ptr, double> &dist) {
+  dist.clear();
   auto graph = planner_manager_->topo_graph_;
-  auto lidar_map = planner_manager_->lidar_map_interface_;
+  if (!graph)
+    return false;
   TopoNode::Ptr odom_node = graph->odom_node_;
   if (!odom_node)
     return false;
 
-  // next_goal_node_ is a reusable virtual adapter, not a topology node. Detach
-  // only that adapter before Dijkstra so the real topology node at the previous
-  // goal position remains a valid candidate.
-  TopoNode::Ptr virtual_goal = expl_manager_->ed_->next_goal_node_;
-  if (virtual_goal) {
-    for (const auto &nbr : virtual_goal->neighbors_) {
-      if (!nbr)
-        continue;
-      nbr->neighbors_.erase(virtual_goal);
-      nbr->paths_.erase(virtual_goal);
-      nbr->weight_.erase(virtual_goal);
-      nbr->unreachable_nbrs_.erase(virtual_goal);
-    }
-    virtual_goal->neighbors_.clear();
-    virtual_goal->paths_.clear();
-    virtual_goal->weight_.clear();
-    virtual_goal->unreachable_nbrs_.clear();
-  }
-
-  auto insideExplorationBox = [&](const Eigen::Vector3f &p) -> bool {
-    const auto &lp = lidar_map->lp_;
-    if (lp->box_num_ <= 0)
-      return true;
-    for (int i = 0; i < lp->box_num_; i++) {
-      const Eigen::Vector3f &lo = lp->global_box_min_boundary_vec_[i];
-      const Eigen::Vector3f &hi = lp->global_box_max_boundary_vec_[i];
-      if ((p.array() >= lo.array()).all() && (p.array() <= hi.array()).all())
-        return true;
-    }
-    return false;
-  };
-
-  std::unordered_map<TopoNode::Ptr, double> dist;
-  std::unordered_map<TopoNode::Ptr, TopoNode::Ptr> parent;
   std::priority_queue<std::pair<double, TopoNode::Ptr>,
                       std::vector<std::pair<double, TopoNode::Ptr>>,
                       std::greater<std::pair<double, TopoNode::Ptr>>>
@@ -103,23 +103,12 @@ bool FastExplorationFSM::selectFarthestReachablePath(
   dist[odom_node] = 0.0;
   pq.push({0.0, odom_node});
 
-  TopoNode::Ptr best_node = nullptr;
-  double best_dist = -1.0;
-  int visited = 0;
-
   while (!pq.empty()) {
     double d = pq.top().first;
     TopoNode::Ptr n = pq.top().second;
     pq.pop();
     if (d > dist[n] + 1e-6)
       continue;  // stale entry
-    visited++;
-
-    if (n != odom_node && insideExplorationBox(n->center_) && d > best_dist) {
-      best_dist = d;
-      best_node = n;
-    }
-
     for (auto &nbr : n->neighbors_) {
       if (!nbr)
         continue;
@@ -130,34 +119,51 @@ bool FastExplorationFSM::selectFarthestReachablePath(
       auto it = dist.find(nbr);
       if (it == dist.end() || nd < it->second) {
         dist[nbr] = nd;
-        parent[nbr] = n;
         pq.push({nd, nbr});
       }
     }
   }
+  return dist.size() > 1;
+}
 
-  ROS_INFO("[EARLY_FINISH] dijkstra visited %d nodes, best_dist=%.2fm",
-           visited, best_dist);
-  if (!best_node)
+// EFP 최초 선정: 도달 가능한 노드 중 exploration box 안이면서 그래프 거리 최대.
+bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
+                                                     double &dist_out) {
+  node_out = nullptr;
+  dist_out = 0.0;
+  std::unordered_map<TopoNode::Ptr, double> dist;
+  if (!computeReachableNodes(dist))
     return false;
 
-  for (TopoNode::Ptr node = best_node; node; ) {
-    path_out.push_back(node);
-    if (node == odom_node)
-      break;
-    auto it = parent.find(node);
-    if (it == parent.end()) {
-      path_out.clear();
-      return false;
+  TopoNode::Ptr odom_node = planner_manager_->topo_graph_->odom_node_;
+  TopoNode::Ptr virtual_goal = expl_manager_->ed_->next_goal_node_;
+  double best_dist = -1.0;
+  // unordered_map 순회 순서는 포인터 주소에 좌우돼 실행마다 다르다. 동점(부동소수
+  // 오차 범위 포함)은 좌표 사전순으로 깨야 같은 입력에 항상 같은 EFP 가 나온다.
+  for (const auto &kv : dist) {
+    const TopoNode::Ptr &n = kv.first;
+    if (!n || n == odom_node || n == virtual_goal)
+      continue;
+    if (!insideExplorationBox(n->center_))
+      continue;
+    bool better;
+    if (!node_out)
+      better = true;
+    else if (kv.second > best_dist + kDistTieEps)
+      better = true;
+    else if (kv.second < best_dist - kDistTieEps)
+      better = false;
+    else
+      better = lexLess(n->center_, node_out->center_);
+    if (better) {
+      best_dist = kv.second;
+      node_out = n;
     }
-    node = it->second;
   }
-  std::reverse(path_out.begin(), path_out.end());
-  if (path_out.size() < 2 || path_out.front() != odom_node) {
-    path_out.clear();
+  ROS_INFO("[EARLY_FINISH] dijkstra reached %zu nodes, best_dist=%.2fm",
+           dist.size(), best_dist);
+  if (!node_out)
     return false;
-  }
-
   dist_out = best_dist;
   return true;
 }
@@ -170,89 +176,202 @@ void FastExplorationFSM::publishEarlyFinishStatus(
   early_finish_state_pub_.publish(msg);
 }
 
-bool FastExplorationFSM::installEarlyFinishPath(
-    const vector<TopoNode::Ptr> &path, double graph_distance) {
-  if (path.size() < 2 || !path.front() || !path.back())
-    return false;
-
+// 현재 EFP 를 planGlobalPath(ed_) 와 rviz 마커로 밀어넣는다. EFP 가 없으면 끈다.
+void FastExplorationFSM::pushEarlyFinishProbe() {
   auto ed = expl_manager_->ed_;
-  TopoNode::Ptr target = path.back();
-  TopoNode::Ptr goal = ed->next_goal_node_;
-  if (!goal || target == goal)
+  auto frt = expl_manager_->frontier_manager_ptr_;
+  if (early_finish_active_ && early_finish_node_) {
+    ed->efp_active_ = true;
+    ed->efp_node_ = early_finish_node_;
+    ed->efp_pos_ = early_finish_target_pos_;
+    ed->efp_yaw_ = early_finish_yaw_;
+    ed->efp_graph_dist_ = early_finish_graph_distance_;
+    if (frt)
+      frt->setEarlyFinishMarker(true, early_finish_target_pos_,
+                                early_finish_yaw_);
+  } else {
+    ed->efp_active_ = false;
+    ed->efp_node_ = nullptr;
+    ed->efp_graph_dist_ = 0.0;
+    ed->efp_tour_index_ = -1;
+    if (frt)
+      frt->setEarlyFinishMarker(false, early_finish_target_pos_,
+                                early_finish_yaw_);
+  }
+}
+
+// EFP 설치(최초 1회) — 여기서 그래프를 수술하지 않는다. EFP 는 그냥 "TSP 후보
+// 목록의 원소 하나" 이고, goal 연결은 평소처럼 updateGoalNode() 가 처리한다.
+bool FastExplorationFSM::installEarlyFinishProbe(const TopoNode::Ptr &node,
+                                                 double graph_distance) {
+  if (!node || node == planner_manager_->topo_graph_->odom_node_ ||
+      node == expl_manager_->ed_->next_goal_node_)
     return false;
 
-  // next_goal_node_ 는 정상 global planner 가 재사용하는 가상 goal node 이다.
-  // 기존 연결을 제거한 뒤 선택된 실제 topology target 과 0 m connector 로 직접
-  // 연결한다. 새 viewpoint 삽입이나 A*/topoSearch 재검사는 수행하지 않는다.
-  for (const auto &nbr : goal->neighbors_) {
-    if (!nbr)
-      continue;
-    nbr->neighbors_.erase(goal);
-    nbr->paths_.erase(goal);
-    nbr->weight_.erase(goal);
-    nbr->unreachable_nbrs_.erase(goal);
-  }
-  goal->neighbors_.clear();
-  goal->paths_.clear();
-  goal->weight_.clear();
-  goal->unreachable_nbrs_.clear();
-  goal->center_ = target->center_;
-  goal->yaw_ = target->yaw_;
-  goal->is_viewpoint_ = true;
-
-  vector<Eigen::Vector3f> connector = {target->center_, target->center_};
-  goal->neighbors_.insert(target);
-  goal->paths_[target] = connector;
-  goal->weight_[target] = 0.0f;
-  target->neighbors_.insert(goal);
-  target->paths_[goal] = connector;
-  target->weight_[goal] = 0.0f;
-
-  early_finish_topo_path_ = path;
-  early_finish_global_tour_.clear();
-  early_finish_global_tour_.reserve(path.size());
-  for (const auto &node : path)
-    early_finish_global_tour_.push_back(node->center_);
-  ed->global_tour_ = early_finish_global_tour_;
-  early_finish_target_pos_ = target->center_;
+  early_finish_node_ = node;
+  early_finish_target_pos_ = node->center_;
   early_finish_graph_distance_ = graph_distance;
+  early_finish_rebind_count_ = 0;
   early_finish_active_ = true;
 
-  Eigen::Vector3f dir = target->center_ - fd_->odom_pos_;
-  planner_manager_->local_data_.end_yaw_ =
-      (dir.head<2>().norm() > 1e-3) ? std::atan2(dir.y(), dir.x())
-                                    : fd_->odom_yaw_;
-  // rescue 경로는 정상 탐사 tour 가 아니므로 MAGNA 로 그린다.
-  // BLUE 로 그리면 같은 ns("global_path")를 planGlobalPath 쪽 발행과 0.2s 주기로
-  // 번갈아 덮어써서 rviz 에서 경로가 깜빡이고, 심지어 서로 다른 경로를 그린다
-  // (실측: 18초 창에서 MAGNA 13회 / BLUE 6회, 마지막 점이 각각 달랐다).
-  // 색 규약: BLUE=planGlobalPath 가 실제로 성공한 탐사 tour / ORANGE=RTH /
-  //          MAGNA=이번 주기에 정상 계획으로 갱신되지 않은 tour(rescue 포함).
-  planner_manager_->graph_visualizer_->vizTour(
-      ed->global_tour_, VizColor::MAGNA, "global");
+  // yaw 는 "EFP 로 가는 진행 방향". topo skeleton node 의 yaw_ 는 아무도 채우지
+  // 않아 항상 0(=+x) 이라 그대로 쓰면 엉뚱한 방향을 본다.
+  Eigen::Vector3f dir = early_finish_target_pos_ - fd_->odom_pos_;
+  early_finish_yaw_ = (dir.head<2>().norm() > 1e-3)
+                          ? std::atan2(dir.y(), dir.x())
+                          : fd_->odom_yaw_;
+  pushEarlyFinishProbe();
+
+  // 다음 planGlobalPath(<=0.2s) 가 EFP 를 포함한 제대로 된 tour 를 만들 때까지의
+  // 공백을 메운다. 이 사이에 로컬 계획이 먼저 돌면 global_tour_ 가 비어
+  // NO_FRONTIER -> FINISH 로 새기 때문이다. 특별한 수술이 아니라, 뷰포인트가
+  // 하나뿐일 때 planGlobalPath 가 하는 것과 똑같은 2-노드 tour + updateGoalNode.
+  auto ed = expl_manager_->ed_;
+  ed->global_tour_.clear();
+  ed->global_tour_.push_back(fd_->odom_pos_);
+  ed->global_tour_.push_back(early_finish_target_pos_);
+  ed->efp_tour_index_ = 1;
+  planner_manager_->local_data_.end_yaw_ = early_finish_yaw_;
+  expl_manager_->updateGoalNode();
+  if (planner_manager_->graph_visualizer_) {
+    planner_manager_->graph_visualizer_->vizTour(ed->global_tour_,
+                                                 VizColor::BLUE, "global");
+    planner_manager_->graph_visualizer_->vizTour(ed->global_tour_,
+                                                 VizColor::MAGNA, "global_efp");
+  }
 
   char detail[192];
-  snprintf(detail, sizeof(detail),
-           "target=(%.2f,%.2f,%.2f) graph_dist=%.2fm path_nodes=%zu",
-           target->center_.x(), target->center_.y(), target->center_.z(),
-           graph_distance, path.size());
-  publishEarlyFinishStatus("PATH_INSERTED", detail);
+  snprintf(detail, sizeof(detail), "efp=(%.2f,%.2f,%.2f) graph_dist=%.2fm",
+           early_finish_target_pos_.x(), early_finish_target_pos_.y(),
+           early_finish_target_pos_.z(), graph_distance);
+  publishEarlyFinishStatus("PROBE_INSTALLED", detail);
   return true;
 }
 
-void FastExplorationFSM::restoreEarlyFinishPath() {
-  if (!early_finish_active_ || early_finish_topo_path_.size() < 2)
+// 사건 1 — 도달. FSM 틱마다 상시 감시한다(상태 분기가 아니라 감시자).
+// 도달하면 EFP 가 후보에서 빠지고, 그 뒤는 원래 흐름 그대로다:
+// 남은 vp 가 있으면 계속 탐사, 없으면 곧바로 NO_FRONTIER -> FINISH -> RTH.
+void FastExplorationFSM::checkEarlyFinishReached() {
+  if (!early_finish_active_ || !fd_->have_odom_)
     return;
-  installEarlyFinishPath(early_finish_topo_path_, early_finish_graph_distance_);
-  publishEarlyFinishStatus("ACTIVE", "rescue path retained; no reachable viewpoint");
+  const double d = (early_finish_target_pos_ - fd_->odom_pos_).norm();
+  if (!std::isfinite(d) || d >= early_finish_reach_tol_)
+    return;
+
+  char detail[192];
+  snprintf(detail, sizeof(detail),
+           "efp=(%.2f, %.2f, %.2f) dist=%.2fm tol=%.2fm rebinds=%d",
+           early_finish_target_pos_.x(), early_finish_target_pos_.y(),
+           early_finish_target_pos_.z(), d, early_finish_reach_tol_,
+           early_finish_rebind_count_);
+  clearEarlyFinishPath("TARGET_REACHED");
+  elog_.log("EARLY_FINISH",
+            "probe reached -> normal exploration / RTH unblocked", detail, 0.0,
+            EventLogger::L_WARN, true);
+  ROS_WARN("\033[33m[EARLY_FINISH] probe reached (%.2fm < %.2fm)\033[0m", d,
+           early_finish_reach_tol_);
+}
+
+// 매 전역계획 직전에 한 번. 도달 판정 -> 연결성 확인/재바인딩 -> planner 로 push.
+// 사건 3(topo graph 끊김)은 별도 이벤트 감지 없이 여기서 매 주기 처리된다.
+void FastExplorationFSM::updateEarlyFinishProbe() {
+  if (!early_finish_active_) {
+    pushEarlyFinishProbe();  // ed_ 를 확실히 꺼둔다
+    return;
+  }
+  checkEarlyFinishReached();
+  if (!early_finish_active_)
+    return;
+
+  std::unordered_map<TopoNode::Ptr, double> dist;
+  if (!computeReachableNodes(dist)) {
+    // 그래프가 통째로 비었다(odom_node 이웃 없음). 재바인딩할 대상이 없으므로
+    // 좌표만 들고 기다린다 — 다음 주기에 그래프가 살아나면 자동 복구된다.
+    publishEarlyFinishStatus("ACTIVE", "no reachable topology node this cycle");
+    pushEarlyFinishProbe();
+    return;
+  }
+
+  auto it = early_finish_node_ ? dist.find(early_finish_node_) : dist.end();
+  if (it != dist.end()) {
+    early_finish_graph_distance_ = it->second;
+    early_finish_target_pos_ = early_finish_node_->center_;
+    pushEarlyFinishProbe();
+    return;
+  }
+
+  // --- 사건 3: EFP 가 odom_node 와 끊겼다 -> 그 자리에서 재바인딩 ---
+  // 기준은 "odom 에서 가장 먼" 이 아니라 **"도달 가능한 것들 중 옛 EFP 좌표에
+  // 최근접"** 이다. 옛 좌표는 노드가 죽어도 남아 있는 유일한 기준점이다.
+  const Eigen::Vector3f old_pos = early_finish_target_pos_;
+  TopoNode::Ptr odom_node = planner_manager_->topo_graph_->odom_node_;
+  TopoNode::Ptr virtual_goal = expl_manager_->ed_->next_goal_node_;
+  TopoNode::Ptr best = nullptr;
+  double best_d2 = std::numeric_limits<double>::max();
+  double best_graph_dist = 0.0;
+  for (const auto &kv : dist) {
+    const TopoNode::Ptr &n = kv.first;
+    if (!n || n == odom_node || n == virtual_goal)
+      continue;
+    const double d2 = (n->center_ - old_pos).squaredNorm();
+    // 동점 tie-break 는 좌표 사전순 — unordered_map 순회 순서(=포인터 주소)에
+    // 의존하면 같은 입력에도 실행마다 다른 EFP 가 나온다.
+    bool better;
+    if (!best)
+      better = true;
+    else if (d2 < best_d2 - kDistTieEps)
+      better = true;
+    else if (d2 > best_d2 + kDistTieEps)
+      better = false;
+    else
+      better = lexLess(n->center_, best->center_);
+    if (better) {
+      best_d2 = d2;
+      best = n;
+      best_graph_dist = kv.second;
+    }
+  }
+  if (!best) {
+    publishEarlyFinishStatus("ORPHANED", "no rebind candidate; keeping old EFP");
+    pushEarlyFinishProbe();
+    return;
+  }
+
+  early_finish_node_ = best;
+  early_finish_target_pos_ = best->center_;
+  early_finish_graph_distance_ = best_graph_dist;
+  early_finish_rebind_count_++;
+  Eigen::Vector3f dir = early_finish_target_pos_ - fd_->odom_pos_;
+  early_finish_yaw_ = (dir.head<2>().norm() > 1e-3)
+                          ? std::atan2(dir.y(), dir.x())
+                          : fd_->odom_yaw_;
+  pushEarlyFinishProbe();
+
+  char detail[224];
+  snprintf(detail, sizeof(detail),
+           "old=(%.2f, %.2f, %.2f) new=(%.2f, %.2f, %.2f) shift=%.2fm "
+           "graph_dist=%.2fm count=%d",
+           old_pos.x(), old_pos.y(), old_pos.z(), early_finish_target_pos_.x(),
+           early_finish_target_pos_.y(), early_finish_target_pos_.z(),
+           std::sqrt(best_d2), best_graph_dist, early_finish_rebind_count_);
+  publishEarlyFinishStatus("EFP_REBOUND", detail);
+  elog_.log("EARLY_FINISH", "EFP_REBOUND (topology link lost)", detail, 0.0,
+            EventLogger::L_WARN, true);
+  ROS_WARN("\033[33m[EARLY_FINISH] EFP rebound: %s\033[0m", detail);
 }
 
 void FastExplorationFSM::clearEarlyFinishPath(const string &status) {
   early_finish_active_ = false;
   early_finish_forced_attempt_ = false;
   early_finish_graph_distance_ = 0.0;
-  early_finish_topo_path_.clear();
-  early_finish_global_tour_.clear();
+  early_finish_node_ = nullptr;
+  early_finish_rebind_count_ = 0;
+  pushEarlyFinishProbe();  // ed_ off + EFP 화살표 off
+  // EFP leg 마커를 반드시 지운다 (유령 마커 방지). ns 가 다르므로 정상 tour("global")
+  // 는 건드리지 않는다.
+  if (planner_manager_ && planner_manager_->graph_visualizer_)
+    planner_manager_->graph_visualizer_->vizTour({}, VizColor::MAGNA,
+                                                 "global_efp");
   publishEarlyFinishStatus(status);
 }
 
@@ -316,6 +435,11 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       }
     }
   }
+
+  // EFP 도달 감시 (사건 1). 상태 분기가 아니라 상시 감시자다 — EXEC_TRAJ 중에
+  // 지나가며 닿는 경우까지 잡아야 하고, 도달 즉시 후보에서 빠져야 다음 전역계획이
+  // 자연스럽게 "남은 vp / 없으면 종료" 흐름으로 넘어간다.
+  checkEarlyFinishReached();
 
   if (early_finish_force_requested_) {
     early_finish_force_requested_ = false;
@@ -486,15 +610,15 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     publishEarlyFinishStatus("SELECTING",
                              forced ? "forced request" : "short exploration");
 
-    vector<TopoNode::Ptr> path;
+    TopoNode::Ptr probe;
     double graph_distance = 0.0;
     if (!forced)
       early_finish_count_++;
 
-    if (!selectFarthestReachablePath(path, graph_distance) ||
-        !installEarlyFinishPath(path, graph_distance)) {
-      publishEarlyFinishStatus("FAILED", "no reachable topology path");
-      elog_.log("EARLY_FINISH", "no reachable topology path", "", 0.0,
+    if (!selectFarthestReachableNode(probe, graph_distance) ||
+        !installEarlyFinishProbe(probe, graph_distance)) {
+      publishEarlyFinishStatus("FAILED", "no reachable topology node");
+      elog_.log("EARLY_FINISH", "no reachable topology node", "", 0.0,
                 EventLogger::L_WARN, true);
       early_finish_forced_attempt_ = false;
       if (forced) {
@@ -502,7 +626,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                      "EARLY_FINISH: forced request failed -> resume exploration");
       } else {
         explore_finished_ = true;
-        transitState(FINISH, "EARLY_FINISH: no reachable topology path");
+        transitState(FINISH, "EARLY_FINISH: no reachable topology node");
       }
       break;
     }
@@ -511,23 +635,23 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     fd_->static_state_ = true;
     global_path_update_timer_.start();
 
-    const TopoNode::Ptr target = path.back();
     char d[224];
     snprintf(d, sizeof(d),
-             "traveled=%.2fm target=(%.2f, %.2f, %.2f) graph_dist=%.2fm "
-             "path_nodes=%zu attempt=%s",
-             traveled_distance_, target->center_.x(), target->center_.y(),
-             target->center_.z(), graph_distance, path.size(),
+             "traveled=%.2fm efp=(%.2f, %.2f, %.2f) graph_dist=%.2fm "
+             "yaw=%.2frad attempt=%s",
+             traveled_distance_, probe->center_.x(), probe->center_.y(),
+             probe->center_.z(), graph_distance, early_finish_yaw_,
              forced ? "forced" : "automatic");
-    elog_.log("EARLY_FINISH", "existing topology path installed", d, 0.0,
+    elog_.log("EARLY_FINISH",
+              "probe installed (stays a TSP candidate until reached)", d, 0.0,
               EventLogger::L_WARN, true);
-    ROS_WARN("\033[33m[EARLY_FINISH] using existing topology path: "
-             "target=(%.2f, %.2f, %.2f), graph_dist=%.2fm, nodes=%zu\033[0m",
-             target->center_.x(), target->center_.y(), target->center_.z(),
-             graph_distance, path.size());
+    ROS_WARN("\033[33m[EARLY_FINISH] probe installed: "
+             "efp=(%.2f, %.2f, %.2f), graph_dist=%.2fm\033[0m",
+             probe->center_.x(), probe->center_.y(), probe->center_.z(),
+             graph_distance);
 
     early_finish_forced_attempt_ = false;
-    transitState(PLAN_TRAJ_EXP, "EARLY_FINISH: topology path installed");
+    transitState(PLAN_TRAJ_EXP, "EARLY_FINISH: probe installed");
     break;
   }
 
@@ -537,19 +661,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty())
       return;
 
-    if (early_finish_active_ &&
-        (early_finish_target_pos_ - fd_->odom_pos_).norm() <
-            early_finish_reach_tol_) {
-      clearEarlyFinishPath("TARGET_REACHED");
-      elog_.log("EARLY_FINISH",
-                "topology target reached -> resume normal frontier planning",
-                "", 0.0);
-      ROS_WARN("\033[33m[EARLY_FINISH] topology target reached (tol %.2fm)\033[0m",
-               early_finish_reach_tol_);
-      global_path_update_timer_.start();
-      return;
-    }
-
+    // (EFP 도달 감시는 FSMCallback 상단에서 상태와 무관하게 상시 수행한다.)
     ros::Time start = ros::Time::now();
     // 要报min-step的case
     LocalTrajData *info = &planner_manager_->local_data_;
@@ -606,12 +718,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       fd_->half_resolution = false;
 
     } else if (res == NO_FRONTIER) {
-      if (early_finish_active_) {
-        restoreEarlyFinishPath();
-        transitState(PLAN_TRAJ_EXP,
-                     "PLAN_TRAJ_EXP: retain EARLY_FINISH path", true);
-        break;
-      }
+      // EFP 가 살아있으면 planGlobalPath 가 viewpoints 를 비우지 않으므로 여기까지
+      // NO_FRONTIER 로 오지 않는다 (= RTH 봉쇄가 자동으로 성립한다). 별도 분기 없음.
       // if (planner_manager_->topo_graph_->global_view_points_.empty())
       if (explorationReallyFinished()) {
         explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
@@ -1007,7 +1115,16 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/yaw_rotate_init_rate", yaw_rotate_init_rate_, 0.5);
   nh.param("fsm/early_finish_dist_thresh", early_finish_dist_thresh_, 3.0);
   nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
-  nh.param("fsm/early_finish_reach_tol", early_finish_reach_tol_, 0.5);
+  // [도달 허용치 통일] EFP 도달 판정은 frontier viewpoint 도달 판정과 같은
+  // 파라미터를 읽는다. FSM 이 ViewpointManager/ 네임스페이스를 읽는 것은 의도된
+  // 것이다 — 새 설계에서 EFP 는 실제로 TSP 의 viewpoint 후보 하나이므로
+  // "viewpoint 도달 허용치" 를 공유하는 게 의미상 맞다. 옛
+  // fsm/early_finish_reach_tol 은 폐지됐다.
+  // EFP 는 **위치 조건만** 본다 (vp_reached_yaw_tol_deg 는 쓰지 않는다). FSM 이
+  // EFP 접근 종단 yaw 를 atan2(EFP-odom)=접근 방향으로 잡는데 EFP 노드가 들고
+  // 있는 yaw_ 는 그와 무관하므로, yaw 조건을 걸면 구조적으로 만족될 수 없어
+  // EFP 은퇴 불가 -> RTH 영구 봉쇄(데드락)가 된다.
+  nh.param("ViewpointManager/vp_reached_pos_tol", early_finish_reach_tol_, 0.6);
   nh.param("fsm/local_planning_max_hz", local_planning_max_hz_, 100.0);
   local_planning_min_period_ = 1.0 / local_planning_max_hz_;
   // 이벤트 로깅 관련: verbose_console=true 면 기존 타이밍 cout 유지(개발용),
@@ -1390,6 +1507,10 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
              (t3 - t2).toSec() * 1000, (t4 - t3).toSec() * 1000);
   Eigen::Vector3d vel = fd_->odom_vel_.cast<double>();
   Eigen::Vector3d odom = fd_->odom_pos_.cast<double>();
+  // EFP 수명 관리는 여기 한 곳에서만 한다 (도달 판정 -> 연결성 확인/재바인딩 ->
+  // planner 로 push). 방금 updateSkeleton/updateOdomNode 를 돌린 직후라 그래프가
+  // 최신이고, planGlobalPath 가 그 값을 바로 읽는다.
+  updateEarlyFinishProbe();
   int res = expl_manager_->planGlobalPath(odom, vel);
   ros::Time t5 = ros::Time::now();
 
@@ -1405,33 +1526,23 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   if (verbose_console_)
     cout << "total time cost: " << time_cost_now << "ms" << endl;
   if (res == NO_FRONTIER && state_ != WAIT_TRIGGER) {
-    if (early_finish_active_) {
-      // planGlobalPath may temporarily reconnect next_goal_node_ while checking
-      // newly generated viewpoints. No reachable viewpoint exists, so restore
-      // the selected existing topology path and continue observing from it.
-      restoreEarlyFinishPath();
-    }
+    // EFP 가 outstanding 이면 viewpoints 가 비지 않아 여기까지 오지 않는다
+    // (사건 2: 새 vp 가 생겨도 EFP 는 후보로 남고, EFP 만 남아도 tour 가 선다).
     // Only finish if the map/frontiers were actually ready (warmup elapsed or
     // frontiers seen before); otherwise this is a startup artifact -> wait.
-    else if (explorationReallyFinished()) {
+    if (explorationReallyFinished()) {
       explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
       transitState(FINISH, "planGlobalPath: no frontier");
     }
   } else if (res == SUCCEED && state_ != WAIT_TRIGGER) {
-    frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
-    if (early_finish_active_) {
-      clearEarlyFinishPath("VIEWPOINT_RECOVERED");
-      // The one-viewpoint branch of planGlobalPath updates global_tour_ after its
-      // initial updateGoalNode() call. Reconnect the virtual goal to the newly
-      // selected real viewpoint before local planning consumes it.
-      expl_manager_->updateGoalNode();
-      elog_.log("EARLY_FINISH",
-                "reachable viewpoint recovered -> normal exploration resumed",
-                "", 0.0, EventLogger::L_INFO, true);
-    }
+    // "실제로 경로가 나온 frontier 뷰포인트" 가 있었을 때만 warmup 을 푼다.
+    // EFP 는 frontier 가 아니므로 diag_num_reachable_vp_ 에서 제외돼 있다
+    // (planGlobalPath). EFP 로 향하는 계획이 성공했다는 이유로 warmup 보호가
+    // 풀리면, EFP 여정이 끝난 뒤 첫 NO_FRONTIER 한 번에 유예 없이 FINISH 로
+    // 떨어진다. EFP 가 없을 때는 SUCCEED == reachable vp>0 이라 동작 불변이다.
+    if (expl_manager_->ed_->diag_num_reachable_vp_ > 0)
+      frontiers_ever_seen_ = true;  // frontiers confirmed to exist -> warmup done
     transitState(PLAN_TRAJ_EXP, "planGlobalPath: succeed");
-  } else if (early_finish_active_) {
-    restoreEarlyFinishPath();
   }
 
   last_plan_ms_ = time_cost_now;
@@ -1692,6 +1803,11 @@ bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
   has_goal_rth_ = true;
   returning_home_ = true;     // 홈 xy 도달 -> LAND(AUTO.LAND) -> LANDED
   explore_finished_ = false;
+  // 수동 RTH 는 모든 것을 덮어쓰는 중단 명령이다. EFP 를 들고 가면 마커/자주색
+  // leg 만 유령으로 남으므로 여기서 명시적으로 포기한다.
+  // (자동 RTH 는 EFP 가 이미 소멸한 뒤에만 도달하므로 이 처리가 필요 없다.)
+  if (early_finish_active_)
+    clearEarlyFinishPath("ABORTED_BY_RTH");
   // 현재 포즈에 앵커해 재계획 (TAKEOFF_HOVER 처럼 아직 궤적이 없는 상태에서도 안전;
   // 비행 중이면 짧은 감속 후 홈으로 전환 — 중단 명령이므로 예측 가능성 우선)
   fd_->static_state_ = true;

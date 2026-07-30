@@ -75,6 +75,25 @@ struct ExplorationData {
   // RTH_PATH_OK / RTH_FALLBACK_FRONTIER / RTH_NO_FRONTIER / RTH_ASTAR_FAIL / RTH_FAIL
   std::string diag_result_ = "init";
 
+  // --- EARLY_FINISH probe (EFP): FSM -> planGlobalPath 경계 ---------------
+  // FSM(FastExplorationFSM)이 매 전역계획 직전에 갱신하고, planGlobalPath 가
+  // 읽어서 TSP 후보 목록에 EFP 를 한 개 더 얹는다. 그래서 EFP 가 살아있는 동안엔
+  // viewpoints 가 절대 비지 않고 -> NO_FRONTIER 가 안 나고 -> FINISH/RTH 가
+  // 자동으로 봉쇄된다 (별도 게이트 코드 없음).
+  //
+  // efp_node_ 는 **이미 topo graph 안에 있는 실제 노드**다. 따라서
+  // insertNodes/removeNodes 대상에서 반드시 제외해야 한다 (removeNodes 는 이웃과
+  // region 에서 노드를 통째로 뜯어내므로 그래프가 망가진다).
+  bool efp_active_ = false;
+  TopoNode::Ptr efp_node_;
+  Eigen::Vector3f efp_pos_ = Eigen::Vector3f::Zero();
+  float efp_yaw_ = 0.0f;
+  // odom -> EFP 그래프 거리[m] (FSM 의 Dijkstra 결과). getPathCost 내부
+  // topoSearch 가 예산 초과로 거짓 NO_PATH 를 낼 때의 대체 비용으로 쓴다.
+  double efp_graph_dist_ = 0.0;
+  // planGlobalPath 가 채운다: 이번 주기 global_tour_ 안에서의 EFP 인덱스(없으면 -1).
+  // tour 색 분리(파랑 tour / 자주색 EFP leg)에 쓴다.
+  int efp_tour_index_ = -1;
 };
 
 struct ExplorationParam {
