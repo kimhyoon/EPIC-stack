@@ -76,9 +76,9 @@ FrontierManager/view_frt: true     # DENSE·SPARSE·frontier cell 점군 표시
 # 빈 공간을 얼마나 잘게 나누어 RViz에서 초록색으로 표시되는 topology graph의 경로 연결점 후보를 찾을지 결정한다.
 # 값 증가 시 연산량은 감소하지만 좁은 공간의 연결점을 놓칠 수 있고, 값 감소 시 좁은 공간을 더 세밀하게 검사하지만 처리 속도가 느려질 수 있다.
 # 초록색 graph의 촘촘함에 간접적으로 영향을 주지만 node 간격이나 그물 크기를 직접 지정하는 값은 아니다.
-bubble_topo/min_x: 1.11  # X축 박스의 최소 분할 크기[m]
-bubble_topo/min_y: 1.11  # Y축 박스의 최소 분할 크기[m]
-bubble_topo/min_z: 1.11  # Z축 박스의 최소 분할 크기[m]
+bubble_topo/min_x: 0.6  # X축 박스의 최소 분할 크기[m]
+bubble_topo/min_y: 0.6  # Y축 박스의 최소 분할 크기[m]
+bubble_topo/min_z: 0.3  # Z축 박스의 최소 분할 크기[m]
 
 # [Topology 맵 갱신 구역 크기]
 # 전체 탐사 맵을 topology 계산용 박스들로 나눌 때 각 박스의 X·Y·Z 크기를 몇 m로 설정할지 결정한다.
@@ -92,7 +92,7 @@ bubble_topo/init_region_size_z: 1.0  # 계산용 박스의 높이(Z축)[m]
 # topology 계산용 박스 안을 바둑판처럼 나누어 경로 연결점을 만들 수 있는 빈 공간을 얼마나 촘촘하게 확인할지 결정한다.
 # 값 증가 시 연산량은 감소하지만 좁은 통로의 연결점을 놓칠 수 있고, 값 감소 시 좁은 통로를 더 세밀하게 확인하지만 연산량과 메모리 사용량이 증가한다.
 # LiDAR point cloud의 voxel 크기나 map downsampling 해상도가 아니며 topology graph의 node 간격을 직접 지정하지도 않는다.
-bubble_topo/cube_discrete_size: 0.4  # 박스 내부 가상 검사점 사이의 거리[m]
+bubble_topo/cube_discrete_size: 0.25  # 박스 내부 가상 검사점 사이의 거리[m]
 
 # [드론 이동 이력 연결점 간격]
 # 드론이 지나온 길을 다시 사용할 수 있도록 RViz의 초록색 topology graph에 이동 이력 연결점을 최소 몇 m 간격으로 남길지 결정한다.
@@ -111,7 +111,7 @@ bubble_astar/safe_distance: 0.6  # topology 노드와 경로가 장애물에서 
 # 갱신 전후 node 중심이 이 거리 이내이고 기존 node가 safe_distance를 만족하면 같은 연결점으로 유지한다.
 # 값 증가 시 node·edge의 생성과 삭제 반복은 줄지만 가까운 별도 연결점을 같은 node로 볼 수 있고, 값 감소 시 위치 구분은 정밀하지만 작은 점군 변화에도 graph가 흔들릴 수 있다.
 # 기존 node가 safe_distance를 만족하지 않으면 위치 차이와 관계없이 매칭하지 않고 제거하므로 장애물 안전거리를 완화하는 값이 아니다.
-bubble_topo/node_match_tolerance: 0.10  # 갱신 전후 같은 node로 인정할 최대 중심 위치 차이[m]
+bubble_topo/node_match_tolerance: 0.30  # 갱신 전후 같은 node로 인정할 최대 중심 위치 차이[m]
 
 # [신규 Topology 노드 생성 안정화 여유거리]
 # 새 경로 연결점은 공통 안전거리보다 이 값만큼 더 멀리 있을 때만 topology graph에 처음 추가한다.
@@ -153,9 +153,9 @@ lidar_perception/max_ray_length: 30
 # --- 계획용 보수 FOV: 반드시 위 물리값 이내 (규칙 1) ---
 # 뷰포인트 yaw 선택 시 "이 각 안에 든 프론티어만 보인다"고 친다.
 # 360 미만이면 도착 yaw 가 프론티어를 향하도록 최적화된다.
-lidar_perception/fov_viewpoint_up: 15.0
-lidar_perception/fov_viewpoint_down: -15.0
-lidar_perception/fov_viewpoint_horizontal: 100.0
+lidar_perception/fov_viewpoint_up: 10.0
+lidar_perception/fov_viewpoint_down: -10.0
+lidar_perception/fov_viewpoint_horizontal: 90.0
 
 # --- 독립된 두 스위치 (규칙 2 — 일치시킬 필요 없음) ---
 # is_360lidar : true 면 수평 FOV-edge 스캔을 끈다 (이름과 달리 하드웨어 사실이 아님)
@@ -164,7 +164,7 @@ lidar_perception/is_360lidar: false         # FOV-edge 스캔 사용
 lidar_perception/yaw_fov: 120.0             # cone clip 수평각
 
 # --- 장착 회전 [deg]: "odometry 프레임 대비" 회전임에 주의 ---
-lidar_perception/lidar_pitch: 0.0
+lidar_perception/lidar_pitch: 5.0
 lidar_perception/lidar_yaw: 0.0
 
 # --- 점군 좌표계 ---
@@ -227,7 +227,7 @@ FrontierManager/viewpoint_dir_trust_length: 4.5  # [m] 다른 프로파일의 fo
 # [Viewpoint 유효 판정 최소 가시 셀 수]
 # 후보에서 raycast 로 실제 보이는 Frontier 셀이 이 개수 미만이면 yaw 스캔도 하지 않고 탈락한다(NO_VIS).
 # 값 증가 시 노이즈성 viewpoint 는 줄지만 유효 후보도 함께 줄고, 감소 시 후보는 늘지만 셀 한두 개만 보이는 빈약한 목표가 선택될 수 있다.
-FrontierManager/viewpoint_min_visible_cells: 3  # [개]
+FrontierManager/viewpoint_min_visible_cells: 2  # [개]
 
 # [일반 관측 신뢰 거리]
 # LiDAR에서 몇 m 떨어진 셀까지 정상 관측으로 인정하고, viewpoint가 해당 Frontier를 볼 수 있다고 평가할지 결정한다.
@@ -263,7 +263,7 @@ FrontierManager/cluster_direction_radius: 0.8  # 표면 방향 유사도[-1~1]
 # [클러스터링 시작에 필요한 Frontier 수]
 # 새로 발견된 Frontier 셀이 최소 몇 개 이상일 때 묶음을 만들고 viewpoint 생성을 시작할지 결정한다.
 # 값 증가 시 적은 Frontier 입력은 클러스터링되지 않아 viewpoint가 생성되지 않고, 값 감소 시 적은 셀에서도 viewpoint가 생성되지만 노이즈 목표가 증가할 수 있다.
-FrontierManager/cluster_minmum_point_num: 3  # 신규 Frontier 최소 셀 수[개]
+FrontierManager/cluster_minmum_point_num: 2  # 신규 Frontier 최소 셀 수[개]
 
 # [탐사 박스 경계 Frontier 제거]
 # 탐사 허용 범위 끝부분의 해소할 수 없는 Frontier를 몇 칸까지 viewpoint 생성 대상에서 제외할지 결정한다.
@@ -281,7 +281,7 @@ FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀], 0이�
 # 해소되지 않는다 (force-trust 경로에 !is_fov_edge 조건이 있다). 즉 이 값이
 # frontier 가 안 없어지는 문제를 거리 문턱으로 고칠 수 있는지 판단하는 근거다.
 # bad_obs 와 같은 양의 점군이 한 벌 더 나가므로 bag 크기가 늘어난다.
-FrontierManager/viz_obs_breakdown: true  # 사유별 점군 발행
+FrontierManager/viz_obs_breakdown: false # 사유별 점군 발행
 
 # FrontierManager/* : Frontier 검출·클러스터링 끝
 # ====================================================================
@@ -305,7 +305,7 @@ ViewpointManager/sample_pillar_height_layer_num: 9  # 높이 후보 층 수[개]
 # Frontier에서 얼마나 가까운 곳부터 먼 곳까지 관측 위치를 찾을지 결정한다.
 # 좁은 통로에서 viewpoint가 없으면 min_radius를 낮추고, 가까운 곳에 공간이 없으면 max_radius를 높인다.
 # min_radius를 너무 낮추면 벽 가까이에 후보가 생성되고, max_radius를 너무 높이면 불필요하게 먼 목표가 선택될 수 있다.
-ViewpointManager/sample_pillar_min_radius: 1.0  # 가장 가까운 후보 거리[m]
+ViewpointManager/sample_pillar_min_radius: 0.8  # 가장 가까운 후보 거리[m]
 ViewpointManager/sample_pillar_max_radius: 3.0  # 가장 먼 후보 거리[m]
 
 # [Viewpoint 거리별 후보 수]
@@ -473,7 +473,7 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 # MINCO가 생성하는 3차원 궤적의 최대 속도를 결정한다.
 # 탐사가 너무 느리면 높이고, 경로 추종 오차·진동·제동거리 문제가 발생하면 낮춘다.
 # 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
-MaxVelMag: 1.0  # 최대 비행 속도[m/s]
+MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [PVA 가속도 제한]
 # 위치 궤적 최적화에서 허용할 최대 가속도이며 PX4의 실제 가속도 하드 제한은 아니다.
@@ -536,7 +536,7 @@ RelCostTol: 1.1e-6
 # 드론의 기수가 이동 경로와 viewpoint를 바라보도록 생성하는 Yaw 궤적의 최대 회전속도를 결정한다.
 # 기수 회전이 너무 느리면 높이고, 좌우 급회전·흔들림·Yaw 추종 오차가 발생하면 낮춘다.
 # PX4의 실제 Yaw rate 하드 제한이 아니라 EPIC이 생성하는 Yaw 궤적의 계획값이다.
-yaw_max_vel: 1.0  # 1.0 rad/s = 57.3 deg/s
+yaw_max_vel: 1.5  # 1.0 rad/s = 57.3 deg/s
 
 # [Yaw 목표 방향 추종 가중치]
 # 생성되는 Yaw 궤적이 이동 경로와 viewpoint를 보고 계산한 목표 Yaw 방향을 얼마나 강하게 따라갈지 결정한다.
@@ -552,7 +552,7 @@ yaw_time_fwd: 2.5
 # fsm/* : 탐사 상태·재계획·이륙·복귀 시작
 
 # Poongsan 전용 FSM 설정
-fsm/goal_tolerance: 0.1
+fsm/goal_tolerance: 0.3
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz)
 
@@ -569,8 +569,8 @@ fsm/emergency_replan_control_error: 3.0
 fsm/takeoff_height: 1.25         # 목표 호버 고도 [m] (odom-frame z; 원점=이륙지점)
 fsm/takeoff_reach_tol: 0.15      # |z-target| < 이 값이면 도달 -> 수용 밴드 1.30~1.60 m
 fsm/takeoff_settle_vel: 0.4      # odom 속도 < 이 값이면 OK (정밀 정지 불요, 급상승만 차단)
-fsm/takeoff_settle_time: 0.3     # 도달 상태를 이 시간만 유지하면 탐색 시작 [s]
-fsm/takeoff_timeout: 200.0        # 타임아웃: 고도 근처면 탐색, 아니면 호버 유지(ERROR)
+fsm/takeoff_settle_time: 0.03     # 도달 상태를 이 시간만 유지하면 탐색 시작 [s]
+fsm/takeoff_timeout: 2000.0        # 타임아웃: 고도 근처면 탐색, 아니면 호버 유지(ERROR)
 
 # ── 탐사 완료 후 자동 원점복귀 + 착륙 (real flight) ──────────────────
 # 탐사 끝나면: 마지막 cmd 좌표에서 잠깐 호버(OFFBOARD 유지) → 이륙지점으로 RTH
