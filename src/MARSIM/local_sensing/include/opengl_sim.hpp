@@ -277,8 +277,15 @@ void opengl_pointcloud_render::read_pointcloud_fromfile(std::string map_filename
     // glfw: initialize and configure
     // ------------------------------
     glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    // Request 3.3 core, not 4.6: every shader here is "#version 330 core"
+    // (camera.vs/.fs, 360camera.vs), so nothing above 3.3 is ever used, and
+    // asking for 4.6 needlessly excludes software GL. Mesa's llvmpipe — what
+    // the CPU-only epic-x86 stack renders with — caps out at core 4.5, so the
+    // 4.6 request made glfwCreateWindow return NULL and the sensor published
+    // no cloud at all. 3.3 works on llvmpipe AND on the NVIDIA path
+    // (epic-x86-gpu), so one binary serves both.
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     glfwWindowHint(GLFW_VISIBLE, GL_FALSE); // invisible window
