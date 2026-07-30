@@ -39,6 +39,10 @@ publish:
     scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
 
 pcd_save:
-    pcd_save_en: true
-    interval: -1                 # how many LiDAR frames saved in each pcd file; 
+    # interval: -1 은 매 스캔의 전체 점군을 pcl_wait_save 에 무한 누적하고(laserMapping.cpp:504-529)
+    # 스캔마다 N회의 추가 body->world 변환을 돈다 — 장시간 비행에서 메모리가 계속 증가한다.
+    # 맵 pcd 저장이 필요 없으므로 끈다.
+    pcd_save_en: false
+    interval: -1                 # how many LiDAR frames saved in each pcd file;
                                  # -1 : all frames will be saved in ONE pcd file, may lead to memory crash when having too much frames.
+                                 # (pcd_save_en: false 이므로 이 값은 현재 무의미하다.)
