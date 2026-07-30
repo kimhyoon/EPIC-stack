@@ -605,6 +605,16 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   std::vector<Eigen::MatrixX4d> hPolys; // 多面体飞行走廊
 
+  // Evaluate the PR #1 observed boundary once per planning cycle. FIRI and the
+  // post-clip validation consume this same immutable snapshot.
+  ObservedBoundary observed_boundary;
+  Eigen::MatrixX4d observed_halfspaces(0, 4);
+  if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_) {
+    observed_boundary = buildObservedBoundary();
+    observed_halfspaces = activeObservedHalfspaces(observed_boundary);
+    publishObservedBoundaryDebug(observed_boundary);
+  }
+
   sfc_gen::convexCover(
       gcopter_viz_, path_shorten, surf_points, min_bd.cast<double>(),
       max_bd.cast<double>(), gcopter_config_->corridorProgressLength,
@@ -613,7 +623,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       static_cast<size_t>(gcopter_config_->corridorMaxObstacleSamples),
       gcopter_config_->firiObstacleDistanceLimit,
       gcopter_config_->firiMaxPlaneCount,
-      gcopter_config_->corridorGapViolationPlaneThreshold);
+      gcopter_config_->corridorGapViolationPlaneThreshold,
+      observed_halfspaces);
 
   // Preserve the raw FIRI corridor before the P0 seed box and observed-FOV
   // clipping. Method B does not alter the obstacle set, so no second
@@ -650,7 +661,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   // --- Method B: clip each forward polytope to the observed FOV cone (P0 kept).
   if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_)
-    clipCorridorToObservedCone(hPolys);
+    clipCorridorToObservedBoundary(hPolys, observed_boundary);
 
   // Use one absolute handoff time for both position and yaw. Normal replans
   // inherit the previous trajectory state at this instant so the new
@@ -993,120 +1004,156 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 // box) is always kept. A face only clips if it is a real observation boundary
 // (some FOV-edge frontier lies on it) and the observed surface does not continue
 // past it (no DENSE neighbour just outside).
-void FastPlannerManager::clipCorridorToObservedCone(
-    std::vector<Eigen::MatrixX4d> &hPolys) {
-  if (!frontier_manager_ || hPolys.size() < 2)
-    return;
+// Build the exact PR #1 boundary decision without mutating a Corridor. The
+// resulting snapshot is shared by FIRI generation and the post-clip check.
+FastPlannerManager::ObservedBoundary
+FastPlannerManager::buildObservedBoundary() const {
+  ObservedBoundary boundary;
+  if (!frontier_manager_)
+    return boundary;
 
   const Eigen::Vector3d p = local_data_.curr_pos_;
   const double psi = local_data_.curr_yaw_;
-  const double hy = 0.5 * yaw_fov_;        // half horizontal FOV [rad]
-  const double R = max_ray_length;         // far-plane range [m]
+  const double hy = 0.5 * yaw_fov_;
+  const double range = max_ray_length;
   const Eigen::Vector3d fwd(std::cos(psi), std::sin(psi), 0.0);
+  boundary.apex = p;
+  boundary.max_range = range;
 
-  // FOV cone faces (4 sides): constraint n.x + d <= 0 is INSIDE the cone. All
-  // pass through the apex p. (Far plane @ max_ray omitted -- it only gated on
-  // distance frontiers and was near-inert; range is still capped below by R.)
-  struct Face {
-    Eigen::Vector3d n;
-    double d;
-  };
-  const Eigen::Vector3d Z(0.0, 0.0, 1.0);
-  std::vector<Face> faces;
-  const double aL = psi + hy; // left FOV-edge azimuth
-  Eigen::Vector3d nL(-std::sin(aL), std::cos(aL), 0.0);  // outward-left
-  faces.push_back({nL, -nL.dot(p)});
-  const double aR = psi - hy; // right FOV-edge azimuth
-  Eigen::Vector3d nR(std::sin(aR), -std::cos(aR), 0.0);  // outward-right
-  faces.push_back({nR, -nR.dot(p)});
-  const double bU = (fov_up - lidar_pitch) * M_PI / 180.0;   // up-edge elevation
-  Eigen::Vector3d nU = -std::sin(bU) * fwd + std::cos(bU) * Z;  // outward-up
-  faces.push_back({nU, -nU.dot(p)});
-  const double bD = (fov_down - lidar_pitch) * M_PI / 180.0; // down-edge elevation
-  Eigen::Vector3d nD = std::sin(bD) * fwd - std::cos(bD) * Z;   // outward-down
-  faces.push_back({nD, -nD.dot(p)});
+  // Four candidate faces pass through the current pose. The far plane remains
+  // omitted, matching PR #1 Method B.
+  const Eigen::Vector3d z_axis(0.0, 0.0, 1.0);
+  boundary.faces.reserve(4);
+  const double left_angle = psi + hy;
+  const Eigen::Vector3d left_normal(
+      -std::sin(left_angle), std::cos(left_angle), 0.0);
+  boundary.faces.push_back(
+      {left_normal, -left_normal.dot(p), false, false, false});
 
-  // Gate each face: ACTIVE only if some frontier lies on it AND no frontier on it
-  // has a DENSE (already-observed) neighbor just OUTSIDE it. Any DENSE outside =>
-  // the observed surface continues past this face => leave it (do not clip),
-  // which preserves mobility through already-seen space.
-  const double cs = frontier_manager_->getCellSize();
-  const double eps = 1.5 * cs;
-  std::vector<char> has_frontier(faces.size(), 0);
-  std::vector<char> observed_outside(faces.size(), 0);
+  const double right_angle = psi - hy;
+  const Eigen::Vector3d right_normal(
+      std::sin(right_angle), -std::cos(right_angle), 0.0);
+  boundary.faces.push_back(
+      {right_normal, -right_normal.dot(p), false, false, false});
 
-  // Iterate only this frame's FOV-edge frontier cells (already the cells lying on
-  // the cone faces) instead of scanning every cluster cell.
-  for (const auto &cc : frontier_manager_->fov_edge_cells_) {
-    const Eigen::Vector3d c(cc.x, cc.y, cc.z);
-    const Eigen::Vector3d rel = c - p;
-    if (fwd.dot(rel) <= 0.0 || rel.norm() > R) // in front & within range
+  const double up_angle = (fov_up - lidar_pitch) * M_PI / 180.0;
+  const Eigen::Vector3d up_normal =
+      -std::sin(up_angle) * fwd + std::cos(up_angle) * z_axis;
+  boundary.faces.push_back(
+      {up_normal, -up_normal.dot(p), false, false, false});
+
+  const double down_angle = (fov_down - lidar_pitch) * M_PI / 180.0;
+  const Eigen::Vector3d down_normal =
+      std::sin(down_angle) * fwd - std::cos(down_angle) * z_axis;
+  boundary.faces.push_back(
+      {down_normal, -down_normal.dot(p), false, false, false});
+
+  // Preserve PR #1 gating exactly: a face is active only when an FOV-edge
+  // frontier lies on it and no DENSE neighbor continues outside it.
+  const double cell_size = frontier_manager_->getCellSize();
+  const double face_tolerance = 1.5 * cell_size;
+  for (const auto &cell : frontier_manager_->fov_edge_cells_) {
+    const Eigen::Vector3d center(cell.x, cell.y, cell.z);
+    const Eigen::Vector3d relative = center - p;
+    if (fwd.dot(relative) <= 0.0 || relative.norm() > range)
       continue;
-    for (size_t fi = 0; fi < faces.size(); ++fi) {
-      if (observed_outside[fi]) // face already decided (deactivate)
+
+    for (ObservedBoundaryFace &face : boundary.faces) {
+      if (face.observed_outside)
         continue;
-      if (std::abs(faces[fi].n.dot(c) + faces[fi].d) > eps)
-        continue; // c not on this face plane
-      has_frontier[fi] = 1;
-      for (int dx = -1; dx <= 1 && !observed_outside[fi]; ++dx)
-        for (int dy = -1; dy <= 1 && !observed_outside[fi]; ++dy)
-          for (int dz = -1; dz <= 1 && !observed_outside[fi]; ++dz) {
+      if (std::abs(face.normal.dot(center) + face.offset) >
+          face_tolerance)
+        continue;
+
+      face.has_frontier = true;
+      for (int dx = -1; dx <= 1 && !face.observed_outside; ++dx)
+        for (int dy = -1; dy <= 1 && !face.observed_outside; ++dy)
+          for (int dz = -1; dz <= 1 && !face.observed_outside; ++dz) {
             if (!dx && !dy && !dz)
               continue;
-            const Eigen::Vector3d nbr = c + cs * Eigen::Vector3d(dx, dy, dz);
-            if (faces[fi].n.dot(nbr) + faces[fi].d <= 0.0)
-              continue; // keep only OUTSIDE neighbors
-            if (frontier_manager_->getCellState(nbr.cast<float>()) == DENSE)
-              observed_outside[fi] = 1;
+            const Eigen::Vector3d neighbor =
+                center + cell_size * Eigen::Vector3d(dx, dy, dz);
+            if (face.normal.dot(neighbor) + face.offset <= 0.0)
+              continue;
+            if (frontier_manager_->getCellState(neighbor.cast<float>()) ==
+                DENSE)
+              face.observed_outside = true;
           }
     }
   }
 
-  std::vector<int> active_idx;
-  for (size_t fi = 0; fi < faces.size(); ++fi)
-    if (has_frontier[fi] && !observed_outside[fi])
-      active_idx.push_back((int)fi);
+  for (ObservedBoundaryFace &face : boundary.faces)
+    face.active = face.has_frontier && !face.observed_outside;
 
-  if (planner_debug_enabled_ && debug_fov_faces_pub_.getNumSubscribers() > 0) {
-    // Schema v1: [version, plan_seq, face_count,
-    //             face_index, has_frontier, observed_outside, active,
-    //             nx, ny, nz, d, ...].
-    std_msgs::Float64MultiArray msg;
-    msg.data.reserve(3 + faces.size() * 8);
-    msg.data.push_back(1.0);
-    msg.data.push_back(static_cast<double>(current_debug_plan_seq_));
-    msg.data.push_back(static_cast<double>(faces.size()));
-    for (size_t fi = 0; fi < faces.size(); ++fi) {
-      const bool active = has_frontier[fi] && !observed_outside[fi];
-      msg.data.push_back(static_cast<double>(fi));
-      msg.data.push_back(has_frontier[fi] ? 1.0 : 0.0);
-      msg.data.push_back(observed_outside[fi] ? 1.0 : 0.0);
-      msg.data.push_back(active ? 1.0 : 0.0);
-      msg.data.push_back(faces[fi].n.x());
-      msg.data.push_back(faces[fi].n.y());
-      msg.data.push_back(faces[fi].n.z());
-      msg.data.push_back(faces[fi].d);
-    }
-    debug_fov_faces_pub_.publish(msg);
+  return boundary;
+}
+
+Eigen::MatrixX4d FastPlannerManager::activeObservedHalfspaces(
+    const ObservedBoundary &boundary) const {
+  const size_t active_count =
+      std::count_if(boundary.faces.begin(), boundary.faces.end(),
+                    [](const ObservedBoundaryFace &face) {
+                      return face.active;
+                    });
+  Eigen::MatrixX4d halfspaces(active_count, 4);
+  size_t row = 0;
+  for (const ObservedBoundaryFace &face : boundary.faces) {
+    if (!face.active)
+      continue;
+    halfspaces.row(row++) << face.normal.x(), face.normal.y(),
+        face.normal.z(), face.offset;
   }
-  if (active_idx.empty())
+  return halfspaces;
+}
+
+void FastPlannerManager::publishObservedBoundaryDebug(
+    const ObservedBoundary &boundary) {
+  if (!planner_debug_enabled_ ||
+      debug_fov_faces_pub_.getNumSubscribers() == 0)
     return;
 
-  // Append active faces to every polytope except P0 (index 0). Guard each append
-  // with a non-emptiness check so a cut that would empty a polytope is skipped
-  // (keeps the corridor feasible; goal-outside-corridor fallback handles the rest).
-  for (size_t hi = 1; hi < hPolys.size(); ++hi) {
-    Eigen::MatrixX4d hp = hPolys[hi];
-    for (int fi : active_idx) {
-      Eigen::MatrixX4d cand(hp.rows() + 1, 4);
-      cand.topRows(hp.rows()) = hp;
-      cand.row(hp.rows()) << faces[fi].n.x(), faces[fi].n.y(), faces[fi].n.z(),
-          faces[fi].d;
+  // Keep the existing debug schema unchanged.
+  std_msgs::Float64MultiArray msg;
+  msg.data.reserve(3 + boundary.faces.size() * 8);
+  msg.data.push_back(1.0);
+  msg.data.push_back(static_cast<double>(current_debug_plan_seq_));
+  msg.data.push_back(static_cast<double>(boundary.faces.size()));
+  for (size_t index = 0; index < boundary.faces.size(); ++index) {
+    const ObservedBoundaryFace &face = boundary.faces[index];
+    msg.data.push_back(static_cast<double>(index));
+    msg.data.push_back(face.has_frontier ? 1.0 : 0.0);
+    msg.data.push_back(face.observed_outside ? 1.0 : 0.0);
+    msg.data.push_back(face.active ? 1.0 : 0.0);
+    msg.data.push_back(face.normal.x());
+    msg.data.push_back(face.normal.y());
+    msg.data.push_back(face.normal.z());
+    msg.data.push_back(face.offset);
+  }
+  debug_fov_faces_pub_.publish(msg);
+}
+
+// Keep PR #1 post-clipping as a validation and compatibility layer. P0 remains
+// exempt and a face that would empty a polytope is skipped, exactly as before.
+void FastPlannerManager::clipCorridorToObservedBoundary(
+    std::vector<Eigen::MatrixX4d> &hPolys,
+    const ObservedBoundary &boundary) {
+  if (hPolys.size() < 2)
+    return;
+
+  for (size_t poly_index = 1; poly_index < hPolys.size(); ++poly_index) {
+    Eigen::MatrixX4d poly = hPolys[poly_index];
+    for (const ObservedBoundaryFace &face : boundary.faces) {
+      if (!face.active)
+        continue;
+      Eigen::MatrixX4d candidate(poly.rows() + 1, 4);
+      candidate.topRows(poly.rows()) = poly;
+      candidate.row(poly.rows()) << face.normal.x(), face.normal.y(),
+          face.normal.z(), face.offset;
       Eigen::Vector3d interior;
-      if (geo_utils::findInterior(cand, interior))
-        hp = cand;
+      if (geo_utils::findInterior(candidate, interior))
+        poly.swap(candidate);
     }
-    hPolys[hi] = hp;
+    hPolys[poly_index] = poly;
   }
 }
 

@@ -349,8 +349,32 @@ public:
   double p0_down_ = 0.2;  // P0: extent below the flight controller
   bool viz_origin_corridor_ = false; // publish raw FIRI corridor for comparison
   double yaw_fov_ = 2.0 * M_PI; // horizontal FOV [rad] (lidar_perception/yaw_fov)
-  // Intersect each forward corridor polytope with the observed FOV cone faces.
-  void clipCorridorToObservedCone(std::vector<Eigen::MatrixX4d> &hPolys);
+  // Immutable snapshot of the PR #1 observed-boundary decision for one planning
+  // cycle. A candidate face is active only when an FOV-edge frontier lies on it
+  // and no DENSE cell continues outside it.
+  struct ObservedBoundaryFace {
+    Eigen::Vector3d normal = Eigen::Vector3d::Zero();
+    double offset = 0.0;
+    bool has_frontier = false;
+    bool observed_outside = false;
+    bool active = false;
+  };
+
+  struct ObservedBoundary {
+    Eigen::Vector3d apex = Eigen::Vector3d::Zero();
+    double max_range = 0.0;
+    std::vector<ObservedBoundaryFace> faces;
+  };
+
+  // Build the PR #1 boundary once so FIRI generation and post-clipping consume
+  // the exact same active half-spaces.
+  ObservedBoundary buildObservedBoundary() const;
+  Eigen::MatrixX4d activeObservedHalfspaces(
+      const ObservedBoundary &boundary) const;
+  void publishObservedBoundaryDebug(const ObservedBoundary &boundary);
+  void clipCorridorToObservedBoundary(
+      std::vector<Eigen::MatrixX4d> &hPolys,
+      const ObservedBoundary &boundary);
 
   void publishDebugGuidePath(const vector<Eigen::Vector3d> &path);
   void publishDebugObstaclePoints(
