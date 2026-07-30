@@ -27,14 +27,19 @@ cloud_crop/enable: false
 cloud_crop/output_topic: /cloud_registered_cropped
 # ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
 cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
-cloud_crop/fov_up: 37.5           # 수직 상한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
-cloud_crop/fov_down: 0        # 수직 하한 elevation [deg] / 25도 전방기울임 보정해서 입력하기
+# [파라미터 규약] cloud_crop/fov_* 는 body(기체) 프레임 기준이다. body 값 =
+# lidar_perception/fov_up(37.5)/fov_down(5.0) − lidar_perception/lidar_pitch(25.0).
+# 수동 보정값을 섞어 넣지 않는다 — crop을 켜면 브릿지가 기동 시 이 정합식을 자체검사한다.
+cloud_crop/fov_up: 12.5           # 수직 상한 elevation [deg] (body) = 37.5 − 25
+cloud_crop/fov_down: -20.0        # 수직 하한 elevation [deg] (body) = 5.0 − 25
 cloud_crop/min_range: 0.0         # [m]
 cloud_crop/max_range: 30.0        # [m], <= (0 = 무제한)
 cloud_crop/yaw_offset_deg: 0.0    # 센서 정면이 기체 +x 에서 벗어난 장착각 [deg, CCW]
-# ⚠ crop 켤 때 아래 lidar_perception/fov_up(52)/fov_down(-7)은 Mid-360 물리값이라
-#   crop 데이터(±17.5°)보다 넓다 — EPIC 이 FOV 밖을 '관측됨'으로 오인하지 않게
-#   17.5/-17.5 로(viewpoint 는 그보다 보수적으로) 함께 줄이는 것 권장.
+# /Odometry는 센서 자세이므로 body로 되돌릴 하향 보정각. lidar_perception/lidar_pitch(25.0)와
+# 같은 물리량 — 장착각을 바꾸면 반드시 두 값을 함께 수정한다. (이 프로파일은 crop이 꺼져 있어
+# 브릿지가 이 값을 쓰지 않지만, crop을 켤 경우를 대비해 정합값을 맞춰 둔다.)
+cloud_crop/odom_mount_pitch_deg: 25.0
+cloud_crop/sync_policy: exact     # /Odometry·/cloud_registered 모두 FAST-LIO가 동일 루프·스탬프로 발행하므로 exact 매칭 가능 (crop 켤 때 적용)
 # ====================================================================
 # global_planning/* : 전역 탐사 목표 선택 시작
 

@@ -17,6 +17,9 @@ cloud_topic: /lio_sam/mapping/cloud_registered_raw
 # [반응형 국소회피][운용고정]
 # 실제 ML-X 기체에서는 사용하지 않으므로 항상 false로 유지한다.
 local_avoidance/enable: false
+# [파라미터 규약] crop을 켜려면 cloud_crop/fov_*는 body(기체) 프레임 기준으로 적어야
+# 하며(fov_up/down = lidar_perception/fov_up/down − lidar_pitch, fov_horizontal = yaw_fov),
+# 브릿지가 기동 시 이 정합식을 자체검사한다 — 안 맞으면 노드가 안 뜬다.
 cloud_crop/enable: false
 
 # 기록(record) 스위치 — record_on_goal.py 가 이 값들만 읽는다 (launch 인자 아님).

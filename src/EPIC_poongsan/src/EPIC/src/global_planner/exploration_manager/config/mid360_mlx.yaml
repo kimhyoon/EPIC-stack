@@ -4,12 +4,16 @@
 
 # [EPIC 위치 입력][ROS 토픽][비행필수]
 # MID360으로 ML-X FOV를 모사할 때 EPIC이 사용할 기체 위치·자세·속도 입력.
-# 적용 기준: 이 프로파일은 PX4 EKF의 /mavros/local_position/odom을 사용함.
-# 프로파일 차이: crop 미적용 mid360.yaml은 /Odometry, 실제 ML-X용 real.yaml은 /mavros/odometry/in을 사용함.
+# 적용 기준: 이 프로파일은 FAST-LIO 출력 /Odometry를 직접 사용함(기존 /mavros/local_position/odom에서 전환).
+# 전환 사유: PX4 EKF2 왕복(MAVLink 전송 + 필터링) 지연을 크롭 경로에서 제거하고,
+#   EV 링크 열화 시 /mavros odom이 camera_init에서 조용히 벗어나 크롭 원뿔이
+#   엉뚱한 곳을 향하는 무증상 실패 경로를 없앤다. FAST-LIO는 /Odometry와
+#   /cloud_registered를 같은 루프에서 동일 스탬프로 발행하므로 아래 cloud_crop/sync_policy: exact 가 가능해진다.
+# 프로파일 차이: crop 미적용 mid360.yaml도 /Odometry, 실제 ML-X용 real.yaml은 /mavros/odometry/in을 사용함.
 # 변경: 실제 기체에서 nav_msgs/Odometry를 발행하는 토픽 이름으로 맞출 것.
-# lidar_pitch 25도 보정과 조합되는 수평 기체 자세 기준 odometry이며, 이 토픽이 없거나 중단되면 EPIC은 탐사를 시작할 수 없음.
-# 확인: rostopic info /mavros/local_position/odom
-odometry_topic: /mavros/local_position/odom          # PX4 EKF odom (수평 자세 — lidar_pitch 25와 짝) (시뮬: /quad_0/lidar_slam/odom)
+# /Odometry는 센서(기울어진) 자세이므로 cloud_crop/odom_mount_pitch_deg(=lidar_perception/lidar_pitch)로 body 환산한다(아래 참고).
+# 확인: rostopic info /Odometry
+odometry_topic: /Odometry          # FAST-LIO odom (센서 자세 — odom_mount_pitch_deg 25와 짝) (시뮬: /quad_0/lidar_slam/odom)
 # 이 프로파일에서는 /cloud_registered가 bridge의 원본 입력이며, ML-X FOV로 한 번 crop한 /cloud_registered_cropped를 EPIC이 사용한다.
 cloud_topic: /cloud_registered    # FAST-LIO world-frame cloud (시뮬: /quad0_pcl_render_node/cloud)
 
@@ -24,19 +28,46 @@ lidar_perception/cloud_frame_mode: world
 #         cloud_crop/output_topic 으로 재발행하고, exploration_node 도 같은 키를
 #         읽어 자동으로 crop 토픽을 구독 (cloud_topic 은 raw 소스로 그대로 둔다).
 # false = 브릿지 자진 종료, EPIC 은 cloud_topic 을 그대로 구독 (기존 동작).
+#
+# [파라미터 규약] cloud_crop/fov_* 는 전부 기체(body) 프레임 기준이다. 물리 장착각은
+# odom_mount_pitch_deg 하나로만 반영하고 브릿지가 회전행렬에 흡수한다 — yaw/fov 값에
+# 수동 보정값을 섞어 넣지 않는다. 아래 값은 브릿지 기동 시 자체검사되며(strict_fov_alignment),
+# 불일치하면 기동을 거부한다:
+#   cloud_crop/fov_up        == lidar_perception/fov_up   − lidar_perception/lidar_pitch
+#   cloud_crop/fov_down      == lidar_perception/fov_down − lidar_perception/lidar_pitch
+#   cloud_crop/fov_horizontal == lidar_perception/yaw_fov
 cloud_crop/enable: true
 cloud_crop/output_topic: /cloud_registered_cropped
 # ML-XC 스펙: FOV 120° x 35°(대칭 가정), 감지거리 >30 m (@100klx, 반사율 10%)
-cloud_crop/fov_horizontal: 120.0  # 수평 전체각 [deg], 기체 +x(전방) 중심
-cloud_crop/fov_up: 17.5           # 수직 상한 elevation [deg] 
-cloud_crop/fov_down: -17.5        # 수직 하한 elevation [deg]
-cloud_crop/min_range: 0.0         # [m]
-cloud_crop/max_range: 30.0        # [m], <= (0 = 무제한)
-cloud_crop/yaw_offset_deg: 0.0    # 센서 정면이 기체 +x 에서 벗어난 장착각 [deg, CCW]
-# ⚠ 아래 lidar_perception/fov_up/down 은 센서(광축) 프레임 elevation [deg] —
-#   minco corridor-clip 이 (값 - lidar_pitch)로 body 환산해 쓴다 (planner_manager.cpp:581).
-#   crop ±17.5°(body) = 센서 프레임 7.5°~42.5° → 아래 42.5/7.5 로 crop 과 정합 완료.
-#   (body 값 17.5/-17.5 를 그대로 넣으면 콘이 25° 아래로 꺾이니 금지.)
+# body 값 = 아래 lidar_perception/fov_up(42.5)/fov_down(7.5) − lidar_pitch(25) = 17.5 / -17.5.
+# (mavros=수평 자세 + fov ±17.5 였던 이전 프로파일과, /Odometry=센서 자세 + mount_pitch 25
+#  보정 + fov ±17.5 인 지금 프로파일은 동일한 body ±17.5° 원뿔이다 — odom 프레임 전환으로
+#  크롭이 가리키는 실제 방향은 바뀌지 않았다.)
+cloud_crop/fov_horizontal: 120.0        # body 수평 전체각 [deg], 기체 +x(전방) 중심
+cloud_crop/fov_up: 17.5                 # body elevation 상한 [deg]
+cloud_crop/fov_down: -17.5              # body elevation 하한 [deg]
+cloud_crop/yaw_offset_deg: 0.0          # body +x 기준 수평 오프셋 [deg, CCW]
+cloud_crop/min_range: 0.0               # [m]
+cloud_crop/max_range: 30.0              # [m], <= 0 = 무제한
+# /Odometry는 센서 자세이므로 body로 되돌릴 하향 보정각. lidar_perception/lidar_pitch(25.0)와
+# 같은 물리량 — 장착각을 바꾸면 반드시 두 값을 함께 수정한다.
+cloud_crop/odom_mount_pitch_deg: 25.0
+cloud_crop/sync_policy: exact           # /Odometry·/cloud_registered 모두 FAST-LIO가 동일 루프·스탬프로 발행하므로 exact 매칭 가능
+cloud_crop/sync_queue: 20
+cloud_crop/sync_max_interval_sec: 0.10  # approximate 전용 (exact 에서는 미사용)
+cloud_crop/cloud_queue: 5
+cloud_crop/odom_queue: 20
+cloud_crop/pub_queue: 2
+cloud_crop/watchdog_period_sec: 0.5     # 0=비활성
+cloud_crop/require_frame_match: false   # true면 frame_id 불일치 시 FATAL
+cloud_crop/strict_fov_alignment: true   # 위 정합식 불일치 시 FATAL
+cloud_crop/output_fields: full          # full | xyz
+cloud_crop/profile_log: true            # 구간 계측 로그
+cloud_crop/visualization_topic: /debug/cloud_crop/fov
+cloud_crop/visualization_rate_hz: 1.0   # 0=비활성
+cloud_crop/visualization_range: 30.0    # max_range와 동일
+cloud_crop/visualization_azimuth_samples: 24
+cloud_crop/visualization_elevation_samples: 8
 # ====================================================================
 # global_planning/* : 전역 탐사 목표 선택 시작
 
