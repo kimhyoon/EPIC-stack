@@ -1,0 +1,41 @@
+<launch>
+  <!-- map2 = poongsan_garage.pcd  x  ML-X sensor config (120deg x 30deg crop).
+       roslaunch sim_bringup garage_map2_mlx.launch
+
+       Restored from the pre-docker tree's garage_map2_config2.launch. The
+       planner yaml is garage.yaml (not poongsan_garage.yaml): in this tree
+       garage.yaml is already fitted to poongsan_garage — see its header. -->
+
+  <!-- ======== SET THIS LAUNCH'S DRONE START POSE HERE ========
+       Carried over verbatim from garage_map2_config2.launch. poongsan_garage
+       is a dense map — use the full_map (global_cloud) RViz display to pick
+       free space. Override on the CLI, e.g.:
+         roslaunch sim_bringup garage_map2_mlx.launch init_x_:=10 init_y_:=5
+
+       NOTE z=1.0 here, where garage_sim.launch's own default is 0.5. 1.0 sits
+       inside garage.yaml's planning box (box_0/down z=0.55); 0.5 starts just
+       below it. -->
+  <arg name="init_x_"   default="3.0" />
+  <arg name="init_y_"   default="8.0" />
+  <arg name="init_z_"   default="1.0" />
+  <arg name="init_yaw"  default="0.0" />
+  <!-- ========================================================= -->
+
+  <include file="$(find sim_bringup)/launch/garage_sim.launch">
+    <arg name="map_name" value="poongsan_garage" />
+    <arg name="config_file" value="garage.yaml" />
+
+    <!-- map2 eval bounds (poongsan_garage extent, floor plane at z~=0) -->
+    <arg name="eval_map_min_x" value="-2.0" />
+    <arg name="eval_map_min_y" value="-11.0" />
+    <arg name="eval_map_min_z" value="-0.2" />
+    <arg name="eval_map_max_x" value="40.0" />
+    <arg name="eval_map_max_y" value="20.0" />
+    <arg name="eval_map_max_z" value="3.8" />
+
+    <arg name="init_x_" value="$(arg init_x_)" />
+    <arg name="init_y_" value="$(arg init_y_)" />
+    <arg name="init_z_" value="$(arg init_z_)" />
+    <arg name="init_yaw" value="$(arg init_yaw)" />
+  </include>
+</launch>

@@ -1,0 +1,38 @@
+<launch>
+  <!-- map1 = garage.pcd  x  ML-X sensor config (120deg x 30deg cloud crop).
+       roslaunch sim_bringup garage_map1_mlx.launch
+
+       Restored from the pre-docker tree's garage_map1_config2.launch. The old
+       "config1" (360deg tilted MARSIM sensor) has no counterpart here: this
+       MARSIM no longer accepts lidar_yaw_fov / lidar_vertical_fov /
+       lidar_is_360. MARSIM renders the full Mid-360 cloud and cloud_crop_bridge
+       crops only what EPIC consumes, per cloud_crop/* in garage_map1.yaml. -->
+
+  <!-- ======== SET THIS LAUNCH'S DRONE START POSE HERE ========
+       Carried over verbatim from garage_map1_config2.launch. Override on the
+       CLI, e.g.:
+         roslaunch sim_bringup garage_map1_mlx.launch init_x_:=10 init_y_:=5 -->
+  <arg name="init_x_"   default="5.0" />
+  <arg name="init_y_"   default="0.0" />
+  <arg name="init_z_"   default="2.0" />
+  <arg name="init_yaw"  default="0.0" />
+  <!-- ========================================================= -->
+
+  <include file="$(find sim_bringup)/launch/garage_sim.launch">
+    <arg name="map_name" value="garage" />
+    <arg name="config_file" value="garage_map1.yaml" />
+
+    <!-- map1 eval bounds (garage.pcd extent; from garage_base.launch defaults) -->
+    <arg name="eval_map_min_x" value="-10.0" />
+    <arg name="eval_map_min_y" value="-6.0" />
+    <arg name="eval_map_min_z" value="-0.2" />
+    <arg name="eval_map_max_x" value="182.0" />
+    <arg name="eval_map_max_y" value="150.2" />
+    <arg name="eval_map_max_z" value="3.8" />
+
+    <arg name="init_x_" value="$(arg init_x_)" />
+    <arg name="init_y_" value="$(arg init_y_)" />
+    <arg name="init_z_" value="$(arg init_z_)" />
+    <arg name="init_yaw" value="$(arg init_yaw)" />
+  </include>
+</launch>

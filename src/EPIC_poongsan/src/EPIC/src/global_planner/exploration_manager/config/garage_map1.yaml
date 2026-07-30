@@ -1,10 +1,17 @@
 # ===========================================================================
-# map2 = poongsan_garage.pcd  x  ML-X sensor config (120deg x 30deg crop).
-# The filename says "garage" for historical reasons, but box_0 below is fitted
-# to poongsan_garage.pcd (x -0.09..38.91, y -9.62..18.31) — NOT to garage.pcd,
-# which is a different, much larger site. map1 lives in garage_map1.yaml.
+# map1 = garage.pcd  x  ML-X sensor config (120deg x 30deg cloud crop).
 #
-# Launch with: roslaunch sim_bringup garage_map2_mlx.launch
+# Identical to garage.yaml (which is map2 = poongsan_garage) EXCEPT the three
+# map-dependent values below, restored from the pre-docker tree's
+# garage_120fov.yaml:
+#   box_0/*                        - garage.pcd spans x -5.13..177.33,
+#                                    y -4.60..144.27, z -0.03..10.03
+#   bubble_topo/odom_node_distance - map1 keeps the original 5.0 m trail
+#   global_planning/w_yawdir       - map1 ignores yaw-rotation cost
+# The ML-X emulation (cloud_crop/*) is identical to map2 by design: same
+# sensor, different site.
+#
+# Launch with: roslaunch sim_bringup garage_map1_mlx.launch
 # ===========================================================================
 planner_debug/enable: true
 #topic param:
@@ -17,19 +24,39 @@ cloud_topic: /quad0_pcl_render_node/cloud
 # setup where localization keeps the raw cloud and exploration sees ML-X FOV.
 cloud_crop/enable: true
 cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
+# [파라미터 규약] cloud_crop/fov_* 는 body(기체) 프레임 기준. body 값 =
+# lidar_perception/fov_up/fov_down(15.0/-15.0) − lidar_perception/lidar_pitch(0.0) = 15.0/-15.0.
 cloud_crop/fov_horizontal: 120.0
 cloud_crop/fov_up: 15.0
 cloud_crop/fov_down: -15.0
+cloud_crop/yaw_offset_deg: 0.0
 cloud_crop/min_range: 0.0
 cloud_crop/max_range: 30.0
-cloud_crop/yaw_offset_deg: 0.0
+# [SIM][불확실] MARSIM odom(/quad_0/lidar_slam/odom)이 수평(body) 자세인지 센서 자세인지
+# 확인하지 못했다. 다만 아래 lidar_perception/lidar_pitch가 0.0(라이다가 애초에 기울어
+# 있지 않음)이라 두 경우의 구분 자체가 무의미하므로 0.0으로 둔다. 실제 물리 장착각이 있는
+# real.yaml/mid360_mlx.yaml 프로파일에서만 이 값이 lidar_pitch와 짝을 이뤄 의미를 가진다.
+cloud_crop/odom_mount_pitch_deg: 0.0
+# [SIM] MARSIM은 cloud/odom 스탬프 일치를 보장하지 않으므로 approximate 유지.
+cloud_crop/sync_policy: approximate
+cloud_crop/sync_queue: 20
+cloud_crop/sync_max_interval_sec: 0.10
+cloud_crop/cloud_queue: 5
+cloud_crop/odom_queue: 20
+cloud_crop/pub_queue: 2
+cloud_crop/watchdog_period_sec: 0.5
+cloud_crop/require_frame_match: false
+cloud_crop/strict_fov_alignment: true
+cloud_crop/output_fields: full
+cloud_crop/profile_log: true
 # Latched crop FOV marker. Its range cap is sampled as a spherical arc grid.
 cloud_crop/visualization_topic: /debug/cloud_crop/fov
+cloud_crop/visualization_rate_hz: 1.0
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
 global_planning/w_vdir: 1.2          # Desktop 120-degree comparison value.
-global_planning/w_yawdir: 0.5        # Desktop 120-degree comparison value.
+global_planning/w_yawdir: 0.0        # [map1] ignore yaw-rotation cost (garage_120fov.yaml value).
 global_planning/w_firstnode: 0.2
 #viz
 # [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
@@ -44,7 +71,7 @@ bubble_topo/init_region_size_x: 2.5   # Desktop 120-degree comparison value.
 bubble_topo/init_region_size_y: 2.5   # Desktop 120-degree comparison value.
 bubble_topo/init_region_size_z: 2.0
 bubble_topo/cube_discrete_size: 0.25  # Desktop YAML value; algorithm.xml overrides both runtimes to 0.3.
-bubble_topo/odom_node_distance: 1.0   # Desktop dense odom-trail spacing [m].
+bubble_topo/odom_node_distance: 5.0   # [map1] original odom-trail spacing [m]; map2 uses 1.0 for narrow corridors.
 # topology 노드 생성·유지와 엣지 연결은 이 안전거리 하나를 공통으로 사용한다.
 # 별도 node 반경, 하드코딩 +0.1 m 및 goal 반경 추가 0.01 m로 판정이 달랐던 기존 구조는 연결 실패와 설정 해석 혼선을 줄이기 위해 제거했다.
 bubble_astar/safe_distance: 0.6
@@ -120,12 +147,12 @@ ViewpointManager/sample_pillar_max_radius: 9.0
 ViewpointManager/sample_pillar_radius_layer_num: 8
 ViewpointManager/sample_pillar_circle_sample_num: 12
 ViewpointManager/local_tsp_size: 20
-# area
+# area  [map1: garage.pcd — the large ~177x144 m site, NOT poongsan's 39x28 box]
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
 box_num: 1
-box_0/down: [-1.0, -9.0, 0.55]
-box_0/up: [38.5, 18.0, 2.5]
+box_0/down: [-10.0, -6.0, 0.2]
+box_0/up: [182.0, 150.2, 3.8]
 dead_area_num: 0
 # trajectory param
 max_traj_len: 10.0

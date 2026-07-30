@@ -6,17 +6,49 @@
   <node pkg="tf" type="static_transform_publisher" name="odom_to_map"
         args="0 0 0 0 0 0 odom map 100" />
 
+  <!-- ============================================================= -->
+  <!-- Parameterized MARSIM engine. Runnable directly (defaults below  -->
+  <!-- reproduce map2 = poongsan_garage), but normally driven by the   -->
+  <!-- per-map wrappers:                                               -->
+  <!--   garage_map1_mlx.launch  map1 = garage.pcd                     -->
+  <!--   garage_map2_mlx.launch  map2 = poongsan_garage.pcd            -->
+  <!-- Both use the ML-X sensor config; the pre-docker 360deg variant   -->
+  <!-- (config1) has no equivalent here, because MARSIM no longer takes -->
+  <!-- lidar_yaw_fov/lidar_is_360 — cropping moved into                 -->
+  <!-- cloud_crop_bridge, driven by cloud_crop/* in the planner yaml.   -->
+  <!-- ============================================================= -->
+
   <!-- Map configuration -->
-  <arg name="map_name" value="garage" />
-  <arg name="config_file" default="$(arg map_name).yaml" />
-  <!-- The Poongsan garage scan used by MARSIM rendering and evaluation.
-       garage.pcd has SHA256
-       873398fb0a9339edb0a506d20636e5e408024fa50cd79d2ae81a14584f6577fd
-       and spans x -0.09..38.91, y -9.62..18.31. -->
-  <arg name="map_pcd" default="$(find map_generator)/resource/garage.pcd" />
-  <!-- RViz-only input. The Poongsan scan is small enough to publish directly
-       and this path never feeds MARSIM sensing or EPIC. -->
-  <arg name="rviz_map_pcd" default="$(find map_generator)/resource/garage.pcd" />
+  <arg name="map_name" default="poongsan_garage" />
+  <!-- NOT derived from map_name: map2's planner yaml is garage.yaml for
+       historical reasons, map1's is garage_map1.yaml. -->
+  <arg name="config_file" default="garage.yaml" />
+  <!-- Both scans live under their real names in map_generator/resource:
+         poongsan_garage.pcd  SHA256 873398fb…  x -0.09..38.91, y -9.62..18.31
+         garage.pcd           SHA256 1f87e77d…  x -5.13..177.33, y -4.60..144.27
+       *.pcd is gitignored, so these are installed locally, never cloned. -->
+  <arg name="map_pcd" default="$(find map_generator)/resource/$(arg map_name).pcd" />
+  <!-- RViz-only overlay (display "original_garage_pcd"); never feeds MARSIM
+       sensing or EPIC, so it is safe to decimate. Defaults to the full scan so
+       this launch works with nothing but the map itself.
+       The full scans are dense enough to stall the RViz view (1.4M pts for
+       poongsan, 19.3M for garage). For a lighter overlay, make a decimated copy
+       and pass it — it is purely cosmetic:
+         rosrun map_generator pcd_voxel_downsample \
+             <map>.pcd <map>_rviz.pcd <leaf_m>
+         roslaunch sim_bringup garage_map2_mlx.launch \
+             rviz_map_pcd:=$(find map_generator)/resource/poongsan_garage_rviz.pcd
+       Measured: poongsan leaf 0.20 -> 108k pts, garage leaf 0.50 -> 406k pts. -->
+  <arg name="rviz_map_pcd" default="$(arg map_pcd)" />
+
+  <!-- Coverage-evaluation bounds. MUST follow the map: scoring a 39x28 m site
+       against the 182x150 box silently deflates coverage. Defaults = map2. -->
+  <arg name="eval_map_min_x" default="-2.0" />
+  <arg name="eval_map_min_y" default="-11.0" />
+  <arg name="eval_map_min_z" default="-0.2" />
+  <arg name="eval_map_max_x" default="40.0" />
+  <arg name="eval_map_max_y" default="20.0" />
+  <arg name="eval_map_max_z" default="3.8" />
 
   <!-- Sensor publish rate control -->
   <arg name="odom_publish_rate" default="10.0" />
@@ -25,13 +57,14 @@
   <!-- Odometry topic (configure based on your odometry source) -->
   <arg name="odom_topic" default="/quad_0/lidar_slam/odom" />
 
-  <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. The
-       Poongsan garage floor is z=0; keep 0.5 m body clearance before takeoff.
-       The map begins near x=0, so use an interior free-space column instead
-       of spawning directly on the scan boundary. -->
+  <!-- Spawn pose for both MARSIM dynamics and the RViz drone marker. Defaults
+       track map2 (poongsan_garage), matching garage_map2_mlx.launch. The floor
+       is z=0; z=1.0 spawns inside garage.yaml's planning box (box_0/down
+       z=0.55) — a 0.5 spawn starts just below it. The map begins near x=0, so
+       use an interior free-space column, not the scan boundary. -->
   <arg name="init_x_" default="3.0" />
   <arg name="init_y_" default="8.0" />
-  <arg name="init_z_" default="0.5" />
+  <arg name="init_z_" default="1.0" />
   <arg name="init_yaw" default="0.0" />
 
   <!-- garage.yaml enables ML-X FOV emulation by default. Set this argument
@@ -165,12 +198,12 @@
       <param name="workspace_root" value="$(arg workspace_root)" />
       <param name="pcd_path" value="$(arg map_pcd)" />
       <param name="cell_size" value="0.4" />
-      <param name="map_min_x" value="-10.0" />
-      <param name="map_min_y" value="-6.0" />
-      <param name="map_min_z" value="-0.2" />
-      <param name="map_max_x" value="182.0" />
-      <param name="map_max_y" value="150.2" />
-      <param name="map_max_z" value="3.8" />
+      <param name="map_min_x" value="$(arg eval_map_min_x)" />
+      <param name="map_min_y" value="$(arg eval_map_min_y)" />
+      <param name="map_min_z" value="$(arg eval_map_min_z)" />
+      <param name="map_max_x" value="$(arg eval_map_max_x)" />
+      <param name="map_max_y" value="$(arg eval_map_max_y)" />
+      <param name="map_max_z" value="$(arg eval_map_max_z)" />
     </node>
   </group>
 
@@ -183,12 +216,12 @@
       <param name="position_cmd_topic" value="/planning/pos_cmd" />
       <param name="pcd_path" value="$(arg map_pcd)" />
       <param name="cell_size" value="0.4" />
-      <param name="map_min_x" value="-10.0" />
-      <param name="map_min_y" value="-6.0" />
-      <param name="map_min_z" value="-0.2" />
-      <param name="map_max_x" value="182.0" />
-      <param name="map_max_y" value="150.2" />
-      <param name="map_max_z" value="3.8" />
+      <param name="map_min_x" value="$(arg eval_map_min_x)" />
+      <param name="map_min_y" value="$(arg eval_map_min_y)" />
+      <param name="map_min_z" value="$(arg eval_map_min_z)" />
+      <param name="map_max_x" value="$(arg eval_map_max_x)" />
+      <param name="map_max_y" value="$(arg eval_map_max_y)" />
+      <param name="map_max_z" value="$(arg eval_map_max_z)" />
       <param name="output_dir" value="$(arg eval_output_dir)" />
       <param name="auto_shutdown" value="$(arg eval_auto_shutdown)" />
     </node>

@@ -15,3 +15,6 @@ install/
 *.bag
 *.bag.active
 __pycache__
+# sim_bringup's result_root ($(find sim_bringup)/../../result) — per-run
+# experiment output written by sim_result_manager.py, not source.
+result/
