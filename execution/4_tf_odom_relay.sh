@@ -12,10 +12,31 @@ WORKSPACE_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 source /opt/ros/noetic/setup.bash
 source "${WORKSPACE_ROOT}/devel/setup.bash"
 
+# 참조할 EPIC config yaml 경로 (환경변수로 오버라이드 가능). 기본값은 mid360_mlx.yaml.
+EPIC_CONFIG="${EPIC_CONFIG:-${WORKSPACE_ROOT}/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/mid360_mlx.yaml}"
+
 # 라이다 전방 기울임 장착각 [deg] — PX4 로 보내는 odom 자세에서 이 각을 보상한다.
-#   25 = 현재 25° 전방 기울임 장착 / 0 = 수평 장착(무보상, 구 topic_tools relay 동일)
-# ※ real.yaml 의 lidar_perception/lidar_pitch 와 같은 물리량 — 장착 바꾸면 둘 다 수정!
-MOUNT_PITCH_DEG=25
+#   단일 소스: ${EPIC_CONFIG} 의 lidar_perception/lidar_pitch (물리 장착각 — 장착 바꾸면
+#   그 config 하나만 고치면 됨. 여기 하드코딩된 값은 없다).
+#   MOUNT_PITCH_DEG 환경변수로 값을 직접 지정하면 config 조회 없이 그 값을 그대로 쓴다:
+#   예) MOUNT_PITCH_DEG=30 ./4_tf_odom_relay.sh
+if [ -n "${MOUNT_PITCH_DEG:-}" ]; then
+  echo "[tf_relay] MOUNT_PITCH_DEG 환경변수로 오버라이드: ${MOUNT_PITCH_DEG} deg (config 조회 생략)"
+else
+  MOUNT_PITCH_DEG="$(python3 -c "
+import sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    data = yaml.safe_load(f)
+print(data['lidar_perception/lidar_pitch'])
+" "${EPIC_CONFIG}")" || {
+    echo "[tf_relay] 치명적 오류: ${EPIC_CONFIG} 에서 lidar_perception/lidar_pitch 를 읽지 못했습니다." >&2
+    echo "[tf_relay] 값을 임의로 0/25 로 넘기지 않고 중단합니다." >&2
+    echo "[tf_relay] 해결: config 경로 확인(EPIC_CONFIG) 또는 MOUNT_PITCH_DEG=<deg> 환경변수로 직접 지정." >&2
+    exit 1
+  }
+  echo "[tf_relay] 장착각을 ${EPIC_CONFIG} 의 lidar_perception/lidar_pitch 에서 읽음: ${MOUNT_PITCH_DEG} deg"
+fi
 
 PIDS=()
 cleanup() {
