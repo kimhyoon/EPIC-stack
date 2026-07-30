@@ -1,6 +1,9 @@
 # [nuc_unist — 개발용 기체 @ UNIST] 라이다 전방 25° 하향 장착, 기체(body) 기준 ±15° FOV 모사.
-#   실행:  roslaunch epic_planner real_flight.launch config_file:=nuc_unist.yaml use_cloud_crop_bridge:=true
+#   실행:  roslaunch epic_planner real_flight.launch config_file:=nuc_unist.yaml
 #   (전용 launch 파일을 새로 만들지 말 것 — real_flight.launch 의 config_file 인자로 충분하다.)
+#   crop on/off 는 launch 인자가 아니라 아래 cloud_crop/enable 이다. real_flight.launch:35 의
+#   cloud_crop_bridge 노드는 무조건 뜨고, enable: false 면 브릿지가 자진 종료한다.
+#   (ws/epic/README.md 가 아직 use_cloud_crop_bridge 인자를 설명하는데, 그 인자는 없다.)
 #
 # 베이스: mid360_mlx.yaml (장착각 25° 동일). 차이는 크롭 원뿔이 body ±17.5° → ±15° 인 것뿐이다.
 #
