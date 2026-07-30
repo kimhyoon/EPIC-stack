@@ -328,24 +328,79 @@ void FastPlannerManager::initPlanModules(
 void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
 
   const auto &q = msg->pose.pose.orientation;
+  const auto &position = msg->pose.pose.position;
+  const auto &linear_velocity = msg->twist.twist.linear;
+  const auto &angular_velocity = msg->twist.twist.angular;
   const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
-  if (!std::isfinite(n2) ||
+  if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+      !std::isfinite(position.z) || !std::isfinite(linear_velocity.x) ||
+      !std::isfinite(linear_velocity.y) ||
+      !std::isfinite(linear_velocity.z) ||
+      !std::isfinite(angular_velocity.x) ||
+      !std::isfinite(angular_velocity.y) ||
+      !std::isfinite(angular_velocity.z) || !std::isfinite(n2) ||
       n2 <= gcopter_config_->vectorNormEps *
                 gcopter_config_->vectorNormEps) {
     ROS_WARN_THROTTLE(
-        1.0, "[NumericalGuard] invalid odometry quaternion; keeping last yaw");
+        1.0, "[NumericalGuard] invalid odometry state; keeping last state");
     return;
   }
 
-  double roll, pitch;
   tf::Quaternion quat;
   tf::quaternionMsgToTF(q, quat);
   quat.normalize();
 
-  double yaw;
+  double roll, pitch, yaw;
   tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
-  if (std::isfinite(yaw))
-    local_data_.curr_yaw_ = yaw;
+  const double cos_pitch = std::cos(pitch);
+  if (!std::isfinite(roll) || !std::isfinite(pitch) ||
+      !std::isfinite(yaw) || !std::isfinite(cos_pitch) ||
+      std::abs(cos_pitch) <= gcopter_config_->vectorNormEps) {
+    ROS_WARN_THROTTLE(
+        1.0,
+        "[NumericalGuard] odometry attitude is near the Euler singularity; "
+        "keeping last state");
+    return;
+  }
+
+  // nav_msgs/Odometry defines twist in child_frame_id. Rotate body-frame
+  // linear velocity into the pose parent frame used by the position planner.
+  const tf::Vector3 velocity_body(linear_velocity.x, linear_velocity.y,
+                                  linear_velocity.z);
+  const tf::Vector3 velocity_parent =
+      tf::Matrix3x3(quat) * velocity_body;
+  Eigen::Vector3d planner_velocity(velocity_parent.x(), velocity_parent.y(),
+                                  velocity_parent.z());
+  if (!planner_velocity.allFinite()) {
+    ROS_WARN_THROTTLE(
+        1.0,
+        "[NumericalGuard] odometry velocity transform is invalid; keeping "
+        "last state");
+    return;
+  }
+  // angular.z is body-axis r, not generally the world-heading derivative.
+  // Convert body q/r rates to Euler yaw rate before using it as a boundary
+  // condition for the yaw polynomial.
+  double yaw_rate =
+      (std::sin(roll) * angular_velocity.y +
+       std::cos(roll) * angular_velocity.z) /
+      cos_pitch;
+  if (!std::isfinite(yaw_rate)) {
+    ROS_WARN_THROTTLE(
+        1.0,
+        "[NumericalGuard] converted odometry yaw rate is invalid; keeping "
+        "last state");
+    return;
+  }
+  latest_odom_pva_.col(0) =
+      Eigen::Vector3d(position.x, position.y, position.z);
+  latest_odom_pva_.col(1) = planner_velocity;
+  latest_odom_pva_.col(2).setZero();
+  latest_odom_yaw_state_ << yaw, yaw_rate, 0.0;
+  latest_odom_stamp_ =
+      msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+  latest_odom_state_available_ = true;
+  local_data_.curr_yaw_ = yaw;
 }
 
 void FastPlannerManager::goalCallback(
@@ -663,65 +718,21 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (clip_corridor_to_observed_ && clip_cone_faces_ && frontier_manager_)
     clipCorridorToObservedBoundary(hPolys, observed_boundary);
 
-  // Use one absolute handoff time for both position and yaw. Normal replans
-  // inherit the previous trajectory state at this instant so the new
-  // polynomial has continuous PVA and yaw boundary conditions. Static and
-  // emergency plans intentionally restart from odometry.
+  // Every replan starts from the latest measured odometry state. Do not
+  // inherit a wall-clock sample from the previous command trajectory: when the
+  // vehicle lags behind that command, inheritance moves each new trajectory
+  // start farther away from the actual vehicle state.
   const ros::Time trajectory_start_time = ros::Time::now();
-  Eigen::Matrix3d iniState;
   Eigen::Matrix3d finState;
-  Eigen::Vector3d initialVelocity = local_data_.curr_vel_;
-  if (!initialVelocity.allFinite()) {
-    initialVelocity.setZero();
-  } else if (initialVelocity.norm() > gcopter_config_->maxVelMag) {
-    initialVelocity =
-        initialVelocity.normalized() * gcopter_config_->maxVelMag;
+  if (!latest_odom_state_available_) {
+    last_plan_fail_reason_ =
+        "latest odometry state unavailable for replan initialization";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
   }
-  Eigen::Matrix3d odometryState;
-  odometryState.col(0) = local_data_.curr_pos_;
-  odometryState.col(1) = initialVelocity;
-  odometryState.col(2).setZero();
-  iniState = odometryState;
-
-  Eigen::Vector3d initialYawState(local_data_.curr_yaw_, 0.0, 0.0);
-  bool previousPositionStateAvailable = false;
-  bool previousYawStateAvailable = false;
-  double previousPositionTime = 0.0;
-  double previousYawTime = 0.0;
-  Eigen::Matrix3d previousPositionState;
-  Eigen::Vector3d previousYawState = initialYawState;
-
-  if (!is_static && local_data_.traj_id_ >= 1 &&
-      local_data_.minco_traj_.getPieceNum() > 0 &&
-      std::isfinite(local_data_.duration_) && local_data_.duration_ > 0.0) {
-    previousPositionTime =
-        (trajectory_start_time - local_data_.start_time_).toSec();
-    previousPositionTime =
-        std::max(0.0, std::min(previousPositionTime, local_data_.duration_));
-    previousPositionState.col(0) =
-        local_data_.minco_traj_.getPos(previousPositionTime);
-    previousPositionState.col(1) =
-        local_data_.minco_traj_.getVel(previousPositionTime);
-    previousPositionState.col(2) =
-        local_data_.minco_traj_.getAcc(previousPositionTime);
-    previousPositionStateAvailable = previousPositionState.allFinite();
-
-    if (local_data_.minco_yaw_traj_.getPieceNum() > 0) {
-      const double previousYawDuration =
-          local_data_.minco_yaw_traj_.getTotalDuration();
-      if (std::isfinite(previousYawDuration) && previousYawDuration > 0.0) {
-        previousYawTime =
-            std::max(0.0, std::min(previousPositionTime, previousYawDuration));
-        previousYawState.x() =
-            local_data_.minco_yaw_traj_.getPos(previousYawTime).x();
-        previousYawState.y() =
-            local_data_.minco_yaw_traj_.getVel(previousYawTime).x();
-        previousYawState.z() =
-            local_data_.minco_yaw_traj_.getAcc(previousYawTime).x();
-        previousYawStateAvailable = previousYawState.allFinite();
-      }
-    }
-  }
+  const Eigen::Matrix3d iniState = latest_odom_pva_;
+  const Eigen::Vector3d initialYawState = latest_odom_yaw_state_;
 
   const auto findStartCorridor =
       [&hPolys](const Eigen::Vector3d &position) -> int {
@@ -737,31 +748,13 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     return -1;
   };
 
-  bool inheritedPreviousState = false;
-  int start_idx = -1;
-  if (previousPositionStateAvailable) {
-    start_idx = findStartCorridor(previousPositionState.col(0));
-    if (start_idx >= 0) {
-      iniState = previousPositionState;
-      inheritedPreviousState = true;
-      if (previousYawStateAvailable)
-        initialYawState = previousYawState;
-    } else {
-      ROS_WARN_THROTTLE(
-          2.0,
-          "[ReplanContinuity] previous trajectory state is outside the new "
-          "corridor; using odometry PVA and yaw");
-    }
-  }
-  if (!inheritedPreviousState)
-    start_idx = findStartCorridor(iniState.col(0));
+  const int start_idx = findStartCorridor(iniState.col(0));
 
   if (start_idx == -1) {
-    // 시작상태(예측점)가 corridor 밖: RTH 정체 사건의 주범. 이벤트 로거가 사유를
+    // 시작상태(odometry)가 corridor 밖: RTH 정체 사건의 주범. 이벤트 로거가 사유를
     // 읽어가므로 콘솔은 스로틀만 남긴다 (예전엔 이 ROS_ERROR가 초당 수십 번 스팸).
-    last_plan_fail_reason_ =
-        std::string("start not in corridor (") + (is_static ? "static" : "predicted") +
-        " start; corridor pieces=" + std::to_string(hPolys.size()) + ")";
+    last_plan_fail_reason_ = "odometry start not in corridor; corridor pieces=" +
+                             std::to_string(hPolys.size());
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     double safe_until = 0.0;
     const double elapsed_raw =
@@ -963,9 +956,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                  initialYawState.z()));
     ROS_INFO_THROTTLE(
         1.0,
-        "[ReplanContinuity] source=%s PVA_err=[%.3e %.3e %.3e] "
+        "[ReplanInitialState] source=odometry PVA_err=[%.3e %.3e %.3e] "
         "Yaw_err=[%.3e %.3e %.3e]",
-        inheritedPreviousState ? "previous_trajectory" : "odometry",
         positionBoundaryError.x(), positionBoundaryError.y(),
         positionBoundaryError.z(), yawBoundaryError.x(),
         yawBoundaryError.y(), yawBoundaryError.z());

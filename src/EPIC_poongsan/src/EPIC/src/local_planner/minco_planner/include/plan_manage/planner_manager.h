@@ -386,6 +386,14 @@ public:
                                        const Eigen::Vector3d &sample_position);
 
 private:
+  // Replanning starts from the latest measured odometry state. Odometry twist
+  // is expressed in child_frame_id, so posCallback converts it to the pose
+  // parent frame and converts body rates to Euler yaw rate before storing it.
+  Eigen::Matrix3d latest_odom_pva_ = Eigen::Matrix3d::Zero();
+  Eigen::Vector3d latest_odom_yaw_state_ = Eigen::Vector3d::Zero();
+  ros::Time latest_odom_stamp_;
+  bool latest_odom_state_available_ = false;
+
   /* main planning algorithms & modules */
   shared_ptr<SDFMap> sdf_map_;
 
