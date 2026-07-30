@@ -386,6 +386,19 @@ inline bool firi(const Eigen::MatrixX4d& bd, const Eigen::Matrix3Xd& pc,
 			++nH;
 		}
 
+		// `completed` means every obstacle point and boundary plane has been
+		// separated by some face. Exiting on max_iterations instead means the
+		// plane budget (local_planning/corridor/firi_max_plane_count) ran out
+		// with obstacle points STILL INSIDE the polytope. Returning true here
+		// handed the caller a hull that FIRI itself had not finished, which is
+		// indistinguishable from a valid one — the corridor then contains
+		// occupied cells and MINCO happily optimizes a trajectory through them.
+		// Report failure and let the caller decide; the docstring already
+		// promises "true if the algorithm completes successfully".
+		if (!completed) {
+			return false;
+		}
+
 		hPoly.resize(nH, 4);
 		for (int i = 0; i < nH; ++i) {
 			hPoly.block<1, 3>(i, 0) = forwardH.block<1, 3>(i, 0) * forward;

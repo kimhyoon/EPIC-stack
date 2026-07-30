@@ -27,6 +27,15 @@ single.par
 single.tsp
 single.txt
 
+# exploration_manager/config/replay/ — parameter profiles that run_replay.sh
+# regenerates from a bag's /epic/session_info on every replay. Kept on disk as
+# the record of what a replay ran with, but derived data, and deliberately NOT
+# beside real*.yaml so a replay can never disturb a flight config.
+# Leading **/ is required: a pattern containing a slash is anchored to this
+# .gitignore's directory, and the real path is nested under
+# src/EPIC_poongsan/src/EPIC/src/global_planner/.
+**/exploration_manager/config/replay/
+
 # minco_planner/config/traj.rviz — rviz rewrites its config on exit, so this
 # churned ~100 lines per run. No launch file references it (the traj.rviz in
 # the launch files is test_interface's, a different file).
