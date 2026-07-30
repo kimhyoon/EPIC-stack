@@ -8,6 +8,7 @@ Panels:
         - /Axes1
         - /robot_state1
         - /viewpoint_info1
+        - /viewpoint_info1/Viewpoints_debug1
         - /viewpoint_info1/Viewpoints_debug1/Namespaces1
         - /global_planner1
         - /local_planner1/local_traj1
@@ -31,7 +32,7 @@ Panels:
   - Class: rviz/Time
     Name: Time
     SyncMode: 0
-    SyncSource: buffered_cloud
+    SyncSource: well_observed
 Preferences:
   PromptSaveOnExit: true
 Toolbars:
@@ -97,13 +98,21 @@ Visualization Manager:
     - Class: rviz/Group
       Displays:
         - Class: rviz/MarkerArray
-          Enabled: false
+          Enabled: true
           Marker Topic: /exploration_node/viewpoint_candidates
           Name: Viewpoints_debug
           Namespaces:
-            {}
+            vp/CLEARANCE: false
+            vp/EFP: true
+            vp/NO_VIS: false
+            vp/OUT_OF_BOX: false
+            vp/PRUNED: false
+            vp/UNREACHABLE: false
+            vp/VALID: false
+            vp_best: true
+            vp_yaw: false
           Queue Size: 100
-          Value: false
+          Value: true
         - Class: rviz/MarkerArray
           Enabled: true
           Marker Topic: /exploration_node/sf_cluster_marker
@@ -124,6 +133,8 @@ Visualization Manager:
           Marker Topic: /global_tour
           Name: global_tour
           Namespaces:
+            global_efp_path: true
+            global_efp_path_order: true
             global_path: true
             global_path_order: true
           Queue Size: 100
@@ -391,7 +402,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 6.652021884918213
+      Distance: 12.389808654785156
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -399,17 +410,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: -0.5153673887252808
-        Y: 1.202036738395691
-        Z: 8.55932331085205
+        X: 4.8277058601379395
+        Y: -0.6810331344604492
+        Z: 7.482234477996826
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.2147963047027588
+      Pitch: 1.5297958850860596
       Target Frame: <Fixed Frame>
-      Yaw: 2.722716808319092
+      Yaw: 3.117722749710083
     Saved:
       - Class: rviz/ThirdPersonFollower
         Distance: 40.93450164794922
