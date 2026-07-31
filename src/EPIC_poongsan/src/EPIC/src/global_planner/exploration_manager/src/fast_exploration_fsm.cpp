@@ -883,6 +883,25 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       auto info = &planner_manager_->local_data_;
       planner_manager_->polyTraj2ROSMsg(poly_traj_msg, info->start_time_);
       fd_->newest_traj_ = poly_traj_msg;
+
+      // CAUTION creates only a position escape trajectory. Publish a matching
+      // constant-yaw trajectory so traj_server can activate the new generation
+      // atomically instead of continuing the previous yaw trajectory.
+      traj_utils::PolyTraj hold_yaw_msg;
+      hold_yaw_msg.drone_id = poly_traj_msg.drone_id;
+      hold_yaw_msg.traj_id = poly_traj_msg.traj_id;
+      hold_yaw_msg.start_time = poly_traj_msg.start_time;
+      hold_yaw_msg.order = 5;
+      hold_yaw_msg.duration.resize(1);
+      hold_yaw_msg.duration[0] =
+          std::max(0.1, static_cast<double>(info->duration_));
+      hold_yaw_msg.coef_x.assign(6, 0.0);
+      hold_yaw_msg.coef_y.assign(6, 0.0);
+      hold_yaw_msg.coef_z.assign(6, 0.0);
+      hold_yaw_msg.coef_x[5] = fd_->odom_yaw_;
+      fd_->newest_yaw_traj_ = hold_yaw_msg;
+
+      poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
       poly_traj_pub_.publish(fd_->newest_traj_);
       ros::Duration(0.2).sleep();
     }

@@ -48,8 +48,8 @@ cloud_crop/visualization_rate_hz: 1.0
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
-global_planning/w_vdir: 1.2          # Desktop 120-degree comparison value.
-global_planning/w_yawdir: 0.5        # Desktop 120-degree comparison value.
+global_planning/w_vdir: 0.0
+global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
 #viz
 # [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
@@ -60,17 +60,17 @@ FrontierManager/view_frt: true
 bubble_topo/min_x: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_y: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_z: 0.3                # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_x: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_y: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_z: 2.0
+bubble_topo/init_region_size_x: 1.5
+bubble_topo/init_region_size_y: 1.5
+bubble_topo/init_region_size_z: 1.0
 bubble_topo/cube_discrete_size: 0.25  # Desktop YAML value; algorithm.xml overrides both runtimes to 0.3.
-bubble_topo/odom_node_distance: 1.0   # Desktop dense odom-trail spacing [m].
+bubble_topo/odom_node_distance: 1.5
 # topology 노드 생성·유지와 엣지 연결은 이 안전거리 하나를 공통으로 사용한다.
 # 별도 node 반경, 하드코딩 +0.1 m 및 goal 반경 추가 0.01 m로 판정이 달랐던 기존 구조는 연결 실패와 설정 해석 혼선을 줄이기 위해 제거했다.
 bubble_astar/safe_distance: 0.6
 # 갱신 전후 node 중심이 이 거리 이내이고 기존 node가 safe_distance를 만족하면 같은 연결점으로 유지한다.
 # 안전거리 미달 node는 위치 차이와 관계없이 매칭하지 않고 제거한다.
-bubble_topo/node_match_tolerance: 0.10
+bubble_topo/node_match_tolerance: 0.30
 # [신규 Topology 노드 생성 안정화 여유거리]
 # 새 경로 연결점은 공통 안전거리보다 이 값만큼 더 멀리 있을 때만 topology graph에 처음 추가한다.
 # 값 증가 시 안전거리 경계의 node 생성·삭제 반복은 줄지만 좁은 통로의 신규 연결점이 감소할 수 있고, 값 감소 시 신규 연결점은 늘지만 경계에서 graph가 흔들릴 수 있다.
@@ -113,33 +113,33 @@ local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
 local_planning/p0_down: 0.2    # P0 extent below the flight controller [m]
-parallel_astar/update_connection_timeout: 0.002
-parallel_astar/insert_node_timeout: 0.002
+parallel_astar/update_connection_timeout: 0.01
+parallel_astar/insert_node_timeout: 0.01
 FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.8   # Desktop 120-degree comparison value.
-FrontierManager/good_observation_force_trust_length: 5.0
+FrontierManager/good_observation_direction_score: 0.6
+FrontierManager/good_observation_force_trust_length: 0.5
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
-FrontierManager/cluster_max_size: 3.0
-FrontierManager/cluster_min_size: 1.0
+FrontierManager/cluster_max_size: 5.0
+FrontierManager/cluster_min_size: 0.5
 FrontierManager/cluster_min_radius: 1.0 # Desktop 120-degree comparison value.
-FrontierManager/cluster_direction_radius: 0.75 # Desktop 120-degree comparison value.
-FrontierManager/cluster_minmum_point_num: 3
+FrontierManager/cluster_direction_radius: 0.8
+FrontierManager/cluster_minmum_point_num: 2
 # [탐사 박스 경계 Frontier 제거]
 # 박스 경계 margin*cell_size 이내의 셀은 frontier 승격 경로에서 제외한다. 경계
 # 너머는 관측 자체가 불가라, 두면 영영 해소되지 않는 frontier 가 남아 탐사가
 # 끝나지 않거나 같은 지점을 반복 방문한다. 0 이면 비활성.
 FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀]
 # Cylindrical viewpoint sampling.
-ViewpointManager/sample_pillar_min_height: -1.5  # Desktop 120-degree comparison value.
-ViewpointManager/sample_pillar_max_height: 1.5   # Desktop 120-degree comparison value.
-ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
-ViewpointManager/sample_pillar_min_radius: 0.3
-ViewpointManager/sample_pillar_max_radius: 9.0
-ViewpointManager/sample_pillar_radius_layer_num: 8
+ViewpointManager/sample_pillar_min_height: -1.0
+ViewpointManager/sample_pillar_max_height: 1.0
+ViewpointManager/sample_pillar_height_layer_num: 9
+ViewpointManager/sample_pillar_min_radius: 0.8
+ViewpointManager/sample_pillar_max_radius: 3.0
+ViewpointManager/sample_pillar_radius_layer_num: 4
 ViewpointManager/sample_pillar_circle_sample_num: 12
-ViewpointManager/local_tsp_size: 20
+ViewpointManager/local_tsp_size: 8
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
@@ -148,7 +148,7 @@ box_0/down: [-1.0, -9.0, 0.55]
 box_0/up: [38.5, 18.0, 2.5]
 dead_area_num: 0
 # trajectory param
-max_traj_len: 10.0
+max_traj_len: 5.0
 
 # Corridor/FIRI generation parameters. Field-tuning effects are documented in real.yaml.
 local_planning/corridor/obstacle_voxel_size: 0.28       # Increase: faster/coarser obstacle input; decrease: slower/denser input.
@@ -163,28 +163,31 @@ local_planning/corridor/overlap_tolerance: 0.01         # Minimum numerical inte
 local_planning/corridor/fallback_target_margin: 0.1     # Keep fallback targets this far inside the connected corridor [m].
 local_planning/corridor/fallback_min_progress: 0.5      # Reject fallback targets with less guide-path progress [m].
 
-DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
-DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
-MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
-MaxVelMag: 2.0
+DilateRadiusSoft: 0.6
+DilateRadiusHard: 0.45
+MaxCorridorSize: 4.0
+# Slow trajectory phase continuously as the command approaches the measured vehicle lead limit.
+trajectory_execution/max_lead_time: 0.2
+trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
+MaxVelMag: 0.75
 MaxAccMag: 2.0
 maxBdrMag: 10000.0
-MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
+MaxTiltAngle: 0.8
 MinThrust: 15.0
 MaxThrust: 22.0
 VehicleMass: 1.9
 GravAcc: 9.8
-HorizDrag: 0.70   # [SIM keep] matched to simulation dynamics; do not use real=0.0 here.
-VertDrag: 0.80    # [SIM keep] do not use real=0.0 here.
-ParasDrag: 0.01   # [SIM keep] do not use real=0.0 here.
+HorizDrag: 0.0
+VertDrag: 0.0
+ParasDrag: 0.0
 SpeedEps: 0.0001
-WeightT: 2000.0   # Desktop 120-degree comparison value.
-WeightSafeT: 400.0 # Desktop 120-degree comparison value.
+WeightT: 700.0
+WeightSafeT: 200.0
 # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
-ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
-PvaRunningWeights: [2.0e+5, 1.5e+4, 1.0e+4]
+ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6]
+PvaRunningWeights: [1.1e+5, 1.5e+4, 1.1e+4]
 PvaInitialWeights: [1.0e+2, 1.0e+2]
-PvaTerminalWeights: [2.0e+5, 1.5e+4, 1.0e+4]
+PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4]
 SmoothingEps: 0.015
 IntegralIntervs: 32
 
@@ -199,13 +202,13 @@ numerical/flatness_norm_eps: 1.0e-6  # Flatness 변환의 norm·분모 하한
 numerical/min_path_segment_length: 5.0e-2  # 서로 붙은 guide point를 하나로 합칠 거리[m]
 numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 pivot 절대값 하한
 
-RelCostTol: 1.0e-6  # Desktop 120-degree comparison value.
+RelCostTol: 1.1e-6
 #param for yaw opt
-yaw_max_vel: 2.0    # Desktop 120-degree comparison value.
+yaw_max_vel: 1.5
 yaw_rho_vis: 10000.0
-yaw_time_fwd: 3.0   # Desktop 120-degree comparison value.
+yaw_time_fwd: 2.5
 # FSM param
-fsm/goal_tolerance: 0.2
+fsm/goal_tolerance: 0.3
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz). Lower to simulate slow planning.
 
@@ -222,8 +225,8 @@ fsm/emergency_replan_control_error: 3.0
 fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain below box_0/up z.
 fsm/takeoff_reach_tol: 0.15       # height is reached when |z - target| is below this value.
 fsm/takeoff_settle_vel: 0.4       # considered settled when odom velocity is below this value.
-fsm/takeoff_settle_time: 0.3      # start exploration after this many seconds in the reached+settled state.
-fsm/takeoff_timeout: 20.0         # timeout [s]: explore if near height; otherwise keep hover and warn.
+fsm/takeoff_settle_time: 0.03     # match real2.yaml
+fsm/takeoff_timeout: 2000.0       # match real2.yaml
 
 # MARSIM validation stops in FINISH. Automatic RTH and landing remain disabled
 # until FINISH command ownership between the FSM and traj_server is resolved.
@@ -237,7 +240,7 @@ fsm/traj_server_owns_finish_cmd: true
 # frontier 가 한 번이라도 잡히면 즉시 통과한다. 아래 EARLY_FINISH 와는
 # 별개의 1차 방어선이며, 여태 어느 프로파일에도 없어 코드 기본값 5.0초로
 # 돌고 있었다.
-fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
+fsm/explore_warmup_timeout: 5.0    # [s] frontier 0개 결론 유예 시간
 
 # Early-finish rescue. When exploration ends after travelling only a short
 # distance, the narrow LiDAR FOV most likely hid the remaining frontiers rather
@@ -258,7 +261,7 @@ fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
 # 의도적으로 없다 — 회전이 확인되지 않으면 탐사를 시작하지 않고 제자리 호버로
 # 남는 편이 안전하다. 기체가 못 돌면 계속 회전 명령을 낸다.
 # 상태 관측: /planning/yaw_rotate_init
-fsm/yaw_rotate_init_enable: true
+fsm/yaw_rotate_init_enable: false
 fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
 
 fsm/early_finish_enable: true

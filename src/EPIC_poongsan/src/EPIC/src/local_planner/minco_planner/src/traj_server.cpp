@@ -20,6 +20,8 @@ double replan_time_;
 ros::Publisher pos_cmd_pub, cmd_vis_pub, traj_pub;
 std::shared_ptr<Trajectory<5>> traj_;
 std::shared_ptr<Trajectory<5>> yaw_traj_;
+std::shared_ptr<Trajectory<5>> pending_traj_;
+std::shared_ptr<Trajectory<5>> pending_yaw_traj_;
 quadrotor_msgs::PositionCommand cmd;
 std::vector<Eigen::Vector3d> traj_cmd_, traj_real_;
 Eigen::Vector3d real_pos_;
@@ -30,15 +32,22 @@ double traj_duration_, t_stop, yaw_traj_duration_, yaw_t_stop;
 ros::Time start_time_;
 ros::Time emergency_stop_time;
 int traj_id_;
+int pending_traj_id_ = -1;
+int pending_yaw_traj_id_ = -1;
+double pending_traj_duration_ = 0.0;
+double pending_yaw_traj_duration_ = 0.0;
+ros::Time pending_start_time_;
+double execution_time_ = 0.0;
+ros::Time last_execution_update_time_;
 ros::Time heartbeat_time_(0);
 Eigen::Vector3d last_pos_;
 
-double last_yaw_, last_yawdot_, yaw_max_vel_;
+double last_yaw_, last_yawdot_, yaw_max_vel_, yaw_max_acc_;
 bool yaw_initialized_ = false;
 bool yaw_command_started_ = false;
 ros::Time last_yaw_cmd_time_;
 
-double max_setpoint_velocity_, max_setpoint_acceleration_;
+double max_setpoint_velocity_, max_setpoint_acceleration_, max_lead_time_;
 Eigen::Vector3d last_cmd_pos_ = Eigen::Vector3d::Zero();
 Eigen::Vector3d last_cmd_vel_ = Eigen::Vector3d::Zero();
 bool position_initialized_ = false;
@@ -60,6 +69,8 @@ Eigen::Vector3d last_odom_pos_;
 Eigen::Vector3d last_odom_vel_;
 ros::Time last_odom_time_;
 bool has_last_odom_pos_ = false;
+double current_odom_yaw_ = 0.0;
+bool odom_state_available_ = false;
 int error_sample_count_ = 0;
 
 double wrapToPi(const double angle) {
@@ -248,6 +259,38 @@ void drawCmd(const Eigen::Vector3d &pos, const Eigen::Vector3d &vec, const int &
   cmd_vis_pub.publish(mk_state);
 }
 
+void activatePendingTrajectoryPair() {
+  if (!pending_traj_ || !pending_yaw_traj_ ||
+      pending_traj_id_ != pending_yaw_traj_id_)
+    return;
+
+  traj_ = pending_traj_;
+  yaw_traj_ = pending_yaw_traj_;
+  traj_duration_ = pending_traj_duration_;
+  yaw_traj_duration_ = pending_yaw_traj_duration_;
+  t_stop = traj_duration_;
+  yaw_t_stop = yaw_traj_duration_;
+  traj_id_ = pending_traj_id_;
+  start_time_ = pending_start_time_;
+  execution_time_ = 0.0;
+  last_execution_update_time_ = ros::Time::now();
+  receive_traj_ = true;
+
+  pending_traj_.reset();
+  pending_yaw_traj_.reset();
+  pending_traj_id_ = -1;
+  pending_yaw_traj_id_ = -1;
+}
+
+void suspendActiveTrajectoryForNewGeneration(const int incoming_traj_id) {
+  if (receive_traj_ && incoming_traj_id != traj_id_) {
+    // Position and yaw are separate ROS messages. Once either half of a new
+    // generation arrives, do not keep executing the previous generation while
+    // waiting for its matching half.
+    receive_traj_ = false;
+  }
+}
+
 void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
   if (msg->order != 5) {
     ROS_ERROR("[traj_server] Only support trajectory order equals 5 now!");
@@ -277,15 +320,16 @@ void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
     dura[i] = msg->duration[i];
   }
 
-  traj_.reset(new Trajectory<5>(dura, cMats));
-
-  start_time_ = msg->start_time;
-  traj_duration_ = traj_->getTotalDuration();
-  t_stop = traj_duration_;
-  traj_id_ = msg->traj_id;
-
-  receive_traj_ = true;
-  std::vector<Eigen::Vector3d> a;
+  suspendActiveTrajectoryForNewGeneration(msg->traj_id);
+  if (pending_yaw_traj_ && pending_yaw_traj_id_ < msg->traj_id) {
+    pending_yaw_traj_.reset();
+    pending_yaw_traj_id_ = -1;
+  }
+  pending_traj_.reset(new Trajectory<5>(dura, cMats));
+  pending_traj_duration_ = pending_traj_->getTotalDuration();
+  pending_traj_id_ = msg->traj_id;
+  pending_start_time_ = msg->start_time;
+  activatePendingTrajectoryPair();
 }
 
 void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
@@ -293,7 +337,11 @@ void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
     ROS_ERROR("[traj_server] Only support trajectory order equals 5 now!");
     return;
   }
-  if (msg->duration.size() * (msg->order + 1) != msg->coef_x.size()) {
+  const size_t expected_coeffs =
+      msg->duration.size() * static_cast<size_t>(msg->order + 1);
+  if (expected_coeffs != msg->coef_x.size() ||
+      expected_coeffs != msg->coef_y.size() ||
+      expected_coeffs != msg->coef_z.size()) {
     ROS_ERROR("[traj_server] WRONG trajectory parameters, ");
     return;
   }
@@ -314,9 +362,15 @@ void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
 
     dura[i] = msg->duration[i];
   }
-  yaw_traj_.reset(new Trajectory<5>(dura, cMats));
-  yaw_traj_duration_ = yaw_traj_->getTotalDuration();
-  yaw_t_stop = yaw_traj_duration_;
+  suspendActiveTrajectoryForNewGeneration(msg->traj_id);
+  if (pending_traj_ && pending_traj_id_ < msg->traj_id) {
+    pending_traj_.reset();
+    pending_traj_id_ = -1;
+  }
+  pending_yaw_traj_.reset(new Trajectory<5>(dura, cMats));
+  pending_yaw_traj_duration_ = pending_yaw_traj_->getTotalDuration();
+  pending_yaw_traj_id_ = msg->traj_id;
+  activatePendingTrajectoryPair();
 }
 
 void publish_cmd(Vector3d p, Vector3d v, Vector3d a, Vector3d j, double y, double yd) {
@@ -376,7 +430,52 @@ void cmdCallback(const ros::TimerEvent &e) {
     printed = false;
   }
 
-  double t_cur = (time_now - start_time_).toSec();
+  double dt = (time_now - last_execution_update_time_).toSec();
+  last_execution_update_time_ = time_now;
+  if (!std::isfinite(dt) || dt < 0.0)
+    dt = 0.0;
+  dt = std::min(dt, max_lead_time_);
+
+  const double execution_duration =
+      std::max(traj_duration_, yaw_traj_duration_);
+  const double next_execution_time =
+      std::min(execution_time_ + dt, execution_duration);
+  const double next_position_time =
+      std::min(next_execution_time, traj_duration_);
+  const Eigen::Vector3d next_position = traj_->getPos(next_position_time);
+  const Eigen::Vector3d next_velocity = traj_->getVel(next_position_time);
+  const double max_position_lead = max_setpoint_velocity_ * max_lead_time_;
+  double position_lead = 0.0;
+  double phase_scale = 0.0;
+
+  if (odom_state_available_ && next_position.allFinite() &&
+      next_velocity.allFinite()) {
+    const double speed = next_velocity.norm();
+    if (speed > 1.0e-6) {
+      const Eigen::Vector3d progress_direction = next_velocity / speed;
+      position_lead =
+          std::max(0.0, (next_position - real_pos_).dot(progress_direction));
+    }
+
+    // Slow trajectory time continuously as the command approaches its
+    // physically derived lead limit. This avoids the stop/go behavior of a
+    // binary gate while keeping the new trajectory anchored to odometry.
+    const double lead_ratio =
+        std::min(1.0, std::max(0.0, position_lead / max_position_lead));
+    phase_scale = 1.0 - lead_ratio;
+    execution_time_ =
+        std::min(execution_time_ + dt * phase_scale, execution_duration);
+  } else {
+    ROS_WARN_THROTTLE(1.0,
+                      "[traj_server] phase held: odometry or trajectory "
+                      "sample is not available");
+  }
+  ROS_DEBUG_THROTTLE(0.5,
+                     "[traj_server] phase scale=%.3f, forward lead=%.3f/%.3f "
+                     "m, phase=%.3f s",
+                     phase_scale, position_lead, max_position_lead,
+                     execution_time_);
+  const double t_cur = execution_time_;
 
   Eigen::Vector3d pos(Eigen::Vector3d::Zero()), vel(Eigen::Vector3d::Zero()),
   acc(Eigen::Vector3d::Zero()), jer(Eigen::Vector3d::Zero());
@@ -411,20 +510,35 @@ void cmdCallback(const ros::TimerEvent &e) {
 
   limitPositionSetpoint(pos, vel, acc, jer, time_now);
 
-  // A replacement yaw trajectory can start far from the command currently
-  // being executed. Limit the final setpoint delta as well as the optimizer so
-  // replanning cannot bypass yaw_max_vel with an instantaneous angle jump.
+  // A replacement yaw trajectory can start behind the command currently being
+  // executed. Limit both yaw rate and its change so replanning cannot reverse
+  // the commanded rotation direction in a single control cycle.
   double yaw_dt = 0.0;
   if (yaw_command_started_)
     yaw_dt = (time_now - last_yaw_cmd_time_).toSec();
   if (!std::isfinite(yaw_dt) || yaw_dt <= 0.0)
     yaw_dt = 0.0;
   const double requested_delta = wrapToPi(yaw_yawdot.first - last_yaw_);
-  const double max_delta = yaw_max_vel_ * yaw_dt;
-  const double limited_delta =
-      std::max(-max_delta, std::min(requested_delta, max_delta));
+  // Sim-time can invoke consecutive timer callbacks at the same timestamp.
+  // Hold the previous rate in that case instead of introducing an artificial
+  // rate reset that bypasses the acceleration limit.
+  double limited_yaw_rate = last_yawdot_;
+  if (yaw_dt > 0.0) {
+    const double requested_yaw_rate = std::max(
+        -yaw_max_vel_,
+        std::min(requested_delta / yaw_dt, yaw_max_vel_));
+    const double max_yaw_rate_change = yaw_max_acc_ * yaw_dt;
+    const double yaw_rate_change = std::max(
+        -max_yaw_rate_change,
+        std::min(requested_yaw_rate - last_yawdot_,
+                 max_yaw_rate_change));
+    limited_yaw_rate = std::max(
+        -yaw_max_vel_,
+        std::min(last_yawdot_ + yaw_rate_change, yaw_max_vel_));
+  }
+  const double limited_delta = limited_yaw_rate * yaw_dt;
   yaw_yawdot.first = last_yaw_ + limited_delta;
-  yaw_yawdot.second = yaw_dt > 0.0 ? limited_delta / yaw_dt : 0.0;
+  yaw_yawdot.second = limited_yaw_rate;
 
   time_last = time_now;
   yaw_command_started_ = true;
@@ -465,6 +579,12 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
   }
 
   real_pos_ = current_pos;
+  double odom_yaw = 0.0;
+  if (current_pos.allFinite() &&
+      quaternionToYaw(msg.pose.pose.orientation, odom_yaw)) {
+    current_odom_yaw_ = odom_yaw;
+    odom_state_available_ = true;
+  }
 
   if (!position_command_started_ && current_pos.allFinite()) {
     last_cmd_pos_ = current_pos;
@@ -479,7 +599,6 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
   }
 
   if (!yaw_command_started_) {
-    double odom_yaw = 0.0;
     if (quaternionToYaw(msg.pose.pose.orientation, odom_yaw)) {
       last_yaw_ = odom_yaw;
       last_yawdot_ = 0.0;
@@ -584,10 +703,11 @@ void visCallback(const ros::TimerEvent &e) {
 
 void replanCallback(const std_msgs::Empty &msg) {
   const double time_out = 0.1;
-  ros::Time time_now = ros::Time::now();
-  double tmp = (time_now - start_time_).toSec() + replan_time_ + time_out;
+  double tmp = execution_time_ + replan_time_ + time_out;
   traj_duration_ = std::min(traj_duration_, tmp);
-  // yaw_traj_duration_ = std::min(yaw_traj_duration_, tmp);
+  yaw_traj_duration_ = std::min(yaw_traj_duration_, tmp);
+  t_stop = traj_duration_;
+  yaw_t_stop = yaw_traj_duration_;
   // std::cout << "\033[32m [TrajServer] Replan , stop after "
   //           << traj_duration_ - (time_now - start_time_).toSec() << "s \033[0m"
   //           << std::endl;
@@ -723,6 +843,17 @@ int main(int argc, char **argv) {
   }
   ROS_INFO("[Traj server]: final yaw setpoint rate limit: %.3f rad/s",
            yaw_max_vel_);
+  if (!ros::param::get(
+          "/exploration_node/trajectory_execution/yaw_max_acc",
+          yaw_max_acc_) ||
+      !std::isfinite(yaw_max_acc_) || yaw_max_acc_ <= 0.0) {
+    ROS_FATAL("[Traj server] trajectory_execution/yaw_max_acc must be "
+              "finite and greater than zero");
+    return 1;
+  }
+  ROS_INFO("[Traj server]: final yaw setpoint acceleration limit: "
+           "%.3f rad/s^2",
+           yaw_max_acc_);
   if (!ros::param::get("/exploration_node/MaxVelMag",
                        max_setpoint_velocity_) ||
       !std::isfinite(max_setpoint_velocity_) ||
@@ -742,6 +873,17 @@ int main(int argc, char **argv) {
   ROS_INFO("[Traj server]: final position setpoint limits: "
            "%.3f m/s, %.3f m/s^2",
            max_setpoint_velocity_, max_setpoint_acceleration_);
+  if (!ros::param::get(
+          "/exploration_node/trajectory_execution/max_lead_time",
+          max_lead_time_) ||
+      !std::isfinite(max_lead_time_) || max_lead_time_ <= 0.0) {
+    ROS_FATAL("[Traj server] trajectory_execution/max_lead_time must be "
+              "finite and greater than zero");
+    return 1;
+  }
+  ROS_INFO("[Traj server]: continuous tracking phase scale: %.3f s "
+           "(maximum forward lead %.3f m)",
+           max_lead_time_, max_setpoint_velocity_ * max_lead_time_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);
