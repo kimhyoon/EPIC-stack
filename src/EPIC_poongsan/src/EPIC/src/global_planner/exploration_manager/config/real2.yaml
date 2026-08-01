@@ -477,7 +477,8 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 # 값 증가 시 명령이 더 멀리 앞설 수 있고, 감소 시 추종은 보수적이지만 전체 궤적 진행이 느려질 수 있다.
 trajectory_execution/max_lead_time: 0.3  # 위치 선행 한계=MaxVelMag×시간
 # PX4에는 velocity setpoint를 보내지 않고 position setpoint만 전달한다.
-# 계획 속도를 PX4 위치 P 제어의 위치 오차로 변환하기 위해 실제 MPC_XY_P와 동일하게 설정한다.
+# 실비행 전 반드시 QGC Parameters에서 기체의 MPC_XY_P 값을 확인하고 아래 값을 동일하게 맞춘다.
+# 값이 서로 다르면 계획 속도를 만들기 위한 position setpoint 선행거리가 실제 PX4 위치 제어기와 맞지 않는다.
 # Kp=1.0이면 최대 위치 선행거리는 MaxVelMag/Kp=0.75m이며, 미래점은 검증된 궤적 위에서 선택한다.
 trajectory_execution/px4_position_p_gain: 1.0  # PX4 수평 위치 P 게인[1/s]
 trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
