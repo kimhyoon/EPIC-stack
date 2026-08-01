@@ -446,7 +446,7 @@ MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 
 # 값을 높이면 좁은 공간과 급회전 구간에서 벽에 가까워질 위험이 커진다.
 # 위치 명령이 실제 기체보다 앞설수록 궤적 시간을 연속적으로 감속하는 선행시간 기준이다.
 # 값 증가 시 명령이 더 멀리 앞설 수 있고, 감소 시 추종은 보수적이지만 전체 궤적 진행이 느려질 수 있다.
-trajectory_execution/max_lead_time: 0.2  # 위치 선행 한계=MaxVelMag×시간
+trajectory_execution/max_lead_time: 0.3  # 위치 선행 한계=MaxVelMag×시간
 trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
 MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 

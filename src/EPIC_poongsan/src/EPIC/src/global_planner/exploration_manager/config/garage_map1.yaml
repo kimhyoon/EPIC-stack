@@ -174,7 +174,7 @@ DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
 DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
 MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
 # Slow trajectory phase continuously as the position command approaches its odometry-based lead limit.
-trajectory_execution/max_lead_time: 0.2
+trajectory_execution/max_lead_time: 0.3
 trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
 MaxVelMag: 2.0
 MaxAccMag: 2.0

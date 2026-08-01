@@ -103,6 +103,20 @@ Eigen::Vector3d clampVectorNorm(const Eigen::Vector3d &value,
   return value * (max_norm / norm);
 }
 
+void boundPositionLookahead(Eigen::Vector3d &position) {
+  if (!odom_state_available_ || !real_pos_.allFinite() ||
+      !position.allFinite())
+    return;
+
+  // Sample lookahead from the collision-checked trajectory, then bound how
+  // far its position command may lead the measured vehicle position.
+  const Eigen::Vector3d position_lead = clampVectorNorm(
+      position - real_pos_,
+      max_setpoint_velocity_ * max_lead_time_);
+
+  position = real_pos_ + position_lead;
+}
+
 void limitPositionSetpoint(Eigen::Vector3d &position,
                            Eigen::Vector3d &velocity,
                            Eigen::Vector3d &acceleration,
@@ -490,10 +504,14 @@ void cmdCallback(const ros::TimerEvent &e) {
 
   // if (t_cur < traj_dur && t_cur >= 0.0) {
   if (t_cur < traj_duration_) {
-    pos = traj_->getPos(t_cur);
-    vel = traj_->getVel(t_cur);
-    acc = traj_->getAcc(t_cur);
-    jer = traj_->getJer(t_cur);
+    const double position_cmd_time =
+        std::min(t_cur + max_lead_time_, traj_duration_);
+    pos = traj_->getPos(position_cmd_time);
+    vel = traj_->getVel(position_cmd_time);
+    acc = traj_->getAcc(position_cmd_time);
+    jer = traj_->getJer(position_cmd_time);
+
+    boundPositionLookahead(pos);
 
   } else {
     pos = last_pos_;
@@ -510,9 +528,9 @@ void cmdCallback(const ros::TimerEvent &e) {
 
   limitPositionSetpoint(pos, vel, acc, jer, time_now);
 
-  // A replacement yaw trajectory can start behind the command currently being
-  // executed. Limit both yaw rate and its change so replanning cannot reverse
-  // the commanded rotation direction in a single control cycle.
+  // Convert the planned yaw/yaw-rate trajectory into a yaw-angle-only command.
+  // The planned yaw rate is feed-forward; the wrapped angle error is removed
+  // over max_lead_time_ instead of one control cycle to avoid rate/accel bang.
   double yaw_dt = 0.0;
   if (yaw_command_started_)
     yaw_dt = (time_now - last_yaw_cmd_time_).toSec();
@@ -524,9 +542,12 @@ void cmdCallback(const ros::TimerEvent &e) {
   // rate reset that bypasses the acceleration limit.
   double limited_yaw_rate = last_yawdot_;
   if (yaw_dt > 0.0) {
+    const double planned_yaw_rate = std::max(
+        -yaw_max_vel_, std::min(yaw_yawdot.second, yaw_max_vel_));
     const double requested_yaw_rate = std::max(
         -yaw_max_vel_,
-        std::min(requested_delta / yaw_dt, yaw_max_vel_));
+        std::min(planned_yaw_rate + requested_delta / max_lead_time_,
+                 yaw_max_vel_));
     const double max_yaw_rate_change = yaw_max_acc_ * yaw_dt;
     const double yaw_rate_change = std::max(
         -max_yaw_rate_change,
