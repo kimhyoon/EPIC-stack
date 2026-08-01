@@ -48,6 +48,7 @@ bool yaw_command_started_ = false;
 ros::Time last_yaw_cmd_time_;
 
 double max_setpoint_velocity_, max_setpoint_acceleration_, max_lead_time_;
+double px4_position_p_gain_, position_feedforward_time_;
 Eigen::Vector3d last_cmd_pos_ = Eigen::Vector3d::Zero();
 Eigen::Vector3d last_cmd_vel_ = Eigen::Vector3d::Zero();
 bool position_initialized_ = false;
@@ -112,7 +113,7 @@ void boundPositionLookahead(Eigen::Vector3d &position) {
   // far its position command may lead the measured vehicle position.
   const Eigen::Vector3d position_lead = clampVectorNorm(
       position - real_pos_,
-      max_setpoint_velocity_ * max_lead_time_);
+      max_setpoint_velocity_ / px4_position_p_gain_);
 
   position = real_pos_ + position_lead;
 }
@@ -458,7 +459,8 @@ void cmdCallback(const ros::TimerEvent &e) {
       std::min(next_execution_time, traj_duration_);
   const Eigen::Vector3d next_position = traj_->getPos(next_position_time);
   const Eigen::Vector3d next_velocity = traj_->getVel(next_position_time);
-  const double max_position_lead = max_setpoint_velocity_ * max_lead_time_;
+  const double max_position_lead =
+      max_setpoint_velocity_ / px4_position_p_gain_;
   double position_lead = 0.0;
   double phase_scale = 0.0;
 
@@ -505,7 +507,7 @@ void cmdCallback(const ros::TimerEvent &e) {
   // if (t_cur < traj_dur && t_cur >= 0.0) {
   if (t_cur < traj_duration_) {
     const double position_cmd_time =
-        std::min(t_cur + max_lead_time_, traj_duration_);
+        std::min(t_cur + position_feedforward_time_, traj_duration_);
     pos = traj_->getPos(position_cmd_time);
     vel = traj_->getVel(position_cmd_time);
     acc = traj_->getAcc(position_cmd_time);
@@ -902,9 +904,22 @@ int main(int argc, char **argv) {
               "finite and greater than zero");
     return 1;
   }
+  if (!ros::param::get(
+          "/exploration_node/trajectory_execution/px4_position_p_gain",
+          px4_position_p_gain_) ||
+      !std::isfinite(px4_position_p_gain_) ||
+      px4_position_p_gain_ <= 0.0) {
+    ROS_FATAL("[Traj server] trajectory_execution/px4_position_p_gain "
+              "must be finite and greater than zero");
+    return 1;
+  }
+  position_feedforward_time_ = 1.0 / px4_position_p_gain_;
   ROS_INFO("[Traj server]: continuous tracking phase scale: %.3f s "
-           "(maximum forward lead %.3f m)",
-           max_lead_time_, max_setpoint_velocity_ * max_lead_time_);
+           "(yaw limit basis)", max_lead_time_);
+  ROS_INFO("[Traj server]: PX4-equivalent position-only feed-forward: "
+           "Kp=%.3f 1/s, lookahead=%.3f s, maximum forward lead=%.3f m",
+           px4_position_p_gain_, position_feedforward_time_,
+           max_setpoint_velocity_ / px4_position_p_gain_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);
