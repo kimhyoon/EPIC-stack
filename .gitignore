@@ -4,6 +4,7 @@ logs/
 eval/
 record/
 install/
+EPIC-stack_new/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/
 .catkin_tools/
 .vscode/
 *.pcd

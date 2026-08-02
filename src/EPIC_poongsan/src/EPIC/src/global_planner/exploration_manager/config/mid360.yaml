@@ -521,7 +521,9 @@ fsm/early_finish_enable: true
 # 값 증가 시 재시도가 더 자주 발동하지만 정상 종료까지 재시도로 오인할 수 있고,
 # 값 감소 시 확실한 조기 종료만 구제하지만 놓치는 경우가 늘어난다.
 # 이륙 상승 구간은 포함되지 않으며, 탐사가 실제로 시작된 시점부터 누적한다.
-fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 누적 이동거리 상한[m]
+fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 최대 직선 이탈거리 상한[m] (경로적분 아님)
+fsm/early_finish_probe_min_gain: 1.0     # EFP 원점거리가 최대변위를 이만큼 넘어야 probe[m]
+fsm/early_finish_visited_radius: 1.5     # 비행경로에서 이 반경 안 노드는 방문 간주[m] (<=0 끄기)
 
 # [재시도 횟수 상한]
 # 재시도 후에도 또 짧게 끝나는 상황이 반복되지 않도록 시도 횟수를 제한한다.

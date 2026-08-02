@@ -1,5 +1,0 @@
-# console (/rosout_agg) log for epic_2026-07-20-19-30-32.bag
-# started at 2026-07-20-19-30-32
-[INFO] [1784543432.424] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-30-32/epic_2026-07-20-19-30-32.epic.log
-[INFO] [1784543432.427] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-30-32/epic_2026-07-20-19-30-32.events.log
-[INFO] [1784543432.722] [/exploration_node]: [EV] [1784543432.722][     +1.4s][WAIT_TRIGGER] BATT 22.5V | voltage=22.97V percent=26%

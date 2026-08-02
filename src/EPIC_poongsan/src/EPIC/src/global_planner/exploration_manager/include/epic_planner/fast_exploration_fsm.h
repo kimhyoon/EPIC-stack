@@ -205,12 +205,17 @@ private:
   bool   yaw_rotate_valid_ = false;      // 직전 odom yaw 유효 여부
   ros::Publisher yaw_rotate_state_pub_;  // /planning/yaw_rotate_init (진행률)
 
-  /* 누적 이동거리. FINISH 가 "정말 다 봐서" 끝난 건지 "아직 못 돌아다녀서" 끝난
-     건지 가르는 유일한 근거다. 직선변위가 아니라 경로 적분이어야 한다 —
-     멀리 나갔다 원점으로 복귀해 끝나는 건 정상 종료인데 변위로는 0 이 된다. */
-  double traveled_distance_ = 0.0;                                  // [m] 탐사 시작 후 누적
+  /* 이동량 지표 두 개. FINISH 가 "정말 다 봐서" 끝난 건지 "아직 못 돌아다녀서"
+     끝난 건지 가르는 근거는 max_displacement_ (탐사 시작점 기준 **최대** 직선
+     이탈거리, 단조증가) 다. 경로 적분(traveled_distance_)은 리플랜 플래핑이나
+     근거리 셔플만으로도 임계값을 소진해 구제가 죽는 문제가 있어 판정에서 뺐고
+     진단용으로만 남긴다. "멀리 갔다 원점 복귀 = 변위 0" 오판은 현재 변위가 아닌
+     최대 변위를 쓰므로 성립하지 않는다 (단조증가라 복귀해도 줄지 않는다). */
+  double traveled_distance_ = 0.0;                                  // [m] 탐사 시작 후 누적 (진단용)
   Eigen::Vector3f last_traveled_pos_ = Eigen::Vector3f::Zero();     // 직전 적분 기준점
   bool   traveled_valid_ = false;                                   // 기준점이 유효한가
+  double max_displacement_ = 0.0;                                   // [m] expl_origin_ 기준 최대 직선거리
+  Eigen::Vector3f expl_origin_ = Eigen::Vector3f::Zero();           // 탐사 시작점 (max/EFP 랭킹 공용 기준점)
 
   /* EARLY_FINISH: 조기 종료로 판단되면 "가장 먼 도달 가능 topology node" 를
      EFP(early-finish point)로 잡고, **도달할 때까지 죽지 않는 목표**로 관리한다.
@@ -227,8 +232,14 @@ private:
      "EFP 에 도달해야만 RTH" 는 별도 게이트 코드가 아니라, EFP 가 살아있는 한
      viewpoints 가 비지 않아 NO_FRONTIER 가 안 난다는 사실에서 나온다. */
   bool   early_finish_enable_ = true;
-  double early_finish_dist_thresh_ = 3.0;      // [m] 누적 이동거리가 이 미만이면 조기종료로 본다
+  double early_finish_dist_thresh_ = 3.0;      // [m] max_displacement_ 가 이 미만이면 조기종료 의심
   int    early_finish_max_retry_ = 1;          // 재시도 횟수 상한 (무한루프 방지 래치)
+  // [m] 자동 구제 2단 판정: EFP 후보의 원점거리가 max_displacement_ + 이 값을
+  // 넘어야 probe 를 보낸다. 이미 가본 범위 안이면 관측 이득이 없기 때문.
+  double early_finish_probe_min_gain_ = 1.0;
+  // [m] 비행경로(history odom nodes)에서 이 반경 안의 노드는 "방문한 곳"으로 보고
+  // EFP 후보에서 제외한다. 0 이하면 방문 필터 비활성.
+  double early_finish_visited_radius_ = 1.5;
   // [m] EFP 도착 판정 (순수 3D 유클리드, yaw 조건 없음).
   // 파라미터는 ViewpointManager/vp_reached_pos_tol — frontier viewpoint 도달
   // 판정과 같은 값을 공유한다 (EFP 도 결국 TSP 의 viewpoint 후보 하나다).
@@ -253,7 +264,13 @@ private:
   // 를 통째로 반환한다. EFP 선정(가장 먼 노드)과 매 주기 연결성 확인/재바인딩이
   // 모두 이 한 함수를 공유한다.
   bool computeReachableNodes(std::unordered_map<TopoNode::Ptr, double> &dist_out);
-  bool selectFarthestReachableNode(TopoNode::Ptr &node_out, double &dist_out);
+  // p 가 비행경로(history odom nodes)의 early_finish_visited_radius_ 안인가.
+  bool isNearFlownPath(const Eigen::Vector3f &p) const;
+  // require_gain=true (자동 구제): 미방문 후보 중 원점거리 최대 노드를 고르되,
+  // 그 거리가 max_displacement_ + probe_min_gain 을 넘어야 성공. false (강제
+  // /srv_early_finish): gain 조건 없음, 미방문 후보가 없으면 방문 필터도 푼다.
+  bool selectFarthestReachableNode(TopoNode::Ptr &node_out, double &dist_out,
+                                   bool require_gain);
   bool installEarlyFinishProbe(const TopoNode::Ptr &node, double graph_distance);
   // 매 전역계획 직전: 도달 판정 -> 연결성 확인/재바인딩 -> planner 로 값 push.
   void updateEarlyFinishProbe();

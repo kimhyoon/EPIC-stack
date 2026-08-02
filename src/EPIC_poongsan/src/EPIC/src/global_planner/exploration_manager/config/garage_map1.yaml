@@ -269,7 +269,9 @@ fsm/yaw_rotate_init_enable: true
 fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
 
 fsm/early_finish_enable: true
-fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
+fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 최대 직선 이탈거리 상한[m] (경로적분 아님)
+fsm/early_finish_probe_min_gain: 1.0     # EFP 원점거리가 최대변위를 이만큼 넘어야 probe[m]
+fsm/early_finish_visited_radius: 1.5     # 비행경로에서 이 반경 안 노드는 방문 간주[m] (<=0 끄기)
 fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
 # [도달 판정 허용치]
 # viewpoint 도달 판정(frontier_manager)과 EARLY_FINISH probe(EFP) 도달 판정(FSM)이
