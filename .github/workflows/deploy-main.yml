@@ -21,6 +21,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install build and deployment dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git \
+            libapr1-dev \
+            libarmadillo-dev \
+            libeigen3-dev \
+            libfmt-dev \
+            libomp-dev \
+            libopencv-dev \
+            libpcl-dev \
+            libyaml-cpp-dev \
+            ros-noetic-mavros-msgs
+          rm -rf /var/lib/apt/lists/*
+
       - name: Fetch deployment refs
         run: |
           git fetch --no-tags origin \
@@ -37,23 +55,6 @@ jobs:
         env:
           RELEASE_TREE: ${{ runner.temp }}/epic-main-tree
         run: .github/release-main/validate-main-tree.sh "$RELEASE_TREE"
-
-      - name: Install build dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            libapr1-dev \
-            libarmadillo-dev \
-            libeigen3-dev \
-            libfmt-dev \
-            libomp-dev \
-            libopencv-dev \
-            libpcl-dev \
-            libyaml-cpp-dev \
-            ros-noetic-mavros-msgs
-          rm -rf /var/lib/apt/lists/*
 
       - name: Build generated release
         env:
