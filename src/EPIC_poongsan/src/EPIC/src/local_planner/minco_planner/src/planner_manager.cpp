@@ -143,6 +143,34 @@ void truncateGuidePath(std::vector<Eigen::Vector3d> &guidePath,
   guidePath.swap(truncated);
 }
 
+template <typename TrajectoryType>
+bool findVirtualCeilingViolation(const TrajectoryType &trajectory,
+                                 const double duration,
+                                 const double ceilingZ,
+                                 double &violationTime) {
+  constexpr double kSampleStep = 0.02;
+  constexpr double kBoundaryTolerance = 1.0e-6;
+  violationTime = 0.0;
+  if (!std::isfinite(duration) || duration < 0.0 ||
+      !std::isfinite(ceilingZ)) {
+    return true;
+  }
+
+  for (double time = 0.0; time < duration; time += kSampleStep) {
+    const Eigen::Vector3d position = trajectory.getPos(time);
+    if (!position.allFinite() ||
+        position.z() > ceilingZ + kBoundaryTolerance) {
+      violationTime = time;
+      return true;
+    }
+  }
+
+  const Eigen::Vector3d endPosition = trajectory.getPos(duration);
+  violationTime = duration;
+  return !endPosition.allFinite() ||
+         endPosition.z() > ceilingZ + kBoundaryTolerance;
+}
+
 } // namespace
 
 namespace fast_planner {
@@ -462,6 +490,9 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   // on every path because a collision-free return previously left the caller
   // comparing an indeterminate stack value.
   collision_time = std::max(0.0, std::min(curr_time, duration));
+  const double virtual_ceiling_z =
+      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
+      gcopter_config_->corridorObstacleVoxelSize;
   Vector3d last_sphere_cen_;
   if (curr_time > duration) {
     collision_time = duration;
@@ -471,6 +502,12 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   }
 
   last_sphere_cen_ = traj.getPos(curr_time);
+  if (!last_sphere_cen_.allFinite() ||
+      last_sphere_cen_.z() > virtual_ceiling_z + 1.0e-6) {
+    publishDebugTrajectoryClearance(
+        false, collision_time, -1.0, last_sphere_cen_);
+    return false;
+  }
   const double initial_distance =
       lidar_map_interface_->getDisToOcc(last_sphere_cen_);
   double min_distance =
@@ -485,6 +522,13 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   
   while (curr_time < duration) {
     Vector3d curr_pos = traj.getPos(curr_time);
+    if (!curr_pos.allFinite() ||
+        curr_pos.z() > virtual_ceiling_z + 1.0e-6) {
+      collision_time = curr_time;
+      publishDebugTrajectoryClearance(
+          false, collision_time, min_distance, curr_pos);
+      return false;
+    }
     if ((curr_pos - last_sphere_cen_).norm() < last_radius_) {
       curr_time += 0.05;
       continue;
@@ -549,6 +593,24 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     return false;
   }
 
+  // Reserve one obstacle-voxel layer at the top of the exploration box as an
+  // exact vehicle-center ceiling. Keeping this independent of obstacle
+  // dilation avoids applying the real-obstacle margin twice.
+  const double virtual_ceiling_z =
+      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
+      gcopter_config_->corridorObstacleVoxelSize;
+  if (!std::isfinite(virtual_ceiling_z) ||
+      virtual_ceiling_z <=
+          lidar_map_interface_->lp_->global_box_min_boundary_.z() ||
+      !local_data_.curr_pos_.allFinite() ||
+      local_data_.curr_pos_.z() > virtual_ceiling_z + 1.0e-6) {
+    last_plan_fail_reason_ = "invalid or already violated virtual ceiling";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s (ceiling=%.3f, z=%.3f)",
+                      last_plan_fail_reason_.c_str(), virtual_ceiling_z,
+                      local_data_.curr_pos_.z());
+    return false;
+  }
+
   vector<Eigen::Vector3d> path_shorten;
   bool use_shorten_path = false;
   int i = 0;
@@ -598,6 +660,58 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
               path_shorten.size(), filtered_path.size());
   }
   path_shorten.swap(filtered_path);
+  if (path_shorten.front().z() > virtual_ceiling_z + 1.0e-6) {
+    last_plan_fail_reason_ = "guide path starts above virtual ceiling";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
+
+  // The topology path may contain a node above the virtual ceiling. Preserve
+  // its XY direction but stop the local Seed at the first line/ceiling
+  // intersection. Never project the remaining high path downward because that
+  // could create a new segment through an obstacle.
+  for (size_t index = 1; index < path_shorten.size(); ++index) {
+    if (path_shorten[index].z() <= virtual_ceiling_z + 1.0e-6)
+      continue;
+
+    const Eigen::Vector3d segment =
+        path_shorten[index] - path_shorten[index - 1];
+    if (!segment.allFinite() || segment.z() <= 1.0e-9) {
+      last_plan_fail_reason_ =
+          "guide path crosses virtual ceiling without a valid intersection";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+
+    const double fraction =
+        (virtual_ceiling_z - path_shorten[index - 1].z()) / segment.z();
+    if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0) {
+      last_plan_fail_reason_ =
+          "guide path has an invalid virtual-ceiling intersection";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+
+    const Eigen::Vector3d ceiling_endpoint =
+        path_shorten[index - 1] + fraction * segment;
+    path_shorten.resize(index);
+    if ((ceiling_endpoint - path_shorten.back()).norm() >=
+        gcopter_config_->minPathSegmentLength) {
+      path_shorten.push_back(ceiling_endpoint);
+    }
+    use_shorten_path = true;
+    break;
+  }
+  if (path_shorten.size() < 2) {
+    last_plan_fail_reason_ =
+        "virtual ceiling leaves fewer than two Seed points";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
   publishDebugGuidePath(path_shorten);
 
   if (use_shorten_path) {
@@ -670,6 +784,13 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     publishObservedBoundaryDebug(observed_boundary);
   }
 
+  Eigen::MatrixX4d corridor_halfspaces(observed_halfspaces.rows() + 1, 4);
+  if (observed_halfspaces.rows() > 0)
+    corridor_halfspaces.topRows(observed_halfspaces.rows()) =
+        observed_halfspaces;
+  corridor_halfspaces.row(observed_halfspaces.rows()) <<
+      0.0, 0.0, 1.0, -virtual_ceiling_z;
+
   sfc_gen::convexCover(
       gcopter_viz_, path_shorten, surf_points, min_bd.cast<double>(),
       max_bd.cast<double>(), gcopter_config_->corridorProgressLength,
@@ -679,7 +800,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       gcopter_config_->firiObstacleDistanceLimit,
       gcopter_config_->firiMaxPlaneCount,
       gcopter_config_->corridorGapViolationPlaneThreshold,
-      observed_halfspaces);
+      corridor_halfspaces);
 
   // Preserve the raw FIRI corridor before the P0 seed box and observed-FOV
   // clipping. Method B does not alter the obstacle set, so no second
@@ -709,7 +830,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     P0.row(1) << -bx.x(), -bx.y(), 0.0, -(-bx.dot(p) + hx); // back
     P0.row(2) << by.x(), by.y(), 0.0, -(by.dot(p) + hy);    // left
     P0.row(3) << -by.x(), -by.y(), 0.0, -(-by.dot(p) + hy); // right
-    P0.row(4) << 0.0, 0.0, 1.0, -(p.z() + up);              // up
+    P0.row(4) << 0.0, 0.0, 1.0,
+        -std::min(p.z() + up, virtual_ceiling_z);             // up
     P0.row(5) << 0.0, 0.0, -1.0, (p.z() - down);            // down
     hPolys.insert(hPolys.begin(), P0);
   }
@@ -923,6 +1045,19 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   gcopter_viz_->publishLbfgsOptimizationCost(lbfgs_time);
   
   double time = 10.0;
+  double ceiling_violation_time = 0.0;
+  if (findVirtualCeilingViolation(local_data_.minco_traj_,
+                                  local_data_.duration_,
+                                  virtual_ceiling_z,
+                                  ceiling_violation_time)) {
+    last_plan_fail_reason_ =
+        "post-check: trajectory exceeds virtual ceiling";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f (ceiling=%.3f)",
+                      last_plan_fail_reason_.c_str(),
+                      ceiling_violation_time, virtual_ceiling_z);
+    local_data_ = local_data_backup;
+    return false;
+  }
   if (!checkTrajCollision(time) && time < 1.0) {
     last_plan_fail_reason_ = "post-check: new traj collides within 1s";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
