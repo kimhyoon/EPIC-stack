@@ -1,0 +1,1026 @@
+/***
+ * @Author: ning-zelin && zl.ning@qq.com
+ * @Date: 2024-02-25 15:00:51
+ * @LastEditTime: 2024-03-12 22:15:11
+ * @Description:
+ * @
+ * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
+ */
+
+#include <boost/lexical_cast.hpp>
+#include <cmath>
+#include <epic_planner/expl_data.h>
+#include <epic_planner/fast_exploration_manager.h>
+#include <fstream>
+#include <iostream>
+#include <lkh_tsp_solver/lkh_interface.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <plan_manage/planner_manager.h>
+#include <std_msgs/Float32.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <thread>
+#include <unistd.h>
+#include <visualization_msgs/Marker.h>
+using namespace std;
+using namespace Eigen;
+
+namespace fast_planner {
+
+namespace {
+// global tour 색 분리.
+//   ns "global"     : tour 전체. BLUE=이번 주기에 실제로 성공한 탐사 tour /
+//                     MAGNA=이번 주기에 갱신되지 않은 직전 tour / RED=빈 tour
+//   ns "global_efp" : EFP 로 **들어가는 한 구간만** 자주색
+//                     ({tour[idx-1], tour[idx]}, idx = tour 안의 EFP 위치)
+// 반드시 서로 다른 ns 여야 한다. 같은 ns 에 두 색을 섞으면 0.2s 주기로 서로를
+// 덮어써서 rviz 에서 깜빡이고 심지어 서로 다른 경로가 보인다 (실측: 18초 창에서
+// MAGNA 13회 / BLUE 6회, 마지막 점이 각각 달랐다).
+// efp_idx < 1 이면 EFP leg 를 지운다 (유령 마커 방지).
+void vizTourWithEfpLeg(const GraphVisualizer::Ptr &viz,
+                       const vector<Eigen::Vector3f> &tour, VizColor main_color,
+                       int efp_idx) {
+  if (!viz)
+    return;
+  viz->vizTour(tour, main_color, "global");
+  if (efp_idx >= 1 && efp_idx < (int)tour.size()) {
+    const vector<Eigen::Vector3f> leg{tour[efp_idx - 1], tour[efp_idx]};
+    // 같은 자리에 겹쳐 그리므로 z-fighting 을 피하려 EFP leg 만 굵게 그린다.
+    viz->vizTour(leg, VizColor::MAGNA, "global_efp", 0.18f);
+  } else {
+    viz->vizTour({}, VizColor::MAGNA, "global_efp");
+  }
+}
+} // namespace
+
+// SECTION interfaces for setup and query
+
+FastExplorationManager::FastExplorationManager() {}
+
+FastExplorationManager::~FastExplorationManager() {}
+
+void FastExplorationManager::initialize(
+    ros::NodeHandle &nh, FrontierManager::Ptr frt_manager,
+    FastPlannerManager::Ptr planner_manager) {
+
+  frontier_manager_ptr_ = frt_manager;
+  planner_manager_ = planner_manager;
+  // [feature: cone-clip] give the local planner a handle to the frontier manager
+  // so it can query observed-frontier cells and clip its SFC corridor.
+  planner_manager_->frontier_manager_ = frt_manager;
+
+  ed_.reset(new ExplorationData);
+  ep_.reset(new ExplorationParam);
+  ed_->next_goal_node_ = make_shared<TopoNode>();
+
+  ep_->a_avg_ = tan(planner_manager_->gcopter_config_->maxTiltAngle) *
+                planner_manager_->gcopter_config_->gravAcc;
+  ep_->v_max_ = planner_manager_->gcopter_config_->maxVelMag;
+  ep_->yaw_v_max_ = planner_manager_->gcopter_config_->yaw_max_vel;
+  nh.param("exploration/tsp_dir", ep_->tsp_dir_, string("null"));
+  nh.getParam("viewpoint_param/global_viewpoint_num",
+              ep_->global_viewpoint_num_);
+  nh.getParam("view_graph", ep_->view_graph_);
+  nh.getParam("viewpoint_param/local_viewpoint_num", ep_->local_viewpoint_num_);
+  nh.getParam("global_planning/w_vdir", ep_->w_vdir_);
+  nh.getParam("global_planning/w_yawdir", ep_->w_yawdir_);
+  nh.param("fsm/max_segment_length", ep_->max_segment_length_, 3.0);
+  // [feature: topo-timeout] 기본값 = 기존 하드코딩 값이라 키가 없으면 동작 불변.
+  nh.param("global_planning/topo_cost_search_timeout",
+           ep_->topo_cost_search_timeout_, 1e-2);
+  nh.param("global_planning/goal_search_timeout", ep_->goal_search_timeout_,
+           0.1);
+  Eigen::Vector3d origin, size;
+  ofstream par_file(ep_->tsp_dir_ + "/single.par");
+  par_file << "PROBLEM_FILE = " << ep_->tsp_dir_ << "/single.tsp\n";
+  par_file << "GAIN23 = NO\n";
+  par_file << "MOVE_TYPE = 2\n";
+  par_file << "OUTPUT_TOUR_FILE =" << ep_->tsp_dir_ << "/single.txt\n";
+  par_file << "RUNS = 10\n";
+  ros::Duration(1.0).sleep();
+  
+  // Initialize timing publishers
+  insert_viewpoint_cost_pub_ = nh.advertise<std_msgs::Float32>("/global_planning/insert_viewpoint_cost", 10);
+  calculate_tsp_cost_pub_ = nh.advertise<std_msgs::Float32>("/global_planning/calculate_tsp_cost", 10);
+  lkh_solver_cost_pub_ = nh.advertise<std_msgs::Float32>("/global_planning/lkh_solver_cost", 10);
+  topo_graph_search_cost_pub_ = nh.advertise<std_msgs::Float32>("/local_planning/topo_graph_search_cost", 10);
+}
+
+void FastExplorationManager::goalCallback(
+    const geometry_msgs::PoseStampedConstPtr &msg) {
+  const auto &q = msg->pose.orientation;
+  const double n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+  if (!std::isfinite(n2) ||
+      n2 <= planner_manager_->gcopter_config_->vectorNormEps *
+                planner_manager_->gcopter_config_->vectorNormEps) {
+    ROS_WARN_THROTTLE(10.0,
+                      "[FastExplorationManager] goal with invalid quaternion "
+                      "(|q|^2=%.3f) - ignoring yaw",
+                      n2);
+    return;
+  }
+
+  double roll, pitch;
+  tf::Quaternion quat;
+  tf::quaternionMsgToTF(msg->pose.orientation, quat);
+  quat.normalize();
+
+  double yaw;
+  tf::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+  if (std::isfinite(yaw))
+    goal_yaw = yaw;
+}
+
+double FastExplorationManager::getPathCost(TopoNode::Ptr &n1,
+                                           Eigen::Vector3d v1, float &yaw1,
+                                           TopoNode::Ptr &n2, float &yaw2) {
+  auto estimateCost = [&](TopoNode::Ptr &n1, Eigen::Vector3d v1, float &yaw1,
+                          TopoNode::Ptr &n2, float &yaw2, int res,
+                          vector<Eigen::Vector3f> &path) -> double {
+    double len_cost, yaw_cost, dir_cost;
+    len_cost = yaw_cost = dir_cost = 0.0;
+    if (res == BubbleAstar::NO_PATH)
+      return 2e3 + (n1->center_ - n2->center_)
+                       .norm(); // 使用一个大的时间值表示无法到达
+    if (res == BubbleAstar::START_FAIL || res == BubbleAstar::END_FAIL)
+      return 2e3 +
+             (n1->center_ - n2->center_).norm(); // 同上，用于不同的错误情况
+
+    len_cost = 0.0;
+    for (int i = 0; i < path.size() - 1; ++i)
+      len_cost += ((path[i + 1] - path[i]).norm() +
+                   0.5 * fabs(path[i + 1].z() - path[i].z()));
+    len_cost /= (ep_->v_max_ / 2.0);
+
+    // if (v1.norm() > 1e-3) {
+    //   Eigen::Vector3f dir = n2->center_ - n1->center_;
+    //   dir.normalize();
+    //   Eigen::Vector3f v_dir = v1.normalized().cast<float>();
+    //   float yaw1 = atan2(dir.y(), dir.x());
+    //   float yaw2 = atan2(v_dir.y(), v_dir.x());
+    //   float diff = yaw1 - yaw2;
+    //   while (diff > M_PI)
+    //     diff -= 2.0 * M_PI;
+    //   while (diff < -M_PI)
+    //     diff += 2.0 * M_PI;
+    //   dir_cost = ep_->w_vdir_ * (fabs(diff) /
+    //   planner_manager_->gcopter_config_->yaw_max_vel);
+    // }
+
+    // if (path.size() >= 2) {
+    //   planner_manager_->calculateTimelb(path, yaw1, yaw2, yaw_cost);
+    //   yaw_cost *= ep_->w_yawdir_;
+    // }
+
+    return len_cost + dir_cost;
+    // return len_cost + dir_cost;
+  };
+  vector<Eigen::Vector3f> path;
+  
+  // Measure topo search time
+  ros::Time topo_search_start = ros::Time::now();
+  int res = planner_manager_->fast_searcher_->topoSearch(
+      n1, n2, ep_->topo_cost_search_timeout_, path);
+  ros::Time topo_search_end = ros::Time::now();
+  double topo_search_time = (topo_search_end - topo_search_start).toSec() * 1000.0;
+  
+  // Publish topo graph search cost
+  std_msgs::Float32 topo_search_msg;
+  topo_search_msg.data = topo_search_time;
+  topo_graph_search_cost_pub_.publish(topo_search_msg);
+  
+  return estimateCost(n1, v1, yaw1, n2, yaw2, res, path);
+}
+
+double FastExplorationManager::getPathCostWithoutTopo(TopoNode::Ptr &n1,
+                                                      Eigen::Vector3d v1,
+                                                      float &yaw1,
+                                                      TopoNode::Ptr &n2,
+                                                      float &yaw2) {
+  vector<Eigen::Vector3f> path;
+  int res = planner_manager_->parallel_path_finder_->search(
+      n1->center_, n2->center_, path, 1.0, false);
+  if (res != ParallelBubbleAstar::REACH_END)
+    return 2e3;
+  double cost;
+  planner_manager_->parallel_path_finder_->calculatePathCost(path, cost);
+  return cost;
+}
+
+int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
+                                           const Eigen::Vector3d &vel) {
+  bool bm_without_topo = false;
+  auto estimiateVdirCost = [&](const TopoNode::Ptr &n1,
+                               const Eigen::Vector3d &v1,
+                               const TopoNode::Ptr &n2) -> double {
+    Eigen::Vector3f dir = n2->center_ - n1->center_;
+    const double dir_norm = dir.norm();
+    const double vel_norm = v1.norm();
+    if (!dir.allFinite() || !v1.allFinite() ||
+        dir_norm <= planner_manager_->gcopter_config_->vectorNormEps ||
+        vel_norm <= planner_manager_->gcopter_config_->vectorNormEps)
+      return 0.0;
+    dir /= dir_norm;
+    Eigen::Vector3f v_dir = (v1 / vel_norm).cast<float>();
+    float yaw1 = atan2(dir.y(), dir.x());
+    float yaw2 = atan2(v_dir.y(), v_dir.x());
+    float diff = yaw1 - yaw2;
+    while (diff > M_PI)
+      diff -= 2.0 * M_PI;
+    while (diff < -M_PI)
+      diff += 2.0 * M_PI;
+    return ep_->w_vdir_ *
+           (fabs(diff) / planner_manager_->gcopter_config_->yaw_max_vel);
+  };
+  ros::Time start = ros::Time::now();
+  vector<TopoNode::Ptr> viewpoints;
+  frontier_manager_ptr_->generateTSPViewpoints(
+      planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
+
+  // --- debug diagnostics: cluster / viewpoint counts ---
+  // 여기 카운트는 "진짜 frontier 뷰포인트" 만 센다. 아래에서 얹는 EFP 는 frontier
+  // 가 아니므로 제외해야 FSM 의 warmup 래치(diag_num_reachable_vp_>0)가 EFP 때문에
+  // 잘못 풀리지 않는다.
+  ed_->diag_num_clusters_ = (int)frontier_manager_ptr_->cluster_list_.size();
+  ed_->diag_num_clusters_reachable_ = 0;
+  for (auto &c : frontier_manager_ptr_->cluster_list_)
+    if (c->is_reachable_ && !c->is_dormant_)
+      ed_->diag_num_clusters_reachable_++;
+  ed_->diag_num_viewpoints_ = (int)viewpoints.size();
+  ed_->diag_num_reachable_vp_ = 0;
+
+  // ---- EARLY_FINISH probe(EFP) 주입 -------------------------------------
+  // EFP 가 outstanding 인 동안 TSP 후보를 하나 더 얹는다. 이 한 줄이 요구사항
+  // 셋을 전부 만든다:
+  //   - 새 vp 가 생겨도 EFP 는 후보로 남고 LKH 가 순수 거리로 순회 순서만 정한다
+  //   - EFP 가 살아있는 한 viewpoints 가 비지 않아 NO_FRONTIER 가 안 나고,
+  //     따라서 FINISH -> RTH 가 자동으로 봉쇄된다 (별도 게이트 코드가 없다)
+  //   - EFP 가 도달돼 사라지면 목록이 그냥 원래대로 돌아온다
+  // EFP 는 **이미 그래프 안에 있는 실제 노드**이므로 insertNodes/removeNodes 대상
+  // 목록(vp_inserted)에서는 반드시 빼야 한다. removeNodes 는 노드를 이웃과 region
+  // 에서 통째로 뜯어내므로, 넣었다간 매 주기 실제 토폴로지가 파괴된다.
+  vector<TopoNode::Ptr> vp_inserted = viewpoints;
+  TopoNode::Ptr efp = (ed_->efp_active_ && ed_->efp_node_) ? ed_->efp_node_ : nullptr;
+  ed_->efp_tour_index_ = -1;
+  if (efp)
+    viewpoints.push_back(efp);  // EFP 는 항상 viewpoints 의 마지막 원소다
+
+  if (viewpoints.empty()) {
+    ed_->diag_result_ = "NO_VIEWPOINTS";
+    ed_->diag_reason_ = "NO_FRONTIER: 0 viewpoints (clusters=" +
+        std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
+        std::to_string(ed_->diag_num_clusters_reachable_) + ") " +
+        frontier_manager_ptr_->vp_stats_.str();
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
+    // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
+    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다.
+    // MAGNA = "이번 주기에 갱신되지 않은 tour". EFP leg 는 이번 주기 tour 가
+    // 없으므로 지운다 (efp_idx=-1).
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour / EFP leg=자주색
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
+                                                    : VizColor::RED,
+                      -1);
+    return NO_FRONTIER;
+  }
+
+  ros::Time t1 = ros::Time::now();
+  // EFP 는 이미 그래프에 있는 실제 노드라 여기서 다시 넣지 않는다 (vp_inserted).
+  planner_manager_->topo_graph_->insertNodes(vp_inserted, false);
+  updateGoalNode();
+  ros::Time t2 = ros::Time::now();
+  // cout << "insert viewpoint to graph time: " << (t2 - t1).toSec() * 1000
+  //      << " ms" << endl;
+  
+  // Publish insert viewpoint cost
+  std_msgs::Float32 timing_msg;
+  timing_msg.data = (t2 - t1).toSec() * 1000;
+  insert_viewpoint_cost_pub_.publish(timing_msg);
+  float curr_yaw = (float)planner_manager_->local_data_.curr_yaw_;
+  vector<double> distance_odom2vp(viewpoints.size(), 0);
+  vector<double> distance_lastgoal2vp(viewpoints.size(), 0);
+  double dis2last_goal = 5e3;
+  if (planner_manager_->lidar_map_interface_->getDisToOcc(
+          ed_->next_goal_node_->center_) >
+      planner_manager_->parallel_path_finder_->safe_distance_) {
+    dis2last_goal = getPathCost(planner_manager_->topo_graph_->odom_node_,
+                                Eigen::Vector3d::Zero(), curr_yaw,
+                                ed_->next_goal_node_, curr_yaw);
+  }
+  static double last_frame_value = dis2last_goal;
+  bool last_goal_reachable = dis2last_goal < 2e3;
+  // last_goal_reachable = false;
+
+  if (last_goal_reachable && (dis2last_goal < 1.5 * last_frame_value)) {
+    last_frame_value = dis2last_goal;
+  } else {
+    last_goal_reachable = false;
+  }
+
+  ros::Time t_start_cvp_1 = ros::Time::now();
+  omp_set_num_threads(4);
+  // clang-format off
+  #pragma omp parallel for
+  // clang-format on
+  for (int i = 0; i < viewpoints.size(); ++i) {
+    if (last_goal_reachable) {
+      distance_lastgoal2vp[i] =
+          getPathCost(ed_->next_goal_node_, Eigen::Vector3d::Zero(),
+                      viewpoints[i]->yaw_, viewpoints[i], viewpoints[i]->yaw_);
+      distance_odom2vp[i] =
+          getPathCost(planner_manager_->topo_graph_->odom_node_, vel, curr_yaw,
+                      viewpoints[i], viewpoints[i]->yaw_);
+
+    } else {
+      distance_lastgoal2vp[i] =
+          getPathCost(planner_manager_->topo_graph_->odom_node_, vel, curr_yaw,
+                      viewpoints[i], viewpoints[i]->yaw_);
+      distance_odom2vp[i] = distance_lastgoal2vp[i];
+    }
+  }
+  ros::Time t_end_cvp_1 = ros::Time::now();
+  if (bm_without_topo) {
+    omp_set_num_threads(4);
+    // clang-format off
+    #pragma omp parallel for
+    // clang-format on
+    for (int i = 0; i < viewpoints.size(); ++i) {
+      if (last_goal_reachable) {
+        distance_lastgoal2vp[i] = getPathCostWithoutTopo(
+            ed_->next_goal_node_, Eigen::Vector3d::Zero(), viewpoints[i]->yaw_,
+            viewpoints[i], viewpoints[i]->yaw_);
+        distance_odom2vp[i] = getPathCostWithoutTopo(
+            planner_manager_->topo_graph_->odom_node_, vel, curr_yaw,
+            viewpoints[i], viewpoints[i]->yaw_);
+
+      } else {
+        distance_lastgoal2vp[i] = getPathCostWithoutTopo(
+            planner_manager_->topo_graph_->odom_node_, vel, curr_yaw,
+            viewpoints[i], viewpoints[i]->yaw_);
+        distance_odom2vp[i] = distance_lastgoal2vp[i];
+      }
+    }
+    ros::Time t_end_cvp_2 = ros::Time::now();
+    double cost_mat_with_topo = (t_end_cvp_1 - t_start_cvp_1).toSec() * 1000;
+    double cost_mat_without_topo = (t_end_cvp_2 - t_end_cvp_1).toSec() * 1000;
+    cout << "cost mat topo: " << cost_mat_with_topo << "ms" << endl;
+    cout << "cost mat point cloud: " << cost_mat_without_topo << "ms" << endl;
+  }
+
+  // EFP 는 "그래프상 도달 가능" 이 방금 Dijkstra 로 확인된 노드다. 그런데
+  // getPathCost 내부 topoSearch 는 topo_cost_search_timeout(기본 10ms) 예산이라
+  // 먼 노드일수록 거짓 NO_PATH(=2e3) 를 돌려준다 — EFP 는 하필 "가장 먼 도달 가능
+  // 노드" 라 이 함정에 정면으로 걸린다. 그 경우에만 Dijkstra 가 준 그래프 거리[m]
+  // 를 같은 단위(시간)로 환산해 대입한다. 안 그러면 EFP 가 매 주기 도달 불가로
+  // 걸러져 NO_FRONTIER -> FINISH -> RTH 로 새고, "EFP 에 도달해야 RTH" 라는 전제가
+  // 깨진다. (EFP 가 없을 때는 아무 일도 하지 않으므로 정상 경로 동작은 불변)
+  if (efp && ed_->efp_graph_dist_ > 0.0 && !viewpoints.empty()) {
+    const int ei = (int)viewpoints.size() - 1;  // EFP 는 항상 마지막
+    const double fallback = ed_->efp_graph_dist_ / (ep_->v_max_ / 2.0);
+    if (distance_odom2vp[ei] > 2e3)
+      distance_odom2vp[ei] = fallback;
+    if (distance_lastgoal2vp[ei] > 2e3)
+      distance_lastgoal2vp[ei] = fallback;
+  }
+
+  vector<TopoNode::Ptr> viewpoint_reachable;
+  vector<double> viewpoint_reachable_distance, viewpoint_reachable_distance2;
+  bool efp_reachable = false;
+  for (int i = 0; i < distance_lastgoal2vp.size(); ++i) {
+    if (distance_odom2vp[i] > 2e3)
+      continue;
+    if (last_goal_reachable) {
+      viewpoint_reachable_distance.emplace_back(distance_lastgoal2vp[i]);
+
+    } else {
+      viewpoint_reachable_distance.emplace_back(distance_odom2vp[i]);
+    }
+    viewpoint_reachable_distance2.emplace_back(distance_odom2vp[i]);
+    viewpoint_reachable.emplace_back(viewpoints[i]);
+    if (efp && viewpoints[i] == efp)
+      efp_reachable = true;
+  }
+
+  // EFP 는 frontier 뷰포인트가 아니므로 진단 카운트에서 뺀다 (FSM 의 warmup
+  // 래치가 "실제로 경로가 나온 frontier 뷰포인트" 기준을 유지하도록).
+  ed_->diag_num_reachable_vp_ =
+      (int)viewpoint_reachable.size() - (efp_reachable ? 1 : 0);
+
+  if (viewpoint_reachable.empty()) {
+    ed_->diag_result_ = "NO_REACHABLE_VP";
+    ed_->diag_reason_ = "NO_PATH: " + std::to_string(ed_->diag_num_viewpoints_) +
+        " viewpoints exist but NONE reachable via topo graph (clusters=" +
+        std::to_string(ed_->diag_num_clusters_) + ", reachable_clusters=" +
+        std::to_string(ed_->diag_num_clusters_reachable_) + ")";
+    planner_manager_->topo_graph_->removeNodes(vp_inserted);
+    // 이번 주기에 새 tour 를 못 만들었지만 global_tour_ 에 직전 경로가 남아
+    // 있으면 지우지 말고 MAGNA 로 그린다. 빈 tour 로 덮으면 실제로는 그 목표를
+    // 향해 날아가는 중인데 rviz 에서는 경로가 사라진다. EFP leg 는 이번 주기
+    // tour 가 없으므로 지운다 (efp_idx=-1).
+    //   BLUE=정상 탐사 / ORANGE=RTH / MAGNA=갱신 안 된 tour / EFP leg=자주색
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
+                                                    : VizColor::RED,
+                      -1);
+    return NO_FRONTIER;
+  }
+
+  if (viewpoint_reachable.size() == 1) {
+    ed_->diag_result_ = "OK";
+    ed_->diag_reason_ = "OK";
+    ed_->global_tour_.clear();
+
+    ed_->global_tour_.emplace_back(pos.cast<float>());
+
+    ed_->global_tour_.emplace_back(viewpoint_reachable.front()->center_);
+
+    // 유일한 후보가 EFP 인 경우: topo skeleton node 의 yaw_ 는 아무도 채우지
+    // 않아 항상 0(=+x) 이므로, FSM 이 계산한 접근 방향 yaw 를 쓴다.
+    const bool only_efp = (efp && viewpoint_reachable.front() == efp);
+    planner_manager_->local_data_.end_yaw_ =
+        only_efp ? ed_->efp_yaw_ : viewpoint_reachable.front()->yaw_;
+    ed_->efp_tour_index_ = only_efp ? 1 : -1;
+    planner_manager_->topo_graph_->removeNodes(vp_inserted);
+    // 다중(TSP) 분기와 동일하게 마무리한다. 이 두 줄이 빠져 있어서 뷰포인트가
+    // 정확히 1개인 주기마다 어긋났다:
+    //   - vizTour 를 안 불러 /global_tour 에는 직전 주기 경로가 그대로 남고
+    //   - updateGoalNode 를 안 불러 next_goal_node_ 도 직전 목표에 머문다
+    //     (위 :228 의 호출은 global_tour_ 를 새로 만들기 "전"이라 옛 값을 쓴다)
+    // 결과적으로 로컬 계획의 끝점이 화면의 global tour 와 한 주기씩 어긋났다.
+    // 실측 로그에서 viewpoints=1(path_reachable 1) 이 반복되는 동안 next_goal 이
+    // (1.7,4.9) -> (1.5,6.5) 로 뒤늦게 따라오는 것으로 나타났다.
+    updateGoalNode();
+    vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                      VizColor::BLUE, ed_->efp_tour_index_);
+    return SUCCEED;
+  }
+
+  int dim = viewpoint_reachable.size() + 1;
+  Eigen::MatrixXd mat;
+  mat.resize(dim, dim);
+  mat.setZero();
+  for (int i = 1; i < dim; ++i) {
+    mat(0, i) = viewpoint_reachable_distance[i - 1];
+  }
+
+  omp_set_num_threads(4);
+  // clang-format off
+  #pragma omp parallel for
+  // clang-format on
+  for (int i = 1; i < dim; i++) {
+    for (int j = i + 1; j < dim; j++) {
+      mat(i, j) = mat(j, i) = getPathCost(
+          viewpoint_reachable[i - 1], Eigen::Vector3d(0, 0, 0),
+          viewpoint_reachable[i - 1]->yaw_, viewpoint_reachable[j - 1],
+          viewpoint_reachable[j - 1]->yaw_);
+    }
+  }
+  // trick 往远走
+  for (int i = 1; i < dim; ++i) {
+    mat(i, 0) = 2e3 - viewpoint_reachable_distance2[i - 1] * 0.2;
+  }
+  for (int i = 0; i < dim; ++i) {
+    for (int j = 1; j < dim; ++j) {
+      for (int k = 1; k < dim; ++k) {
+        if (mat(i, j) > mat(i, k) + mat(k, j)) {
+          mat(i, j) = mat(i, k) + mat(k, j) + 1e-2;
+        }
+      }
+    }
+  }
+  vector<int> indices;
+  indices.reserve(dim);
+  ros::Time start_tsp = ros::Time::now();
+  // cout << "calculate tsp cost matrix cost " << (start_tsp - t2).toSec() * 1000
+  //      << "ms" << endl;
+  
+  // Publish calculate tsp cost
+  timing_msg.data = (start_tsp - t2).toSec() * 1000;
+  calculate_tsp_cost_pub_.publish(timing_msg);
+  solveLHK(mat, indices);
+  ros::Time end_tsp = ros::Time::now();
+  // cout << "lkh solver cost: " << (end_tsp - start_tsp).toSec() * 1000 << "ms"
+  //      << endl;
+  
+  // Publish lkh solver cost
+  timing_msg.data = (end_tsp - start_tsp).toSec() * 1000;
+  lkh_solver_cost_pub_.publish(timing_msg);
+  // if ((end_tsp - start_tsp).toSec() * 1000 > 100)
+  //   exit(0);
+  ed_->global_tour_.clear();
+
+  for (auto &i : indices) {
+    if (i == 0) {
+      ed_->global_tour_.push_back(
+          planner_manager_->topo_graph_->odom_node_->center_);
+    } else {
+      // EFP 가 tour 어디에 있든 그 인덱스를 기록해 둔다 (색 분리용).
+      if (efp && viewpoint_reachable[i - 1] == efp)
+        ed_->efp_tour_index_ = (int)ed_->global_tour_.size();
+      ed_->global_tour_.emplace_back(viewpoint_reachable[i - 1]->center_);
+    }
+  }
+  if (!last_goal_reachable)
+    last_frame_value = viewpoint_reachable_distance[indices[1]];
+
+  ros::Time end = ros::Time::now();
+  planner_manager_->topo_graph_->removeNodes(vp_inserted);
+
+  // Visualize the tour (BLUE=tour 전체 / MAGNA=EFP 로 들어가는 한 구간)
+  vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
+                    VizColor::BLUE, ed_->efp_tour_index_);
+
+  // 첫 목표가 EFP 면 skeleton node 의 빈 yaw_(=0) 대신 접근 방향 yaw 를 쓴다.
+  planner_manager_->local_data_.end_yaw_ =
+      (efp && viewpoint_reachable[indices[1] - 1] == efp)
+          ? ed_->efp_yaw_
+          : viewpoint_reachable[indices[1] - 1]->yaw_;
+  updateGoalNode();
+  ed_->diag_result_ = "OK";
+  ed_->diag_reason_ = "OK";
+  return SUCCEED;
+}
+
+int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double goal_yaw) {
+  ros::Time start = ros::Time::now();
+
+  // RTH는 0.2s 주기로 재계획된다 -> 사이클당 INFO는 스팸. 결과는 diag_result_/
+  // diag_reason_에 담아 FSM 이벤트 로거(변화 시에만 발행)가 내보낸다.
+  ROS_DEBUG("[Goal Planning] Start planning to goal: (%.2f, %.2f, %.2f), yaw: %.2f",
+            goal_pos.x(), goal_pos.y(), goal_pos.z(), goal_yaw);
+
+  // Step 1: Create temporary goal node
+  TopoNode::Ptr goal_node = std::make_shared<TopoNode>();
+  goal_node->center_ = goal_pos.cast<float>();
+  goal_node->yaw_ = goal_yaw;
+
+  // Step 2: Generate and insert frontier viewpoints as stepping stones
+  // This helps when goal is in/near unknown regions - frontiers provide intermediate nodes
+  // closer to the goal than distant topology skeleton nodes
+  vector<TopoNode::Ptr> viewpoints;
+  frontier_manager_ptr_->generateTSPViewpoints(
+      planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
+
+  if (!viewpoints.empty()) {
+    planner_manager_->topo_graph_->insertNodes(viewpoints, false);
+    ROS_DEBUG("[Goal Planning] Inserted %lu frontier viewpoints as stepping stones",
+              viewpoints.size());
+  }
+
+  // Step 3: Get current state
+  Eigen::Vector3f start_pos = planner_manager_->topo_graph_->odom_node_->center_;
+  TopoNode::Ptr start_node = planner_manager_->topo_graph_->odom_node_;
+
+  // Step 4: Connect goal node to topology graph - ONLY verified connections (REACH_END)
+  // No optimistic connections to avoid paths through known walls
+  vector<TopoNode::Ptr> pre_nbrs;
+  planner_manager_->topo_graph_->getPreNbrs(goal_node, pre_nbrs);
+
+  // Try both nearby skeleton nodes AND frontier viewpoints for connections
+  vector<TopoNode::Ptr> connection_candidates = pre_nbrs;
+  connection_candidates.insert(connection_candidates.end(), viewpoints.begin(), viewpoints.end());
+
+  ROS_DEBUG("[Goal Planning] Trying to connect goal to %d nodes (%d neighbors + %d frontiers)",
+            (int)connection_candidates.size(), (int)pre_nbrs.size(), (int)viewpoints.size());
+
+  int num_connected = 0;
+  for (auto& nbr : connection_candidates) {
+    vector<Eigen::Vector3f> path;
+    Eigen::Vector3f goal_pos_f = goal_pos.cast<float>();
+    Eigen::Vector3f nbr_center_f = nbr->center_;
+
+    // Try collision-free path verification with ParallelBubbleAstar
+    // timeout was 1e-3 (1ms) -> too short: far-return paths time out -> home
+    // declared unreachable ("Goal not reachable"). 0.2s(=path-search budget) gives
+    // the breadcrumb/topo route enough time to verify. (RTH plans once, so ok.)
+    int res = planner_manager_->parallel_path_finder_->search(
+        goal_pos_f, nbr_center_f, path, 0.2);
+
+    double cost;
+
+    if (res == ParallelBubbleAstar::REACH_END) {
+      // ONLY accept verified collision-free connections
+      cost = 0.0;
+      for (size_t i = 0; i < path.size() - 1; ++i) {
+        cost += (path[i] - path[i + 1]).norm();
+      }
+      cost /= (ep_->v_max_ / 2.0);  // Time cost
+      ROS_DEBUG("[Goal Planning] Verified connection to node at (%.2f, %.2f, %.2f), cost: %.2f",
+                nbr->center_.x(), nbr->center_.y(), nbr->center_.z(), cost);
+
+      // Add bidirectional edge
+      goal_node->neighbors_.insert(nbr);
+      goal_node->weight_[nbr] = cost;
+      goal_node->paths_[nbr] = path;
+
+      nbr->neighbors_.insert(goal_node);
+      nbr->weight_[goal_node] = cost;
+      nbr->paths_[goal_node] = path;
+
+      num_connected++;
+
+    } else {
+      // Reject ALL non-verified connections (NO_PATH, TIME_OUT, START_FAIL, END_FAIL)
+      // This eliminates optimistic connections through potentially known walls
+      const char* reason;
+      if (res == ParallelBubbleAstar::NO_PATH) reason = "known obstacle";
+      else if (res == ParallelBubbleAstar::START_FAIL) reason = "start in collision";
+      else if (res == ParallelBubbleAstar::END_FAIL) reason = "end in collision";
+      else if (res == ParallelBubbleAstar::TIME_OUT) reason = "timeout (rejected - no optimistic connections)";
+      else reason = "unknown error";
+
+      // Only log at debug level to reduce spam
+      ROS_DEBUG("[Goal Planning] Skipping connection to (%.2f, %.2f, %.2f) - %s",
+                nbr->center_.x(), nbr->center_.y(), nbr->center_.z(), reason);
+    }
+  }
+
+  ROS_DEBUG("[Goal Planning] Connected goal to %d topology nodes (verified only)", num_connected);
+
+  // FALLBACK: If goal is not reachable, navigate to closest frontier instead
+  if (num_connected == 0) {
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] Goal not reachable! Fallback: navigate to closest frontier");
+
+    // Find closest frontier to goal (before removing viewpoints!)
+    if (viewpoints.empty()) {
+      ed_->diag_result_ = "RTH_NO_FRONTIER";
+      ed_->diag_reason_ = "goal unreachable (0 verified connections) and no frontier "
+                          "viewpoints for fallback " + frontier_manager_ptr_->vp_stats_.str();
+      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] No frontiers available for fallback!");
+      return NO_FRONTIER;
+    }
+    ed_->diag_result_ = "RTH_FALLBACK_FRONTIER";
+
+    Eigen::Vector3f goal_pos_f = goal_pos.cast<float>();
+    double min_dist = std::numeric_limits<double>::max();
+    TopoNode::Ptr closest_frontier = nullptr;
+    for (auto& vp : viewpoints) {
+      double dist = (vp->center_ - goal_pos_f).norm();
+      if (dist < min_dist) {
+        min_dist = dist;
+        closest_frontier = vp;
+      }
+    }
+
+    char fb[160];
+    snprintf(fb, sizeof(fb), "goal unreachable -> redirect to closest frontier (%.2f, %.2f, %.2f), %.1fm from goal",
+             closest_frontier->center_.x(), closest_frontier->center_.y(),
+             closest_frontier->center_.z(), min_dist);
+    ed_->diag_reason_ = fb;
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] %s", fb);
+
+    // Now plan a path to the closest frontier instead of the goal
+    // Use the closest frontier as the new goal
+    goal_node->center_ = closest_frontier->center_;
+    goal_node->yaw_ = closest_frontier->yaw_;
+
+    // Try connecting to this frontier position
+    vector<TopoNode::Ptr> frontier_candidates;
+    planner_manager_->topo_graph_->getPreNbrs(goal_node, frontier_candidates);
+
+    // Also try connecting to other nearby skeleton nodes
+    for (auto& nbr : frontier_candidates) {
+      vector<Eigen::Vector3f> path;
+      int res = planner_manager_->parallel_path_finder_->search(
+          goal_node->center_, nbr->center_, path, 1e-3);
+
+      if (res == ParallelBubbleAstar::REACH_END) {
+        double cost = 0.0;
+        for (size_t i = 0; i < path.size() - 1; ++i) {
+          cost += (path[i] - path[i + 1]).norm();
+        }
+        cost /= (ep_->v_max_ / 2.0);
+
+        goal_node->neighbors_.insert(nbr);
+        goal_node->weight_[nbr] = cost;
+        goal_node->paths_[nbr] = path;
+
+        nbr->neighbors_.insert(goal_node);
+        nbr->weight_[goal_node] = cost;
+        nbr->paths_[goal_node] = path;
+
+        num_connected++;
+        ROS_DEBUG("[Goal Planning] Connected frontier fallback to node at (%.2f, %.2f, %.2f)",
+                  nbr->center_.x(), nbr->center_.y(), nbr->center_.z());
+      }
+    }
+
+    if (num_connected == 0) {
+      ed_->diag_result_ = "RTH_FAIL";
+      ed_->diag_reason_ = "goal unreachable and even closest frontier unreachable";
+      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] Even closest frontier is unreachable!");
+      // Cleanup
+      if (!viewpoints.empty()) {
+        planner_manager_->topo_graph_->removeNodes(viewpoints);
+      }
+      return FAIL;
+    }
+
+    ROS_DEBUG("[Goal Planning] Frontier fallback connected to %d nodes", num_connected);
+  }
+
+  // Step 4: A* search on topology graph
+  vector<TopoNode::Ptr> topo_path;
+  ros::Time search_start = ros::Time::now();
+  bool search_success = planner_manager_->topo_graph_->graphSearch(
+      start_node, goal_node, topo_path, ep_->goal_search_timeout_);
+  ros::Time search_end = ros::Time::now();
+
+  std_msgs::Float32 timing_msg;
+  timing_msg.data = (search_end - search_start).toSec() * 1000;
+  topo_graph_search_cost_pub_.publish(timing_msg);
+
+  if (!search_success || topo_path.empty()) {
+    ed_->diag_result_ = "RTH_ASTAR_FAIL";
+    ed_->diag_reason_ = "A* on topo graph failed (goal connected to " +
+                        std::to_string(num_connected) + " nodes)";
+    ROS_WARN_THROTTLE(2.0, "[Goal Planning] A* search failed on topology graph!");
+
+    // Cleanup: remove goal node connections
+    for (auto& nbr : connection_candidates) {
+      nbr->neighbors_.erase(goal_node);
+      nbr->weight_.erase(goal_node);
+      nbr->paths_.erase(goal_node);
+    }
+
+    // Cleanup: remove frontier viewpoints
+    if (!viewpoints.empty()) {
+      planner_manager_->topo_graph_->removeNodes(viewpoints);
+    }
+
+    return FAIL;
+  }
+
+  ROS_DEBUG("[Goal Planning] A* found path with %lu nodes", topo_path.size());
+
+  // Step 5: Build global_tour_ from topology path
+  ed_->global_tour_.clear();
+
+  ed_->global_tour_.push_back(start_pos);
+
+  for (size_t i = 1; i < topo_path.size(); ++i) {
+    ed_->global_tour_.push_back(topo_path[i]->center_);
+  }
+
+  // Add final goal position
+  ed_->global_tour_.push_back(goal_pos.cast<float>());
+
+  // Set end yaw
+  planner_manager_->local_data_.end_yaw_ = goal_yaw;
+
+  // Step 6: Simplify global_tour using greedy visibility checks
+  simplifyGlobalTour();
+
+  // Step 7: Cleanup - remove goal node connections and frontier viewpoints
+  for (auto& nbr : connection_candidates) {
+    nbr->neighbors_.erase(goal_node);
+    nbr->weight_.erase(goal_node);
+    nbr->paths_.erase(goal_node);
+  }
+
+  // Remove frontier viewpoints (stepping stones no longer needed)
+  if (!viewpoints.empty()) {
+    planner_manager_->topo_graph_->removeNodes(viewpoints);
+    ROS_DEBUG("[Goal Planning] Removed %lu frontier stepping stones", viewpoints.size());
+  }
+
+  // Visualize the tour
+  // RTH(원점복귀/좌표이동) 경로. 탐사 경로(BLUE)와 색으로 구분한다 — 예전엔 둘 다
+  // BLUE 라 ns(global_path / goal_path)로만 갈렸고 화면에서는 분간이 안 됐다.
+  planner_manager_->graph_visualizer_->vizTour(ed_->global_tour_, VizColor::ORANGE, "goal");
+  // vizTour 의 삭제는 ns 단위이므로(그래야 "global" 과 "global_efp" 를 동시에 그릴
+  // 수 있다) RTH 중에 남는 직전 탐사 tour 를 명시적으로 지워준다.
+  planner_manager_->graph_visualizer_->vizTour({}, VizColor::BLUE, "global");
+  planner_manager_->graph_visualizer_->vizTour({}, VizColor::MAGNA, "global_efp");
+
+  ros::Time end = ros::Time::now();
+  ROS_DEBUG("[Goal Planning] Total planning time: %.2f ms",
+            (end - start).toSec() * 1000);
+
+  {
+    double tour_len = 0.0;
+    for (size_t i = 1; i < ed_->global_tour_.size(); ++i)
+      tour_len += (ed_->global_tour_[i] - ed_->global_tour_[i - 1]).norm();
+    char ok[128];
+    snprintf(ok, sizeof(ok), "path to goal: %zu nodes / %.1fm (connected via %d)",
+             ed_->global_tour_.size(), tour_len, num_connected);
+    if (ed_->diag_result_ != "RTH_FALLBACK_FRONTIER")
+      ed_->diag_result_ = "RTH_PATH_OK";
+    ed_->diag_reason_ = ok;
+  }
+  return SUCCEED;
+}
+
+void FastExplorationManager::simplifyGlobalTour() {
+  if (ed_->global_tour_.size() <= 2) {
+    // No simplification needed for start-goal only
+    return;
+  }
+
+  ros::Time t_start = ros::Time::now();
+  int original_size = ed_->global_tour_.size();
+
+  vector<Eigen::Vector3f> simplified_tour;
+
+  simplified_tour.push_back(ed_->global_tour_[0]);  // Always keep start
+
+  const double MAX_SEGMENT_LENGTH = ep_->max_segment_length_;
+  int collision_checks = 0;
+
+  int anchor_idx = 0;
+
+  while (anchor_idx < ed_->global_tour_.size() - 1) {
+    int furthest_visible = anchor_idx + 1;  // At least move to next node
+
+    // Greedy search: find furthest visible node from anchor
+    for (int test_idx = anchor_idx + 2; test_idx < ed_->global_tour_.size(); ++test_idx) {
+      Eigen::Vector3f anchor_pos = ed_->global_tour_[anchor_idx];
+      Eigen::Vector3f test_pos = ed_->global_tour_[test_idx];
+
+      // Check segment length constraint first
+      double segment_length = (test_pos - anchor_pos).norm();
+      if (segment_length > MAX_SEGMENT_LENGTH) {
+        break;  // Too far, stop searching
+      }
+
+      // Test visibility using parallel_path_finder
+      vector<Eigen::Vector3f> path;
+      collision_checks++;
+      int res = planner_manager_->parallel_path_finder_->search(
+          anchor_pos, test_pos, path, 1e-3);
+
+      if (res == ParallelBubbleAstar::REACH_END) {
+        // Visible! Update furthest
+        furthest_visible = test_idx;
+        // Continue testing further nodes (don't break)
+      } else {
+        // Hit obstacle, stop searching (greedy: can't skip further if blocked here)
+        break;
+      }
+    }
+
+    // Add the furthest visible node
+    if (furthest_visible < ed_->global_tour_.size() - 1) {
+      simplified_tour.push_back(ed_->global_tour_[furthest_visible]);
+    }
+
+    // Move anchor to furthest visible
+    anchor_idx = furthest_visible;
+  }
+
+  // Always add final goal
+  simplified_tour.push_back(ed_->global_tour_.back());
+
+  // Update global_tour_
+  ed_->global_tour_ = simplified_tour;
+
+  ros::Time t_end = ros::Time::now();
+  ROS_INFO("\033[33m[Path Simplification] Reduced path from %d to %lu nodes, %d collision checks, %.2f ms\033[0m",
+           original_size, simplified_tour.size(), collision_checks,
+           (t_end - t_start).toSec() * 1000.0);
+
+  // Print segment lengths for debugging
+  for (size_t i = 1; i < simplified_tour.size(); ++i) {
+    double seg_length = (simplified_tour[i] - simplified_tour[i-1]).norm();
+    ROS_INFO("  Segment %lu: %.2f m", i, seg_length);
+  }
+}
+
+void FastExplorationManager::solveLHK(Eigen::MatrixXd &cost_mat,
+                                      vector<int> &indices) {
+  // Solve linear homogeneous kernel
+  // Write params and cost matrix to problem file
+  int dimension = cost_mat.rows();
+  if (dimension < 3)
+    return;
+  ofstream prob_file(ep_->tsp_dir_ + "/single.tsp");
+  // Problem specification part, follow the format of TSPLIB
+
+  string prob_spec =
+      "NAME : single\nTYPE : ATSP\nDIMENSION : " + to_string(dimension) +
+      "\nEDGE_WEIGHT_TYPE : "
+      "EXPLICIT\nEDGE_WEIGHT_FORMAT : FULL_MATRIX\nEDGE_WEIGHT_SECTION\n";
+
+  // string prob_spec = "NAME : single\nTYPE : TSP\nDIMENSION : " +
+  // to_string(dimension) +
+  //     "\nEDGE_WEIGHT_TYPE : "
+  //     "EXPLICIT\nEDGE_WEIGHT_FORMAT : LOWER_ROW\nEDGE_WEIGHT_SECTION\n";
+
+  prob_file << prob_spec;
+  // prob_file << "TYPE : TSP\n";
+  // prob_file << "EDGE_WEIGHT_FORMAT : LOWER_ROW\n";
+  // Problem data part
+  const int scale = 100;
+
+  // Use Asymmetric TSP
+  for (int i = 0; i < dimension; ++i) {
+    for (int j = 0; j < dimension; ++j) {
+      int int_cost = cost_mat(i, j) * scale;
+      prob_file << int_cost << " ";
+    }
+    prob_file << "\n";
+  }
+
+  prob_file << "EOF";
+  prob_file.close();
+
+  // Call LKH TSP solver
+  solveTSPLKH((ep_->tsp_dir_ + "/single.par").c_str());
+
+  // Read optimal tour from the tour section of result file
+  ifstream res_file(ep_->tsp_dir_ + "/single.txt");
+  string res;
+  while (getline(res_file, res)) {
+    // Go to tour section
+    if (res.compare("TOUR_SECTION") == 0)
+      break;
+  }
+
+  // Read path for ATSP formulation
+  while (getline(res_file, res)) {
+
+    // Read indices of frontiers in optimal tour
+    int id = stoi(res);
+    if (id == -1)
+      break;
+    indices.push_back(id - 1); // Idx of solver-2 == Idx of frontier
+  }
+
+  res_file.close();
+}
+
+void FastExplorationManager::updateGoalNode() {
+  if (ed_->global_tour_.empty())
+    return;
+  Eigen::Vector3f goal = ed_->global_tour_[1];
+
+  struct PairPtrHash {
+    std::size_t
+    operator()(const std::pair<TopoNode::Ptr, TopoNode::Ptr> &p) const {
+      return std::hash<TopoNode::Ptr>()(p.first) ^
+             std::hash<TopoNode::Ptr>()(p.second);
+    }
+  };
+
+  Eigen::Vector3i idx;
+  planner_manager_->topo_graph_->getIndex(goal, idx);
+  vector<TopoNode::Ptr> pre_nbrs;
+  for (int i = -1; i <= 1; i++)
+    for (int j = -1; j <= 1; j++)
+      for (int k = -1; k <= 1; k++) {
+        Eigen::Vector3i tmp_idx = idx;
+        tmp_idx(0) = idx(0) + i;
+        tmp_idx(1) = idx(1) + j;
+        tmp_idx(2) = idx(2) + k;
+        auto region = planner_manager_->topo_graph_->getRegionNode(tmp_idx);
+        if (region) {
+          for (auto &topo : region->topo_nodes_) {
+            if (topo == ed_->next_goal_node_)
+              continue;
+            pre_nbrs.emplace_back(topo);
+          }
+        }
+      }
+  std::unordered_map<std::pair<TopoNode::Ptr, TopoNode::Ptr>,
+                     vector<Eigen::Vector3f>, PairPtrHash>
+      edge2insert;
+  mutex edge2insert_mtx;
+  omp_set_num_threads(4);
+  // clang-format off
+  #pragma omp parallel for
+  // clang-format on
+  for (auto &nbr : pre_nbrs) {
+    vector<Eigen::Vector3f> path;
+    int res = planner_manager_->topo_graph_->parallel_bubble_astar_->search(
+        goal, nbr->center_, path, 1e-3);
+    if (res == ParallelBubbleAstar::REACH_END &&
+        planner_manager_->topo_graph_->parallel_bubble_astar_
+            ->collisionCheck_shortenPath(path)) {
+      edge2insert_mtx.lock();
+      edge2insert.insert({std::make_pair(ed_->next_goal_node_, nbr), path});
+      edge2insert_mtx.unlock();
+    }
+  }
+  // 更新goal节点
+  ed_->next_goal_node_->center_ = goal;
+  ed_->next_goal_node_->is_viewpoint_ = true;
+  if (edge2insert.size() > 0) {
+    planner_manager_->topo_graph_->removeNode(ed_->next_goal_node_);
+    for (auto &edge : edge2insert) {
+      ed_->next_goal_node_->neighbors_.insert(edge.first.second);
+      ed_->next_goal_node_->paths_.insert({edge.first.second, edge.second});
+      double cost;
+      planner_manager_->topo_graph_->parallel_bubble_astar_->calculatePathCost(
+          edge.second, cost);
+      ed_->next_goal_node_->weight_[edge.first.second] = cost;
+      auto nbr = edge.first.second;
+      nbr->neighbors_.insert(ed_->next_goal_node_);
+      nbr->weight_[ed_->next_goal_node_] = cost;
+      vector<Eigen::Vector3f> path = edge.second;
+      std::reverse(path.begin(), path.end());
+      nbr->paths_[ed_->next_goal_node_] = path;
+    }
+  }
+}
+} // namespace fast_planner

@@ -1,0 +1,31 @@
+# Catkin workspace output
+/src/CMakeLists.txt
+/build/
+/devel/
+/install/
+/logs/
+/.catkin_tools/
+/.catkin_workspace
+
+# Editors and Python caches
+/.vscode/
+*.swp
+__pycache__/
+*.py[cod]
+
+# Flight, replay, and evaluation output
+*.bag
+*.bag.active
+*.pcd
+*.log
+*.csv
+*.pdf
+*.png
+/result/
+**/records/
+**/config/replay/
+
+# LKH runtime scratch
+single.par
+single.tsp
+single.txt

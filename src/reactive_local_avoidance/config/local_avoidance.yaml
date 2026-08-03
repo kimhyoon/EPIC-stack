@@ -1,0 +1,19 @@
+# local_avoidance parameters (loaded into the global /local_avoidance namespace)
+local_avoidance:
+  # --- repulsion field (APF) ---
+  repulsive_m:          1.0    # 척력 영향 반경 (이 거리 이상은 척력 0)
+  repulsive_gain:       0.05   # 척력 게인 (세기 배율)
+
+  # --- distance thresholds ---
+  lidar_min_threshold:  0.10   # 노이즈컷 (이하 점은 무시 / 자기몸체)
+  avoidance_trigger_m:  0.4    #1.45   # 회피 발동 거리 (최근접 점이 이보다 가까우면 ON)
+  release_delay_s:      0.4    # 해제 지연 [s] — 근접점이 이 시간 연속 안 보여야 OFF (발동은 즉시)
+  emergency_avoidance_m: 0.3  # 0.95   # 긴급(강회피) 거리 (이 안이면 5배 척력)
+  avoidance_moving_m:   0.7    # 한 번에 움직이는 회피 벡터 최대 길이 (3D)
+
+  # --- two-band gating (body frame; 센서 장착 기울기는 수신 시 보정) ---
+  band_z_thr:           0.3    # 수평 슬랩 반두께  |z| < band_z_thr  -> x,y 회피
+  band_r_thr:           0.3    # 수직 기둥 반경  hypot(x,y) < band_r_thr -> z 회피
+
+  # --- sensor mount (sensor -> body 보정) ---
+  sensor_pitch_deg:     25.0    # 센서 장착 pitch (deg, 아래로 숙임=양수). 예: 전방 25° 하향 = 25.0
