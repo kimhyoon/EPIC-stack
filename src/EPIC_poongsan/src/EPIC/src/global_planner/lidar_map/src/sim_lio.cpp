@@ -13,6 +13,7 @@ If you need to integrate EPIC with Lidar SLAM algorithm and shares
 memory, thread mutual exclusion should be noted.
 */
 #include "visualization_msgs/Marker.h"
+#include <algorithm>
 #include <cmath>
 #include <pcl/filters/filter.h>
 #include <lidar_map/lidar_map.h>
@@ -135,6 +136,26 @@ bool LIOInterface::updateCloudMapOdometry(
   pcl::PointCloud<pcl::PointXYZ> finite_cloud;
   pcl::removeNaNFromPointCloud(cloud_input, finite_cloud, finite_indices);
   cloud_input.swap(finite_cloud);
+
+  // The ML-X /ml_/pointcloud stream pads each organized scan with exact
+  // (0, 0, 0) placeholders. PCL considers them finite, and the voxel filter
+  // would otherwise turn hundreds of placeholders into a real obstacle at the
+  // world origin. Remove only the exact sentinel; valid nearby returns remain.
+  const auto zero_begin = std::remove_if(
+      cloud_input.points.begin(), cloud_input.points.end(),
+      [](const pcl::PointXYZ &point) {
+        return point.x == 0.0f && point.y == 0.0f && point.z == 0.0f;
+      });
+  const size_t zero_point_count =
+      std::distance(zero_begin, cloud_input.points.end());
+  cloud_input.points.erase(zero_begin, cloud_input.points.end());
+  cloud_input.width = static_cast<uint32_t>(cloud_input.points.size());
+  cloud_input.height = 1;
+  if (zero_point_count > 0) {
+    ROS_DEBUG_THROTTLE(5.0,
+                       "[LIOInterface] removed %zu zero-point placeholders",
+                       zero_point_count);
+  }
   if (cloud_input.empty()) {
     ROS_WARN_THROTTLE(1.0,
                       "[NumericalGuard] point cloud contains no finite points");
@@ -181,6 +202,17 @@ bool LIOInterface::updateCloudMapOdometry(
     filtered_points = transformed_cloud;
     // ROS_INFO_THROTTLE(5.0, "[LIOInterface] Transform completed (took %.2fms)",
     //                   (ros::Time::now() - t_transform_start).toSec() * 1000.0);
+  }
+
+  // Publish exactly the cloud consumed by the planner for frame validation.
+  // PointCloud2 conversion runs only while RViz or another tool subscribes.
+  if (transformed_cloud_puber_.getNumSubscribers() > 0) {
+    sensor_msgs::PointCloud2 world_cloud;
+    pcl::toROSMsg(*filtered_points, world_cloud);
+    world_cloud.header.stamp = msg->header.stamp;
+    world_cloud.header.frame_id =
+        odom_->header.frame_id.empty() ? "map" : odom_->header.frame_id;
+    transformed_cloud_puber_.publish(world_cloud);
   }
 
   // Store the processed cloud for downstream frontier/viewpoint updates.

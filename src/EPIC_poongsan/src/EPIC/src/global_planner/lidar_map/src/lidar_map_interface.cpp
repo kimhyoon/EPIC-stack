@@ -11,6 +11,8 @@ LIOInterface::~LIOInterface() {}
 void LIOInterface::init(ros::NodeHandle &nh) {
   lp_.reset(new LIOInterfaceParam);
   ld_.reset(new LIOInterfaceData);
+  transformed_cloud_puber_ =
+      nh.advertise<sensor_msgs::PointCloud2>("/debug/mlx_cloud_world", 1);
   ikd_Tree_map.setMap_ikdtree(this);
   ikd_Tree_map.Set_delete_criterion_param(0.3);
   ikd_Tree_map.Set_balance_criterion_param(0.6);

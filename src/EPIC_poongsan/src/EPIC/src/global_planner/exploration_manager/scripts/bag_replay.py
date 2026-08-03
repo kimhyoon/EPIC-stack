@@ -96,6 +96,7 @@ ALLOW_HINTS = [
     "/cloud_registered*",
     "/lio_sam/*",
     "/livox/*",
+    "/ml_/pointcloud",
     "/mavros/state", "/mavros/battery", "/mavros/odometry/in",
     "/FSM_flag_avoidance",
     "/waypoint_generator/waypoints",

@@ -1,0 +1,392 @@
+Panels:
+  - Class: rviz/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /lidar_input_and_local_map1
+        - /planner_record1
+        - /frontier_viewpoint1
+      Splitter Ratio: 0.44999998807907104
+    Tree Height: 460
+  - Class: rviz/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz/Time
+    Name: Time
+    SyncMode: 0
+    SyncSource: occupied_cells
+Preferences:
+  PromptSaveOnExit: false
+Toolbars:
+  toolButtonStyle: 2
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.15000000596046448
+      Cell Size: 1
+      Class: rviz/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 200
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 1.1662929058074951
+            Min Value: 0.034079909324645996
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 0; 255; 255
+          Color Transformer: FlatColor
+          Decay Time: 2
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 0; 255
+          Min Color: 0; 255; 255
+          Name: mlx_planner_cloud_world
+          Position Transformer: XYZ
+          Queue Size: 20
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.03999999910593033
+          Style: Points
+          Topic: /debug/mlx_cloud_world
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.800000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 8.68242073059082
+            Min Value: -0.22381240129470825
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 190; 190; 190
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: lio_local_map
+          Position Transformer: XYZ
+          Queue Size: 5
+          Selectable: false
+          Size (Pixels): 1
+          Size (m): 0.019999999552965164
+          Style: Points
+          Topic: /lio_sam/mapping/map_local
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+      Enabled: true
+      Name: lidar_input_and_local_map
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /viz_graph_topic
+          Name: topology_graph
+          Namespaces:
+            boundary: true
+            box id: true
+            odom_edge: true
+            skeleton_edge: true
+            topo_node: true
+            viewpoint_edge: true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /global_tour
+          Name: global_tour
+          Namespaces:
+            global_path: true
+            global_path_order: true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /planning/travel_traj
+          Name: travel_trajectory
+          Namespaces:
+            traj_exp: true
+            traj_real: true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/MarkerArray
+          Enabled: true
+          Marker Topic: /visualizer/trajectory
+          Name: minco_trajectory
+          Namespaces:
+            optimal_trajectory: true
+            optimal_trajectory_fov: true
+          Queue Size: 100
+          Value: true
+        - Class: rviz/Marker
+          Enabled: false
+          Marker Topic: /planning/state
+          Name: fsm_state
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: false
+        - Class: rviz/Marker
+          Enabled: false
+          Marker Topic: /planning/expl_diag
+          Name: exploration_diagnostics
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: false
+        - Angle Tolerance: 0.009999999776482582
+          Class: rviz/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: false
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: false
+            Value: false
+          Enabled: true
+          Keep: 1
+          Name: vehicle_odometry
+          Position Tolerance: 0.0010000000474974513
+          Queue Size: 10
+          Shape:
+            Alpha: 1
+            Axes Length: 0.800000011920929
+            Axes Radius: 0.07999999821186066
+            Color: 255; 85; 0
+            Head Length: 0
+            Head Radius: 0
+            Shaft Length: 0.05000000074505806
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic: /mavros/odometry/in
+          Unreliable: false
+          Value: true
+      Enabled: true
+      Name: planner_record
+    - Class: rviz/Group
+      Displays:
+        - Class: rviz/MarkerArray
+          Enabled: false
+          Marker Topic: /exploration_node/sf_cluster_marker
+          Name: viewpoint_clusters
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -2
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 170; 0
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: viewpoint_candidates
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 5
+          Size (m): 0.20000000298023224
+          Style: Spheres
+          Topic: /exploration_node/viewpoint_centers
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: false
+          Value: false
+        - Alpha: 0.800000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -2
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 255; 0
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: frontier
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.20000000298023224
+          Style: Boxes
+          Topic: /exploration_node/frt
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: false
+          Value: true
+        - Alpha: 0.3499999940395355
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -2
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 100; 180; 255
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Min Color: 0; 0; 0
+          Name: occupied_cells
+          Position Transformer: XYZ
+          Queue Size: 2
+          Selectable: false
+          Size (Pixels): 2
+          Size (m): 0.20000000298023224
+          Style: Boxes
+          Topic: /exploration_node/occ
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: false
+          Value: true
+      Enabled: true
+      Name: frontier_viewpoint
+  Enabled: true
+  Global Options:
+    Background Color: 46; 52; 54
+    Default Light: true
+    Fixed Frame: odom
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz/Interact
+      Hide Inactive Objects: true
+    - Class: rviz/Select
+    - Class: rviz/FocusCamera
+    - Class: rviz/Measure
+    - Class: rviz/SetInitialPose
+      Theta std deviation: 0.2617993950843811
+      Topic: /initialpose
+      X std deviation: 0.5
+      Y std deviation: 0.5
+    - Class: rviz/SetGoal
+      Topic: /move_base_simple/goal
+    - Class: rviz/PublishPoint
+      Single click: true
+      Topic: /clicked_point
+  Value: true
+  Views:
+    Current:
+      Class: rviz/Orbit
+      Distance: 17.050519943237305
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Field of View: 0.785398006439209
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 1
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.23979781568050385
+      Target Frame: <Fixed Frame>
+      Yaw: 1.880027413368225
+    Saved:
+      - Angle: -1.5707999467849731
+        Class: rviz/TopDownOrtho
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Invert Z Axis: false
+        Name: TopDown
+        Near Clip Distance: 0.009999999776482582
+        Scale: 20
+        Target Frame: <Fixed Frame>
+        X: 0
+        Y: 0
+      - Class: rviz/Orbit
+        Distance: 11.650970458984375
+        Enable Stereo Rendering:
+          Stereo Eye Separation: 0.05999999865889549
+          Stereo Focal Distance: 1
+          Swap Stereo Eyes: false
+          Value: false
+        Field of View: 0.785398006439209
+        Focal Point:
+          X: 0
+          Y: 0
+          Z: 1
+        Focal Shape Fixed Size: true
+        Focal Shape Size: 0.05000000074505806
+        Invert Z Axis: false
+        Name: Orbit
+        Near Clip Distance: 0.009999999776482582
+        Pitch: 0.11479755491018295
+        Target Frame: <Fixed Frame>
+        Yaw: 0.9100239276885986
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 1016
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000035c000003a2fc0200000003fb000000100044006900730070006c006100790073010000003b00000207000000c700fffffffb0000000a0056006900650077007301000002480000014e000000a000fffffffb0000000800540069006d0065010000039c000000410000003700ffffff000003d8000003a200000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Time:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1850
+  X: 70
+  Y: 27

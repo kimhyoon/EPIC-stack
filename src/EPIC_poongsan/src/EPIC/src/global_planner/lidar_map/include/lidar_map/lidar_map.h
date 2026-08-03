@@ -75,6 +75,7 @@ private:
   shared_ptr<message_filters::Subscriber<nav_msgs::Odometry>> odom_sub_;
   SynchronizerCloudOdom sync_cloud_odom_;
   ros::Publisher update_trigger_puber_;
+  ros::Publisher transformed_cloud_puber_;
 
   KD_TREE<PointType> ikd_Tree_map;
 
