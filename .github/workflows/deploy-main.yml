@@ -16,11 +16,6 @@ jobs:
       image: osrf/ros:noetic-desktop-full
 
     steps:
-      - name: Check out dev with full history
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - name: Install build and deployment dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -38,6 +33,11 @@ jobs:
             libyaml-cpp-dev \
             ros-noetic-mavros-msgs
           rm -rf /var/lib/apt/lists/*
+
+      - name: Check out dev with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Fetch deployment refs
         run: |
