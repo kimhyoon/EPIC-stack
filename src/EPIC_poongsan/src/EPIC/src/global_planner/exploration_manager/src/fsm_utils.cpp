@@ -141,6 +141,8 @@ bool FastExplorationFSM::startMission(const std::string &source) {
   clearEarlyFinishPath("IDLE");
   traveled_distance_ = 0.0;
   traveled_valid_ = false;
+  max_displacement_ = 0.0;
+  expl_origin_ = fd_->odom_pos_;  // 임시 기준점 — startExplorationFromHover 가 재앵커
   frontiers_ever_seen_ = false;
   explore_start_time_ = ros::Time(0);
   finish_hover_start_ = ros::Time(0);
@@ -208,15 +210,21 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   fd_->odom_pos_ = ld->lidar_pose_;
   fd_->odom_vel_ = ld->lidar_vel_;
 
-  // 누적 이동거리 적분. EARLY_FINISH 가 "정말 다 봐서 끝났나 / 아직 못 돌아다녔나" 를
-  // 가르는 유일한 근거다. 직선변위가 아니라 경로 적분이어야 한다 — 멀리 나갔다
-  // 원점으로 복귀해 끝나는 건 정상 종료인데 변위로 보면 0 이 되어 오판한다.
+  // 이동량 갱신. EARLY_FINISH 판정 근거는 max_displacement_ (탐사 시작점 기준
+  // 최대 직선 이탈거리, 단조증가) — 경로 적분(traveled_distance_)은 근거리 셔플
+  // 만으로 임계값을 소진해 구제를 죽이는 문제가 있어 진단용으로만 남긴다.
   // 한 프레임(20Hz) 이동량 상한 1m = 20m/s 로, 정상 비행에서는 나올 수 없는 값이다.
-  // 이걸 넘으면 FAST-LIO/LIO-SAM 포즈 점프이므로 거리에 반영하지 않는다.
+  // 이걸 넘으면 FAST-LIO/LIO-SAM 포즈 점프이므로 두 지표 모두 갱신하지 않는다.
+  // (점프가 지속되면 그 이후 max 가 오염되는 건 못 막지만, 그 상태면 지도/계획
+  // 전체가 이미 깨진 상황이라 여기서 더 방어하지 않는다.)
   if (traveled_valid_) {
     double step = (fd_->odom_pos_ - last_traveled_pos_).norm();
-    if (std::isfinite(step) && step < 1.0)
+    if (std::isfinite(step) && step < 1.0) {
       traveled_distance_ += step;
+      double disp = (fd_->odom_pos_ - expl_origin_).norm();
+      if (std::isfinite(disp) && disp > max_displacement_)
+        max_displacement_ = disp;
+    }
   }
   last_traveled_pos_ = fd_->odom_pos_;
   traveled_valid_ = true;

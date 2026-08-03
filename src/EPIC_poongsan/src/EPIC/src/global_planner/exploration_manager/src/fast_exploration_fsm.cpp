@@ -126,9 +126,29 @@ bool FastExplorationFSM::computeReachableNodes(
   return dist.size() > 1;
 }
 
-// EFP 최초 선정: 도달 가능한 노드 중 exploration box 안이면서 그래프 거리 최대.
+bool FastExplorationFSM::isNearFlownPath(const Eigen::Vector3f &p) const {
+  if (early_finish_visited_radius_ <= 0.0)
+    return false;
+  const float r2 = static_cast<float>(early_finish_visited_radius_ *
+                                      early_finish_visited_radius_);
+  for (const auto &h : planner_manager_->topo_graph_->history_odom_nodes_) {
+    if (h && (h->center_ - p).squaredNorm() < r2)
+      return true;
+  }
+  return false;
+}
+
+// EFP 최초 선정 (하이브리드 2단 판정의 2단).
+// 후보 = 도달 가능 && exploration box 안 && 미방문(비행경로 반경 밖). 이미
+// 지나가며 관측한 곳으로 probe 를 보내면 관측 이득이 없다.
+// 랭킹 = 탐사 시작점(expl_origin_) 기준 유클리드 거리 최대. "지금 위치에서
+// 그래프 거리 최대" 는 제자리 셔플로도 커질 수 있는데, 구제의 목적이 "원점에서
+// 진출해 관측을 늘리는 것" 이므로 트리거(max_displacement_)와 같은 기준점을 쓴다.
+// dist_out 은 planGlobalPath/로그가 쓰는 그래프 거리라 선정 노드의 것을 그대로
+// 반환한다 (랭킹 기준과 다름에 주의).
 bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
-                                                     double &dist_out) {
+                                                     double &dist_out,
+                                                     bool require_gain) {
   node_out = nullptr;
   dist_out = 0.0;
   std::unordered_map<TopoNode::Ptr, double> dist;
@@ -137,34 +157,59 @@ bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
 
   TopoNode::Ptr odom_node = planner_manager_->topo_graph_->odom_node_;
   TopoNode::Ptr virtual_goal = expl_manager_->ed_->next_goal_node_;
-  double best_dist = -1.0;
+  TopoNode::Ptr best = nullptr;
+  double best_origin_dist = -1.0;
+  double best_graph_dist = 0.0;
   // unordered_map 순회 순서는 포인터 주소에 좌우돼 실행마다 다르다. 동점(부동소수
   // 오차 범위 포함)은 좌표 사전순으로 깨야 같은 입력에 항상 같은 EFP 가 나온다.
-  for (const auto &kv : dist) {
-    const TopoNode::Ptr &n = kv.first;
-    if (!n || n == odom_node || n == virtual_goal)
-      continue;
-    if (!insideExplorationBox(n->center_))
-      continue;
-    bool better;
-    if (!node_out)
-      better = true;
-    else if (kv.second > best_dist + kDistTieEps)
-      better = true;
-    else if (kv.second < best_dist - kDistTieEps)
-      better = false;
-    else
-      better = lexLess(n->center_, node_out->center_);
-    if (better) {
-      best_dist = kv.second;
-      node_out = n;
+  auto pick = [&](bool skip_visited) {
+    best = nullptr;
+    best_origin_dist = -1.0;
+    best_graph_dist = 0.0;
+    for (const auto &kv : dist) {
+      const TopoNode::Ptr &n = kv.first;
+      if (!n || n == odom_node || n == virtual_goal)
+        continue;
+      if (!insideExplorationBox(n->center_))
+        continue;
+      if (skip_visited && isNearFlownPath(n->center_))
+        continue;
+      const double origin_dist = (n->center_ - expl_origin_).norm();
+      bool better;
+      if (!best)
+        better = true;
+      else if (origin_dist > best_origin_dist + kDistTieEps)
+        better = true;
+      else if (origin_dist < best_origin_dist - kDistTieEps)
+        better = false;
+      else
+        better = lexLess(n->center_, best->center_);
+      if (better) {
+        best = n;
+        best_origin_dist = origin_dist;
+        best_graph_dist = kv.second;
+      }
     }
-  }
-  ROS_INFO("[EARLY_FINISH] dijkstra reached %zu nodes, best_dist=%.2fm",
-           dist.size(), best_dist);
-  if (!node_out)
+  };
+
+  pick(true);
+  // 강제 요청은 항상 시도한다: 전부 방문한 그래프라면 방문 필터를 풀고 재선정.
+  if (!best && !require_gain)
+    pick(false);
+  ROS_INFO("[EARLY_FINISH] dijkstra reached %zu nodes, "
+           "origin_dist=%.2fm graph_dist=%.2fm (max_disp=%.2fm)",
+           dist.size(), best_origin_dist, best_graph_dist, max_displacement_);
+  if (!best)
     return false;
-  dist_out = best_dist;
+  if (require_gain &&
+      best_origin_dist < max_displacement_ + early_finish_probe_min_gain_) {
+    ROS_INFO("[EARLY_FINISH] best candidate gains nothing "
+             "(origin_dist=%.2fm < max_disp=%.2fm + gain=%.2fm) -> no probe",
+             best_origin_dist, max_displacement_, early_finish_probe_min_gain_);
+    return false;
+  }
+  node_out = best;
+  dist_out = best_graph_dist;
   return true;
 }
 
@@ -516,20 +561,26 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case FINISH: {
-    // 조기 종료 구제: 탐사가 끝났다고 하는데 실제로 몇 m 도 못 움직였다면, 좁은
-    // FOV 때문에 frontier 가 아예 안 잡힌 상태일 가능성이 높다. 가장 먼 도달 가능
+    // 조기 종료 구제: 탐사가 끝났다고 하는데 실제로 멀리 진출한 적이 없다면, 좁은
+    // FOV 때문에 frontier 가 아예 안 잡힌 상태일 가능성이 높다. 도달 가능한 미방문
     // topo node 로 한 번 날아가 관측을 늘려보고, 그래도 frontier 가 없으면 그때
     // 정상 RTH 로 간다. (스냅샷/호버/MISSION 이벤트보다 먼저 판단해야 이벤트가
     // 두 번 찍히거나 불필요한 호버를 거치지 않는다.)
+    // 판정은 하이브리드 2단이다:
+    //   1단 (여기): max_displacement_ < thresh — 경로 적분이 아니라 최대 직선
+    //      이탈거리. 적분은 근거리 셔플만으로 임계값을 소진해 구제가 죽는다.
+    //   2단 (EARLY_FINISH 상태의 selectFarthestReachableNode): 원점거리가
+    //      max_displacement_ + gain 을 넘는 미방문 후보가 실제로 있어야 probe.
+    //      없으면 FAILED 경로로 정상 FINISH 에 합류한다.
     // - explore_finished_ 조건 필수: 수동 /srv_rth 로 온 FINISH 는 구제 대상이 아니다.
     // - max_retry 래치 필수: 구제 후 또 짧게 끝나면 무한 반복이 된다.
     if (early_finish_enable_ && explore_finished_ &&
         early_finish_count_ < early_finish_max_retry_ &&
-        traveled_distance_ < early_finish_dist_thresh_) {
-      transitState(EARLY_FINISH, "FINISH: traveled " +
-                   to_string(traveled_distance_) + "m < " +
+        max_displacement_ < early_finish_dist_thresh_) {
+      transitState(EARLY_FINISH, "FINISH: max displacement " +
+                   to_string(max_displacement_) + "m < " +
                    to_string(early_finish_dist_thresh_) +
-                   "m -> use farthest reachable topology path");
+                   "m -> probe unvisited reachable topology");
       break;
     }
 
@@ -615,10 +666,13 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if (!forced)
       early_finish_count_++;
 
-    if (!selectFarthestReachableNode(probe, graph_distance) ||
+    if (!selectFarthestReachableNode(probe, graph_distance, !forced) ||
         !installEarlyFinishProbe(probe, graph_distance)) {
-      publishEarlyFinishStatus("FAILED", "no reachable topology node");
-      elog_.log("EARLY_FINISH", "no reachable topology node", "", 0.0,
+      // 자동 경로에서는 "후보 없음" 외에 "gain 부족(이미 가본 범위 안뿐)" 도
+      // 여기로 온다 — 둘 다 정상 FINISH 합류가 맞다.
+      publishEarlyFinishStatus("FAILED", "no qualifying topology node");
+      elog_.log("EARLY_FINISH", "no qualifying topology node",
+                "max_disp=" + to_string(max_displacement_) + "m", 0.0,
                 EventLogger::L_WARN, true);
       early_finish_forced_attempt_ = false;
       if (forced) {
@@ -626,7 +680,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                      "EARLY_FINISH: forced request failed -> resume exploration");
       } else {
         explore_finished_ = true;
-        transitState(FINISH, "EARLY_FINISH: no reachable topology node");
+        transitState(FINISH, "EARLY_FINISH: no qualifying topology node");
       }
       break;
     }
@@ -637,11 +691,11 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
     char d[224];
     snprintf(d, sizeof(d),
-             "traveled=%.2fm efp=(%.2f, %.2f, %.2f) graph_dist=%.2fm "
-             "yaw=%.2frad attempt=%s",
-             traveled_distance_, probe->center_.x(), probe->center_.y(),
-             probe->center_.z(), graph_distance, early_finish_yaw_,
-             forced ? "forced" : "automatic");
+             "max_disp=%.2fm traveled=%.2fm efp=(%.2f, %.2f, %.2f) "
+             "graph_dist=%.2fm yaw=%.2frad attempt=%s",
+             max_displacement_, traveled_distance_, probe->center_.x(),
+             probe->center_.y(), probe->center_.z(), graph_distance,
+             early_finish_yaw_, forced ? "forced" : "automatic");
     elog_.log("EARLY_FINISH",
               "probe installed (stays a TSP candidate until reached)", d, 0.0,
               EventLogger::L_WARN, true);
@@ -1051,11 +1105,15 @@ void FastExplorationFSM::leaveTakeoffHover(const std::string &why) {
   startExplorationFromHover(why);
 }
 
-// 이륙 상승분/회전 중 지터가 누적거리에 섞이면 EARLY_FINISH 판정이 왜곡되므로
-// 탐사가 실제로 시작되는 이 지점에서 0 부터 다시 적분한다.
+// 이륙 상승분/회전 중 지터가 이동량 지표에 섞이면 EARLY_FINISH 판정이 왜곡되므로
+// 탐사가 실제로 시작되는 이 지점에서 0 부터 다시 잰다. expl_origin_ 은
+// max_displacement_ 와 EFP 원점거리 랭킹이 공유하는 기준점이라 여기서 앵커해야
+// 트리거와 probe 선정이 같은 "원점" 을 본다.
 void FastExplorationFSM::startExplorationFromHover(const std::string &why) {
   traveled_distance_ = 0.0;
   traveled_valid_ = false;
+  max_displacement_ = 0.0;
+  expl_origin_ = fd_->odom_pos_;
   yaw_rotate_accum_ = 0.0;
   yaw_rotate_valid_ = false;
   transitState(PLAN_TRAJ_EXP, why + " -> explore");
@@ -1133,6 +1191,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/yaw_rotate_init_enable", yaw_rotate_init_enable_, true);
   nh.param("fsm/yaw_rotate_init_rate", yaw_rotate_init_rate_, 0.5);
   nh.param("fsm/early_finish_dist_thresh", early_finish_dist_thresh_, 3.0);
+  nh.param("fsm/early_finish_probe_min_gain", early_finish_probe_min_gain_, 1.0);
+  nh.param("fsm/early_finish_visited_radius", early_finish_visited_radius_, 1.5);
   nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
   // [도달 허용치 통일] EFP 도달 판정은 frontier viewpoint 도달 판정과 같은
   // 파라미터를 읽는다. FSM 이 ViewpointManager/ 네임스페이스를 읽는 것은 의도된

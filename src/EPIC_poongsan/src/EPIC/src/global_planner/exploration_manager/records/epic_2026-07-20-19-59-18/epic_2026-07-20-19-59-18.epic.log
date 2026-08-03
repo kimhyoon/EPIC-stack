@@ -1,3 +1,0 @@
-# EPIC status snapshots for epic_2026-07-20-19-59-18.bag
-# 블록 형식: 항목당 1줄 '[key] value'. 예) grep '^\[pos' 로 좌표만 추출.
-# 소스: /planning/expl_diag_kv (FSM) + /Odometry (odom). 주기 1.0s + 상태변화 즉시.

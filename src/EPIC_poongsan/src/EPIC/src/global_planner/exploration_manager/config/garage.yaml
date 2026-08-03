@@ -268,7 +268,19 @@ fsm/yaw_rotate_init_enable: false
 fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s, 한 바퀴 12.6초)
 
 fsm/early_finish_enable: true
-fsm/early_finish_dist_thresh: 3.0        # [m] travelled less than this at FINISH -> retry
+# [조기 종료 판정 — 하이브리드 2단]
+# 1단: 탐사 종료 시점의 "최대 직선 이탈거리"(탐사 시작점 기준, 단조증가)가
+#      dist_thresh 미만이면 조기 종료 의심. 경로 적분이 아니라 최대 변위인 이유:
+#      리플랜 플래핑/근거리 셔플만으로 적분이 임계값을 소진해 구제가 죽는 것을
+#      막기 위해서다. 멀리 갔다 원점 복귀한 정상 종료는 최대 변위가 크게 남아
+#      구제 대상이 되지 않는다.
+# 2단: 도달 가능한 "미방문" 노드(비행경로 반경 visited_radius 밖) 중 원점거리
+#      최대 노드를 EFP 로 고르되, 그 원점거리가 (최대 변위 + probe_min_gain) 을
+#      넘어야 probe 를 보낸다. 못 넘으면 관측 이득이 없으므로 정상 FINISH.
+# 강제 /srv_early_finish 는 2단의 gain 조건을 걸지 않는다.
+fsm/early_finish_dist_thresh: 3.0        # [m] max displacement less than this at FINISH -> probe
+fsm/early_finish_probe_min_gain: 1.0     # [m] EFP origin-dist must exceed max_disp by this
+fsm/early_finish_visited_radius: 1.5     # [m] nodes within this of flown path = visited (<=0 off)
 fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
 # [도달 판정 허용치]
 # viewpoint 도달 판정(frontier_manager)과 EARLY_FINISH probe(EFP) 도달 판정(FSM)이

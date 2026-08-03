@@ -1,6 +1,0 @@
-# console (/rosout_agg) log for epic_2026-07-20-19-34-43.bag
-# started at 2026-07-20-19-34-43
-[INFO] [1784543683.225] [/record_on_goal]: [record_on_goal] epic log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-34-43/epic_2026-07-20-19-34-43.epic.log
-[INFO] [1784543683.229] [/record_on_goal]: [record_on_goal] event log -> /home/hmcl/EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/epic_2026-07-20-19-34-43/epic_2026-07-20-19-34-43.events.log
-[INFO] [1784543684.900] [/mavros]: HP: requesting home position
-[INFO] [1784543686.242] [/cloud_crop_bridge]: [CloudCrop] 2826 -> 564 pts (20%)
