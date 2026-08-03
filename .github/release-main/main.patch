@@ -1,0 +1,558 @@
+diff --git a/.gitignore b/.gitignore
+index 32cb0a2..5ba8bd3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,43 +1,31 @@
+-build/
+-devel/
+-logs/
+-eval/
+-record/
+-install/
+-EPIC-stack_new/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/
+-.catkin_tools/
+-.vscode/
+-*.pcd
+-.catkin_workspace
+-*.pdf
+-*.png
+-*.csv
++# Catkin workspace output
++/src/CMakeLists.txt
++/build/
++/devel/
++/install/
++/logs/
++/.catkin_tools/
++/.catkin_workspace
++
++# Editors and Python caches
++/.vscode/
+ *.swp
++__pycache__/
++*.py[cod]
++
++# Flight, replay, and evaluation output
+ *.bag
+ *.bag.active
+-__pycache__
+-# sim_bringup's result_root ($(find sim_bringup)/../../result) — per-run
+-# experiment output written by sim_result_manager.py, not source.
+-result/
++*.pcd
++*.log
++*.csv
++*.pdf
++*.png
++/result/
++**/records/
++**/config/replay/
+ 
+-# LKH TSP solver scratch. fast_exploration_manager.cpp:68,817 rewrites
+-# single.par/.tsp with ofstream on every solve and reads single.txt back
+-# (:849,:852), so these are per-run output, not source. test.par/.tsp/.txt
+-# stay tracked, which also keeps the resource/ directory in a fresh clone.
++# LKH runtime scratch
+ single.par
+ single.tsp
+ single.txt
+-
+-# exploration_manager/config/replay/ — parameter profiles that run_replay.sh
+-# regenerates from a bag's /epic/session_info on every replay. Kept on disk as
+-# the record of what a replay ran with, but derived data, and deliberately NOT
+-# beside real*.yaml so a replay can never disturb a flight config.
+-# Leading **/ is required: a pattern containing a slash is anchored to this
+-# .gitignore's directory, and the real path is nested under
+-# src/EPIC_poongsan/src/EPIC/src/global_planner/.
+-**/exploration_manager/config/replay/
+-
+-# minco_planner/config/traj.rviz — rviz rewrites its config on exit, so this
+-# churned ~100 lines per run. No launch file references it (the traj.rviz in
+-# the launch files is test_interface's, a different file).
+-traj.rviz
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real1.yaml b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real1.yaml
+index 51d771d..a2e01ec 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real1.yaml
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real1.yaml
+@@ -6,7 +6,6 @@
+ # [EPIC 위치 입력][ROS 토픽][비행필수]
+ # EPIC, trajectory server 및 비행 브리지가 사용할 기체 위치·자세·속도 입력.
+ # 적용 기준: 2026-07-23 풍산 측 협의에 따라 실제 ML-X 기체는 /mavros/odometry/in 사용.
+-# 프로파일 차이: mid360.yaml은 /Odometry, mid360_mlx.yaml은 /mavros/local_position/odom을 사용하므로 혼동하지 말 것.
+ # 변경: 실제 기체에서 nav_msgs/Odometry를 발행하는 토픽 이름으로 맞출 것.
+ # 이 토픽이 없거나 발행이 중단되면 EPIC은 현재 위치를 알 수 없어 탐사를 시작할 수 없음.
+ # 확인: rostopic info /mavros/odometry/in
+@@ -17,10 +16,6 @@ cloud_topic: /lio_sam/mapping/cloud_registered_raw
+ # [반응형 국소회피][운용고정]
+ # 실제 ML-X 기체에서는 사용하지 않으므로 항상 false로 유지한다.
+ local_avoidance/enable: false
+-# [파라미터 규약] crop을 켜려면 cloud_crop/fov_*는 body(기체) 프레임 기준으로 적어야
+-# 하며(fov_up/down = lidar_perception/fov_up/down − lidar_pitch, fov_horizontal = yaw_fov),
+-# 브릿지가 기동 시 이 정합식을 자체검사한다 — 안 맞으면 노드가 안 뜬다.
+-cloud_crop/enable: false
+ 
+ # 기록(record) 스위치 — record_on_goal.py 가 이 값들만 읽는다 (launch 인자 아님).
+ # 시작: /planning/state 첫 수신(EPIC FSM 기동) / 종료: FSM LANDED 시 정상 마감.
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real2.yaml b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real2.yaml
+index 1bef98c..0d810f8 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real2.yaml
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/config/real2.yaml
+@@ -6,7 +6,6 @@
+ # [EPIC 위치 입력][ROS 토픽][비행필수]
+ # EPIC, trajectory server 및 비행 브리지가 사용할 기체 위치·자세·속도 입력.
+ # 적용 기준: 2026-07-23 풍산 측 협의에 따라 실제 ML-X 기체는 /mavros/odometry/in 사용.
+-# 프로파일 차이: mid360.yaml은 /Odometry, mid360_mlx.yaml은 /mavros/local_position/odom을 사용하므로 혼동하지 말 것.
+ # 변경: 실제 기체에서 nav_msgs/Odometry를 발행하는 토픽 이름으로 맞출 것.
+ # 이 토픽이 없거나 발행이 중단되면 EPIC은 현재 위치를 알 수 없어 탐사를 시작할 수 없음.
+ # 확인: rostopic info /mavros/odometry/in
+@@ -18,10 +17,6 @@ cloud_topic: /ml_/pointcloud
+ # [반응형 국소회피][운용고정]
+ # 실제 ML-X 기체에서는 사용하지 않으므로 항상 false로 유지한다.
+ local_avoidance/enable: false
+-# [파라미터 규약] crop을 켜려면 cloud_crop/fov_*는 body(기체) 프레임 기준으로 적어야
+-# 하며(fov_up/down = lidar_perception/fov_up/down − lidar_pitch, fov_horizontal = yaw_fov),
+-# 브릿지가 기동 시 이 정합식을 자체검사한다 — 안 맞으면 노드가 안 뜬다.
+-cloud_crop/enable: false
+ 
+ # 기록(record) 스위치 — record_on_goal.py 가 이 값들만 읽는다 (launch 인자 아님).
+ # 시작: /planning/state 첫 수신(EPIC FSM 기동) / 종료: FSM LANDED 시 정상 마감.
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/algorithm.xml b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/algorithm.xml
+index a3abd37..09bfe0f 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/algorithm.xml
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/algorithm.xml
+@@ -1,6 +1,6 @@
+ <launch>
+ 	<!-- main node -->
+-	<arg name="config_file" default="cave2.yaml"/>
++	<arg name="config_file" default="real1.yaml"/>
+ 	
+ 	<node pkg="epic_planner" name="exploration_node" type="exploration_node"
+ 		output="screen">
+@@ -20,4 +20,4 @@
+ 		<!-- topomap -->
+ 		<param name="bubble_topo/cube_discrete_size" value="0.3" type="double" />
+ 	</node>
+-</launch>
+\ No newline at end of file
++</launch>
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang1.launch b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang1.launch
+index 51f26a8..b08f14f 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang1.launch
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang1.launch
+@@ -2,12 +2,11 @@
+   <!-- ===================================================================
+        EPIC 실비행 launch  (MARSIM 시뮬 없음)
+ 
+-       전제: run_stack.sh 가 먼저 떠 있어야 함
+-         mavros(px4) + livox_ros_driver + FAST-LIO
+-         => /Odometry, /cloud_registered, /mavros/* 가 흐르는 상태
++       전제: 외부 비행 스택이 먼저 떠 있어야 함
++         => real1.yaml의 odometry/cloud 토픽과 /mavros/* 가 흐르는 상태
+ 
+        이 launch 가 띄우는 것:
+-         1) exploration_node   : EPIC 플래너 (config: real.yaml)
++         1) exploration_node   : EPIC 플래너 (config: real1.yaml)
+          2) traj_server        : MINCO 궤적 샘플링 -> /position_cmd
+          3) px4_ctrl_bridge    : /position_cmd -> /mavros/setpoint_raw/local
+          4) waypoint_generator : rviz/goal -> FSM 트리거(/waypoint_generator/waypoints)
+@@ -16,7 +15,7 @@
+        OFFBOARD 진입/arm 은 기본적으로 사람이 RC/QGC로 (auto_arm:=false).
+        =================================================================== -->
+ 
+-  <!-- ★ 토픽은 real.yaml 의 odometry_topic / cloud_topic 두 개가 유일한 소스다
++  <!-- ★ 토픽은 real1.yaml 의 odometry_topic / cloud_topic 두 개가 유일한 소스다
+        (폴백/오버라이드/remap 없음). 소비 노드: exploration_node, traj_server,
+        px4_ctrl_bridge, waypoint_generator, odom_visualization.
+        예외: local_avoidance 는 world 클라우드가 아니라 raw 센서 스트림을 쓴다 —
+@@ -25,28 +24,21 @@
+        각 노드가 파라미터를 직접 읽고, 없으면 시작을 거부한다(FATAL). -->
+   <!-- ★ on/off 스위치는 launch 인자가 아니다 — 전부 profile yaml 이 단일 소스
+        (rviz/*, record/* 와 동일 패턴. 노드는 항상 뜨고 yaml 값으로 스스로 판단):
+-         local_avoidance/enable : 회피. false 면 노드가 시작 직후 자진 종료
+-         cloud_crop/enable      : ML-X crop. false 면 브릿지가 자진 종료 -->
++         local_avoidance/enable : 회피. false 면 노드가 시작 직후 자진 종료 -->
+   <arg name="config_file" default="real1.yaml"/>
+   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
+ 
+-  <!-- MID360-to-ML-X crop 브릿지. on/off 는 profile yaml 의 cloud_crop/enable.
+-       파라미터는 플래너와 같은 profile 을 private ns 로 로드. -->
+-  <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+-    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
+-  </node>
+-
+-  <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real.yaml 로) -->
++  <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real1.yaml 로) -->
+   <include file="$(find epic_planner)/launch/algorithm.xml">
+     <arg name="config_file" value="$(arg config_file)"/>
+   </include>
+ 
+   <!-- 2) traj_server : 시뮬과 달리 /position_cmd remap 하지 않음
+        (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다)
+-       odom 은 real.yaml 의 odometry_topic 을 자동으로 따름 (param 안 넘김). -->
++       odom 은 real1.yaml 의 odometry_topic 을 자동으로 따름 (param 안 넘김). -->
+   <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen"/>
+ 
+-  <!-- 3) PX4 OFFBOARD 브리지 — odom 은 real.yaml 의 odometry_topic 만 읽음 (폴백 없음). -->
++  <!-- 3) PX4 OFFBOARD 브리지 — odom 은 real1.yaml 의 odometry_topic 만 읽음 (폴백 없음). -->
+   <node pkg="plan_manage" name="px4_ctrl_bridge" type="px4_ctrl_bridge" output="screen">
+     <param name="auto_arm"     value="$(arg auto_arm)"/>
+     <param name="cmd_timeout"  value="0.5"/>
+@@ -64,7 +56,7 @@
+   <include file="$(find local_avoidance)/launch/local_avoidance.launch"/>
+ 
+   <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal)
+-       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
++       odom 은 real1.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
+   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
+         output="screen">
+     <remap from="~goal" to="/move_base_simple/goal"/>
+@@ -74,7 +66,7 @@
+ 
+   <!-- 4.2) 녹화: EPIC FSM 기동(/planning/state 첫 발행 = INIT)을 감지하면 즉시
+        rosbag record 시작, FSM 이 LANDED(착지+disarm) 가 되면 정상 마감.
+-       on/off·산출물 선택(bag/log/params/events)·저장폴더는 전부 real.yaml 의
++       on/off·산출물 선택(bag/log/params/events)·저장폴더는 전부 real1.yaml 의
+        record/* 스위치 — record/enable=false 면 이 노드는 뜨자마자 스스로 종료. -->
+   <node pkg="epic_planner" name="record_on_goal" type="record_on_goal.py"
+         output="screen">
+@@ -85,7 +77,7 @@
+   <!-- 4.5) 드론 mesh 시각화 (시뮬의 quad0_odom_visualization 과 동일).
+        /quad0_odom_visualization/robot 으로 yunque.dae 메시를 publish -> rviz 가 그대로 구독.
+        순수 시각화 노드라 비행 제어에는 영향 없음.
+-       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
++       odom 은 real1.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
+   <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization"
+         output="screen">
+     <param name="color/a" value="1.0"/>
+@@ -100,7 +92,7 @@
+     <param name="frame_id" value="odom"/>
+   </node>
+ 
+-  <!-- 5) rviz. rviz_on_param.py reads rviz/enable and rviz/config from real.yaml.
++  <!-- 5) rviz. rviz_on_param.py reads rviz/enable and rviz/config from real1.yaml.
+        real.rviz uses Fixed Frame=odom for the LIO-SAM + ML-X flight stack. -->
+   <node pkg="epic_planner" name="rviz_on_param" type="rviz_on_param.py"
+         output="screen"/>
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang2.launch b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang2.launch
+index 7d969fc..c56e3c8 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang2.launch
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/launch/real_flight_boogang2.launch
+@@ -2,12 +2,11 @@
+   <!-- ===================================================================
+        EPIC 실비행 launch  (MARSIM 시뮬 없음)
+ 
+-       전제: run_stack.sh 가 먼저 떠 있어야 함
+-         mavros(px4) + livox_ros_driver + FAST-LIO
+-         => /Odometry, /cloud_registered, /mavros/* 가 흐르는 상태
++       전제: 외부 비행 스택이 먼저 떠 있어야 함
++         => real2.yaml의 odometry/cloud 토픽과 /mavros/* 가 흐르는 상태
+ 
+        이 launch 가 띄우는 것:
+-         1) exploration_node   : EPIC 플래너 (config: real.yaml)
++         1) exploration_node   : EPIC 플래너 (config: real2.yaml)
+          2) traj_server        : MINCO 궤적 샘플링 -> /position_cmd
+          3) px4_ctrl_bridge    : /position_cmd -> /mavros/setpoint_raw/local
+          4) waypoint_generator : rviz/goal -> FSM 트리거(/waypoint_generator/waypoints)
+@@ -16,7 +15,7 @@
+        OFFBOARD 진입/arm 은 기본적으로 사람이 RC/QGC로 (auto_arm:=false).
+        =================================================================== -->
+ 
+-  <!-- ★ 토픽은 real.yaml 의 odometry_topic / cloud_topic 두 개가 유일한 소스다
++  <!-- ★ 토픽은 real2.yaml 의 odometry_topic / cloud_topic 두 개가 유일한 소스다
+        (폴백/오버라이드/remap 없음). 소비 노드: exploration_node, traj_server,
+        px4_ctrl_bridge, waypoint_generator, odom_visualization.
+        예외: local_avoidance 는 world 클라우드가 아니라 raw 센서 스트림을 쓴다 —
+@@ -25,28 +24,21 @@
+        각 노드가 파라미터를 직접 읽고, 없으면 시작을 거부한다(FATAL). -->
+   <!-- ★ on/off 스위치는 launch 인자가 아니다 — 전부 profile yaml 이 단일 소스
+        (rviz/*, record/* 와 동일 패턴. 노드는 항상 뜨고 yaml 값으로 스스로 판단):
+-         local_avoidance/enable : 회피. false 면 노드가 시작 직후 자진 종료
+-         cloud_crop/enable      : ML-X crop. false 면 브릿지가 자진 종료 -->
++         local_avoidance/enable : 회피. false 면 노드가 시작 직후 자진 종료 -->
+   <arg name="config_file" default="real2.yaml"/>
+   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
+ 
+-  <!-- MID360-to-ML-X crop 브릿지. on/off 는 profile yaml 의 cloud_crop/enable.
+-       파라미터는 플래너와 같은 profile 을 private ns 로 로드. -->
+-  <node pkg="ml_x_cropping" name="cloud_crop_bridge" type="cloud_crop_bridge" output="screen">
+-    <rosparam file="$(find epic_planner)/config/$(arg config_file)" command="load"/>
+-  </node>
+-
+-  <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real.yaml 로) -->
++  <!-- 1) 플래너 본체 (algorithm.xml 재사용, config 만 real2.yaml 로) -->
+   <include file="$(find epic_planner)/launch/algorithm.xml">
+     <arg name="config_file" value="$(arg config_file)"/>
+   </include>
+ 
+   <!-- 2) traj_server : 시뮬과 달리 /position_cmd remap 하지 않음
+        (브리지가 글로벌 /position_cmd 를 구독하므로 그대로 둔다)
+-       odom 은 real.yaml 의 odometry_topic 을 자동으로 따름 (param 안 넘김). -->
++       odom 은 real2.yaml 의 odometry_topic 을 자동으로 따름 (param 안 넘김). -->
+   <node pkg="plan_manage" name="traj_server" type="traj_server" output="screen"/>
+ 
+-  <!-- 3) PX4 OFFBOARD 브리지 — odom 은 real.yaml 의 odometry_topic 만 읽음 (폴백 없음). -->
++  <!-- 3) PX4 OFFBOARD 브리지 — odom 은 real2.yaml 의 odometry_topic 만 읽음 (폴백 없음). -->
+   <node pkg="plan_manage" name="px4_ctrl_bridge" type="px4_ctrl_bridge" output="screen">
+     <param name="auto_arm"     value="$(arg auto_arm)"/>
+     <param name="cmd_timeout"  value="0.5"/>
+@@ -64,7 +56,7 @@
+   <include file="$(find local_avoidance)/launch/local_avoidance.launch"/>
+ 
+   <!-- 4) 트리거용 waypoint_generator (rviz '2D Nav Goal' -> /move_base_simple/goal)
+-       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
++       odom 은 real2.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
+   <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator"
+         output="screen">
+     <remap from="~goal" to="/move_base_simple/goal"/>
+@@ -74,7 +66,7 @@
+ 
+   <!-- 4.2) 녹화: EPIC FSM 기동(/planning/state 첫 발행 = INIT)을 감지하면 즉시
+        rosbag record 시작, FSM 이 LANDED(착지+disarm) 가 되면 정상 마감.
+-       on/off·산출물 선택(bag/log/params/events)·저장폴더는 전부 real.yaml 의
++       on/off·산출물 선택(bag/log/params/events)·저장폴더는 전부 real2.yaml 의
+        record/* 스위치 — record/enable=false 면 이 노드는 뜨자마자 스스로 종료. -->
+   <node pkg="epic_planner" name="record_on_goal" type="record_on_goal.py"
+         output="screen">
+@@ -85,7 +77,7 @@
+   <!-- 4.5) 드론 mesh 시각화 (시뮬의 quad0_odom_visualization 과 동일).
+        /quad0_odom_visualization/robot 으로 yunque.dae 메시를 publish -> rviz 가 그대로 구독.
+        순수 시각화 노드라 비행 제어에는 영향 없음.
+-       odom 은 real.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
++       odom 은 real2.yaml 의 odometry_topic 을 직접 읽음 (remap 폐지). -->
+   <node pkg="odom_visualization" name="quad0_odom_visualization" type="odom_visualization"
+         output="screen">
+     <param name="color/a" value="1.0"/>
+@@ -100,7 +92,7 @@
+     <param name="frame_id" value="odom"/>
+   </node>
+ 
+-  <!-- 5) rviz. rviz_on_param.py reads rviz/enable and rviz/config from real.yaml.
++  <!-- 5) rviz. rviz_on_param.py reads rviz/enable and rviz/config from real2.yaml.
+        real.rviz uses Fixed Frame=odom for the LIO-SAM + ML-X flight stack. -->
+   <node pkg="epic_planner" name="rviz_on_param" type="rviz_on_param.py"
+         output="screen"/>
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/package.xml b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/package.xml
+index 0e132f8..b6ada5f 100755
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/package.xml
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/package.xml
+@@ -99,8 +99,6 @@
+   <exec_depend>mavros_msgs</exec_depend>
+   <exec_depend>frontier_manager</exec_depend>
+   <exec_depend>message_filters</exec_depend>
+-  <exec_depend>ml_x_cropping</exec_depend>
+-
+   <!-- The export tag contains other, unspecified, tags -->
+   <export>
+     <!-- Other tools can request additional information be placed here -->
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt
+index e4ddf1e..40e8f33 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt
+@@ -23,13 +23,15 @@ catkin_package(
+     LIBRARIES frontier_manager
+     CATKIN_DEPENDS roscpp std_msgs lidar_map pointcloud_topo
+ )
++include_directories(BEFORE SYSTEM
++    ${OpenCV_INCLUDE_DIRS}
++)
+ include_directories(
+     SYSTEM
+     include
+     ${catkin_INCLUDE_DIRS}
+     ${Eigen3_INCLUDE_DIRS}
+     ${PCL_INCLUDE_DIRS}
+-    ${OpenCV_INCLUDE_DIRS}
+ )
+ link_directories(${PCL_LIBRARY_DIRS})
+ 
+diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
+index 8803097..16aaf9c 100644
+--- a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
++++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
+@@ -7,6 +7,7 @@
+  * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
+  */
+ #include <frontier_manager/frontier_manager.h>
++#include <opencv2/opencv.hpp>
+ #include <pcl/filters/voxel_grid.h>
+ #include <std_msgs/Int32.h>
+ #include <visualization_msgs/MarkerArray.h>
+diff --git a/src/reactive_local_avoidance/CMakeLists.txt b/src/reactive_local_avoidance/CMakeLists.txt
+index c85b5de..d5b4fbf 100644
+--- a/src/reactive_local_avoidance/CMakeLists.txt
++++ b/src/reactive_local_avoidance/CMakeLists.txt
+@@ -3,27 +3,6 @@ project(local_avoidance)
+ 
+ add_compile_options(-std=c++14)
+ 
+-# ── 라이다 입력 타입 선택 ────────────────────────────────────────────────────
+-#  ON  : livox_ros_driver2/CustomMsg 구독 (Mid360 등 livox 드라이버 직결)
+-#        -> 워크스페이스에 livox_ros_driver2 패키지 필요
+-#  OFF : sensor_msgs/PointCloud2 구독 (일반 라이다)
+-#        -> livox_ros_driver2 의존성 없이 빌드됨 (다른 PC 이식용)
+-#  전환 방법:
+-#    catkin build local_avoidance --cmake-args -DUSE_LIVOX_LIDAR=OFF
+-#    (영구 설정: catkin config --cmake-args -DUSE_LIVOX_LIDAR=OFF)
+-# ⚠ 기본 OFF (이식성). 단 이 리그(Mid360 직결)는 드라이버가 CustomMsg(xfer_format=1)를
+-#   쏘므로 ON 으로 빌드해야 함 — OFF(PointCloud2) 빌드는 /livox/lidar 타입 불일치로
+-#   콜백이 아예 안 불린다 (2026-07-20 바닥 테스트 무반응의 원인).
+-option(USE_LIVOX_LIDAR "Use livox_ros_driver2 CustomMsg as lidar input (OFF = sensor_msgs/PointCloud2)" OFF)
+-
+-set(LIDAR_DEP "")
+-if(USE_LIVOX_LIDAR)
+-  set(LIDAR_DEP livox_ros_driver2)
+-  message(STATUS "[local_avoidance] lidar input = livox_ros_driver2/CustomMsg (USE_LIVOX_LIDAR=ON)")
+-else()
+-  message(STATUS "[local_avoidance] lidar input = sensor_msgs/PointCloud2 (USE_LIVOX_LIDAR=OFF, no livox dependency)")
+-endif()
+-
+ find_package(catkin REQUIRED COMPONENTS
+   roscpp
+   sensor_msgs
+@@ -35,13 +14,12 @@ find_package(catkin REQUIRED COMPONENTS
+   tf
+   pcl_ros
+   pcl_conversions
+-  ${LIDAR_DEP}
+ )
+ 
+ find_package(PCL REQUIRED)
+ 
+ catkin_package(
+-  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs std_msgs mavros_msgs visualization_msgs tf pcl_ros pcl_conversions ${LIDAR_DEP}
++  CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs nav_msgs std_msgs mavros_msgs visualization_msgs tf pcl_ros pcl_conversions
+ )
+ 
+ include_directories(
+@@ -50,9 +28,6 @@ include_directories(
+ )
+ 
+ add_executable(local_avoidance src/local_avoidance.cpp)
+-if(USE_LIVOX_LIDAR)
+-  target_compile_definitions(local_avoidance PRIVATE USE_LIVOX_LIDAR)
+-endif()
+ target_link_libraries(local_avoidance
+   ${catkin_LIBRARIES}
+   ${PCL_LIBRARIES}
+diff --git a/src/reactive_local_avoidance/README.md b/src/reactive_local_avoidance/README.md
+index 3a2fd09..9f709d0 100644
+--- a/src/reactive_local_avoidance/README.md
++++ b/src/reactive_local_avoidance/README.md
+@@ -1,7 +1,7 @@
+ # reactive_local_avoidance
+ 
+ LiDAR potential-field (APF) reactive local avoidance for a MAVROS drone.
+-Extended from a 2D `LaserScan` node to **3D point clouds** (e.g. Livox Mid-360).
++The lightweight `main` release consumes **3D `sensor_msgs/PointCloud2`** input.
+ 
+ ## Approach
+ 
+@@ -48,13 +48,14 @@ See [`config/local_avoidance.yaml`](config/local_avoidance.yaml). Key ones:
+ ## Build & Run
+ 
+ ```bash
+-cd ~/catkin_ws/src
+-git clone https://github.com/sanghun17/reactive_local_avoidance.git
+-cd ~/catkin_ws && catkin_make
++cd EPIC-stack
++source /opt/ros/noetic/setup.bash
++catkin_init_workspace src
++catkin_make
+ source devel/setup.bash
+ roslaunch local_avoidance local_avoidance.launch
+ # optional topic overrides:
+ # roslaunch local_avoidance local_avoidance.launch lidar_topic:=/livox/lidar odom_topic:=/mavros/local_position/odom
+ ```
+ 
+-Requires ROS Noetic, `pcl_ros`, `pcl_conversions`, `mavros_msgs`.
++Requires ROS Noetic, `pcl_ros`, `pcl_conversions`, and `mavros_msgs`.
+diff --git a/src/reactive_local_avoidance/package.xml b/src/reactive_local_avoidance/package.xml
+index 7e7b662..9d16430 100644
+--- a/src/reactive_local_avoidance/package.xml
++++ b/src/reactive_local_avoidance/package.xml
+@@ -18,10 +18,4 @@
+   <depend>tf</depend>
+   <depend>pcl_ros</depend>
+   <depend>pcl_conversions</depend>
+-  <!-- livox 입력 모드(USE_LIVOX_LIDAR=ON, 기본)에서만 실제로 필요.
+-       워크스페이스에 livox_ros_driver2 가 있으면 빌드 순서 보장용으로 유효하고,
+-       없는 PC 에서는 catkin 이 시스템 의존성으로 간주해 무시하므로
+-       -DUSE_LIVOX_LIDAR=OFF 와 함께라면 이 줄이 있어도 빌드가 깨지지 않는다.
+-       (rosdep install 을 쓸 때만 - -skip-keys livox_ros_driver2 필요) -->
+-  <depend>livox_ros_driver2</depend>
+ </package>
+diff --git a/src/reactive_local_avoidance/src/local_avoidance.cpp b/src/reactive_local_avoidance/src/local_avoidance.cpp
+index e6d5446..0756eca 100644
+--- a/src/reactive_local_avoidance/src/local_avoidance.cpp
++++ b/src/reactive_local_avoidance/src/local_avoidance.cpp
+@@ -1,13 +1,5 @@
+ #include <ros/ros.h>
+ #include <sensor_msgs/PointCloud2.h>
+-// ── 라이다 입력 타입 (CMakeLists 의 USE_LIVOX_LIDAR 옵션으로 선택) ──────────
+-//  정의됨   : livox_ros_driver2/CustomMsg 구독 (Mid360 등 livox 드라이버 직결)
+-//  정의 안됨: sensor_msgs/PointCloud2 구독 (일반 라이다; livox 의존성 없이 빌드)
+-//  ※ 어느 쪽이든 입력은 "센서 프레임" 이어야 하며, 수신 즉시 장착각(sensor_pitch_deg)
+-//    회전을 적용해 바디 프레임으로 만든 뒤 사용한다 (밴드 게이팅이 바디 z/r 기준).
+-#ifdef USE_LIVOX_LIDAR
+-#include <livox_ros_driver2/CustomMsg.h>
+-#endif
+ #include <geometry_msgs/PoseStamped.h>
+ #include <geometry_msgs/Quaternion.h>
+ #include <nav_msgs/Odometry.h>
+@@ -46,7 +38,7 @@ double avoidance_release_delay_s = 0.4;  // 해제 지연 [s] (발동은 즉시;
+ bool master_enable = true;       // 프로파일 yaml local_avoidance/enable (메인루프가 ~2s 마다 갱신)
+ 
+ // ── 파라미터 단일 소스 ───────────────────────────────────────────────────────
+-//  EPIC 프로파일 yaml(mid360.yaml 등, real_flight.launch 가 /exploration_node ns 에
++//  EPIC 프로파일 yaml(real1.yaml/real2.yaml, real-flight launch가 /exploration_node ns 에
+ //  로드)의 local_avoidance/<key> 가 있으면 우선하고, 없으면 자체
+ //  config/local_avoidance.yaml(/local_avoidance ns) 값을 쓴다.
+ //  -> 실비행 튜닝은 프로파일 yaml 한 곳에서. 단독 실행 시엔 자체 yaml 그대로.
+@@ -316,24 +308,6 @@ void processLidarCloud(const std_msgs::Header &sensor_header){
+     dbg_was_active = (avoidance_enable != 0);
+ }
+ 
+-#ifdef USE_LIVOX_LIDAR
+-// livox 드라이버 직결: CustomMsg(xfer_format=1, FAST-LIO 와 같은 스트림)에서
+-// CustomPoint 리스트를 직접 PCL 클라우드로 옮긴다.
+-void lidarCallback(const livox_ros_driver2::CustomMsg::ConstPtr &msg){
+-    if(!master_enable){ avoidance_enable = false; return; }   // 마스터 off: 연산 전체 스킵
+-    cloud_data.clear();
+-    cloud_data.points.reserve(msg->point_num);
+-    updateMountRotation();
+-    for(uint32_t i = 0; i < msg->point_num; i++){
+-        pcl::PointXYZ p;                          // 센서 -> 바디 (장착 pitch 보정)
+-        p.x =  mount_c*msg->points[i].x + mount_s*msg->points[i].z;
+-        p.y =  msg->points[i].y;
+-        p.z = -mount_s*msg->points[i].x + mount_c*msg->points[i].z;
+-        cloud_data.points.push_back(p);
+-    }
+-    processLidarCloud(msg->header);
+-}
+-#else
+ // 일반 라이다: sensor_msgs/PointCloud2 (센서/바디 프레임이어야 함!
+ // world 프레임 클라우드(/cloud_registered 등)를 물리면 밴드 게이팅이 틀어진다).
+ void lidarCallback(const sensor_msgs::PointCloud2::ConstPtr &msg){
+@@ -350,7 +324,6 @@ void lidarCallback(const sensor_msgs::PointCloud2::ConstPtr &msg){
+     }
+     processLidarCloud(msg->header);
+ }
+-#endif
+ 
+ 
+ 
+@@ -393,14 +366,9 @@ int main(int argc, char** argv)
+     getAvoidParam("odom_topic",  odom_topic);
+ 
+ 
+-#ifdef USE_LIVOX_LIDAR
+-    ros::Subscriber lidar_sub = nh.subscribe<livox_ros_driver2::CustomMsg>(lidar_topic,1,lidarCallback);
+-    ROS_INFO("[local_avoidance] lidar input: livox_ros_driver2/CustomMsg on %s", lidar_topic.c_str());
+-#else
+     ros::Subscriber lidar_sub = nh.subscribe<sensor_msgs::PointCloud2>(lidar_topic,1,lidarCallback);
+     ROS_INFO("[local_avoidance] lidar input: sensor_msgs/PointCloud2 on %s "
+              "(cloud must be in SENSOR frame)", lidar_topic.c_str());
+-#endif
+     ros::Subscriber odom_sub = nh.subscribe<nav_msgs::Odometry>(odom_topic,30, odom_cb);
+     ros::Publisher position_target_pub= nh.advertise<mavros_msgs::PositionTarget>("/target_avoidance", 30);
+     ros::Publisher FMS_flg_pub= nh.advertise<std_msgs::Int16>("/FSM_flag_avoidance", 30);

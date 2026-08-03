@@ -1,0 +1,77 @@
+name: Deploy lightweight main
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build, validate, and publish main
+    runs-on: ubuntu-latest
+    container:
+      image: osrf/ros:noetic-desktop-full
+
+    steps:
+      - name: Check out dev with full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch deployment refs
+        run: |
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/dev:refs/remotes/origin/dev'
+
+      - name: Generate lightweight main tree
+        env:
+          SOURCE_DEV_SHA: ${{ github.sha }}
+          RELEASE_TREE: ${{ runner.temp }}/epic-main-tree
+        run: .github/release-main/build-main-tree.sh "$SOURCE_DEV_SHA" "$RELEASE_TREE"
+
+      - name: Validate release contents
+        env:
+          RELEASE_TREE: ${{ runner.temp }}/epic-main-tree
+        run: .github/release-main/validate-main-tree.sh "$RELEASE_TREE"
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            libapr1-dev \
+            libarmadillo-dev \
+            libeigen3-dev \
+            libfmt-dev \
+            libomp-dev \
+            libopencv-dev \
+            libpcl-dev \
+            libyaml-cpp-dev \
+            ros-noetic-mavros-msgs
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Build generated release
+        env:
+          RELEASE_TREE: ${{ runner.temp }}/epic-main-tree
+          BUILD_TREE: ${{ runner.temp }}/epic-main-build
+        shell: bash
+        run: |
+          cp -a "$RELEASE_TREE" "$BUILD_TREE"
+          source /opt/ros/noetic/setup.bash
+          cd "$BUILD_TREE"
+          catkin_init_workspace src
+          catkin_make -DCMAKE_BUILD_TYPE=Release -j2
+          source devel/setup.bash
+          roslaunch --files epic_planner real_flight_boogang1.launch
+          roslaunch --files epic_planner real_flight_boogang2.launch
+
+      - name: Publish two-parent main commit
+        env:
+          SOURCE_DEV_SHA: ${{ github.sha }}
+          RELEASE_TREE: ${{ runner.temp }}/epic-main-tree
+        run: .github/release-main/publish-main.sh "$SOURCE_DEV_SHA" "$RELEASE_TREE"
