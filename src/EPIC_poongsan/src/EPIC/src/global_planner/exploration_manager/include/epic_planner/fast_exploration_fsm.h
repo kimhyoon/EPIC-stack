@@ -286,10 +286,11 @@ private:
      "EFP 에 도달해야만 RTH" 는 별도 게이트 코드가 아니라, EFP 가 살아있는 한
      viewpoints 가 비지 않아 NO_FRONTIER 가 안 난다는 사실에서 나온다. */
   bool   early_finish_enable_ = true;
-  double early_finish_dist_thresh_ = 3.0;      // [m] max_displacement_ 가 이 미만이면 조기종료 의심
   int    early_finish_max_retry_ = 1;          // 재시도 횟수 상한 (무한루프 방지 래치)
-  // [m] 자동 구제 2단 판정: EFP 후보의 원점거리가 max_displacement_ + 이 값을
+  // [m] 자동 구제의 유일한 판정: EFP 후보의 원점거리가 max_displacement_ + 이 값을
   // 넘어야 probe 를 보낸다. 이미 가본 범위 안이면 관측 이득이 없기 때문.
+  // (예전 1단 거리 게이트 early_finish_dist_thresh 는 폐지 — 절대 임계는 환경
+  // 규모를 몰라 3m 이상 진출한 조기 종료를 구제하지 못했다.)
   double early_finish_probe_min_gain_ = 1.0;
   // [m] 비행경로(history odom nodes)에서 이 반경 안의 노드는 "방문한 곳"으로 보고
   // EFP 후보에서 제외한다. 0 이하면 방문 필터 비활성.

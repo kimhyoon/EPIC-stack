@@ -567,26 +567,23 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case FINISH: {
-    // 조기 종료 구제: 탐사가 끝났다고 하는데 실제로 멀리 진출한 적이 없다면, 좁은
-    // FOV 때문에 frontier 가 아예 안 잡힌 상태일 가능성이 높다. 도달 가능한 미방문
-    // topo node 로 한 번 날아가 관측을 늘려보고, 그래도 frontier 가 없으면 그때
-    // 정상 RTH 로 간다. (스냅샷/호버/MISSION 이벤트보다 먼저 판단해야 이벤트가
-    // 두 번 찍히거나 불필요한 호버를 거치지 않는다.)
-    // 판정은 하이브리드 2단이다:
-    //   1단 (여기): max_displacement_ < thresh — 경로 적분이 아니라 최대 직선
-    //      이탈거리. 적분은 근거리 셔플만으로 임계값을 소진해 구제가 죽는다.
-    //   2단 (EARLY_FINISH 상태의 selectFarthestReachableNode): 원점거리가
-    //      max_displacement_ + gain 을 넘는 미방문 후보가 실제로 있어야 probe.
-    //      없으면 FAILED 경로로 정상 FINISH 에 합류한다.
+    // 조기 종료 구제: 자동 탐사 종료는 (retry 래치 안에서) 항상 EARLY_FINISH 를
+    // 한 번 거쳐 selectFarthestReachableNode 에 판정을 맡긴다 — "가본 범위
+    // (max_displacement_) + gain 을 넘는 도달 가능 미방문 노드가 있으면" probe,
+    // 없으면 FAILED 경로로 즉시 정상 FINISH 에 합류한다.
+    // 예전의 거리 게이트(max_displacement_ < thresh)는 폐지했다: 절대 임계는 환경
+    // 규모를 모른다 — 0804 실비행 2회 모두 3~4.5m 진출 후 조기 종료(클러스터 15개
+    // 잔존)했는데 3.0m 게이트가 닫혀 구제가 아예 안 떴다. 규모 인지형 판정은
+    // gain 조건이 이미 하고 있으므로 게이트는 오탐 차단 역할이 없다.
+    // (스냅샷/호버/MISSION 이벤트보다 먼저 판단해야 이벤트가 두 번 찍히거나
+    // 불필요한 호버를 거치지 않는다.)
     // - explore_finished_ 조건 필수: 수동 /srv_rth 로 온 FINISH 는 구제 대상이 아니다.
-    // - max_retry 래치 필수: 구제 후 또 짧게 끝나면 무한 반복이 된다.
+    // - max_retry 래치 필수: 구제 후 또 짧게 끝나면 무한 반복이 된다. FAILED 로
+    //   돌아온 경우에도 count 는 이미 올라가 있어 재진입하지 않는다.
     if (early_finish_enable_ && explore_finished_ &&
-        early_finish_count_ < early_finish_max_retry_ &&
-        max_displacement_ < early_finish_dist_thresh_) {
-      transitState(EARLY_FINISH, "FINISH: max displacement " +
-                   to_string(max_displacement_) + "m < " +
-                   to_string(early_finish_dist_thresh_) +
-                   "m -> probe unvisited reachable topology");
+        early_finish_count_ < early_finish_max_retry_) {
+      transitState(EARLY_FINISH, "FINISH: probe eligibility check (max_disp=" +
+                   to_string(max_displacement_) + "m)");
       break;
     }
 
@@ -1279,7 +1276,6 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // [YAW_ROTATE_INIT] 이륙 후 제자리 360도 초기 관측 회전
   nh.param("fsm/yaw_rotate_init_enable", yaw_rotate_init_enable_, true);
   nh.param("fsm/yaw_rotate_init_rate", yaw_rotate_init_rate_, 0.5);
-  nh.param("fsm/early_finish_dist_thresh", early_finish_dist_thresh_, 3.0);
   nh.param("fsm/early_finish_probe_min_gain", early_finish_probe_min_gain_, 1.0);
   nh.param("fsm/early_finish_visited_radius", early_finish_visited_radius_, 1.5);
   nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
