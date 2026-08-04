@@ -31,7 +31,7 @@ bool receive_traj_ = false;
 double traj_duration_, t_stop, yaw_traj_duration_, yaw_t_stop;
 ros::Time start_time_;
 ros::Time emergency_stop_time;
-int traj_id_;
+int traj_id_ = -1;  // -1: no generation activated yet (matches pending_*'s sentinel)
 int pending_traj_id_ = -1;
 int pending_yaw_traj_id_ = -1;
 double pending_traj_duration_ = 0.0;
@@ -49,8 +49,11 @@ ros::Time last_yaw_cmd_time_;
 
 double max_setpoint_velocity_, max_setpoint_acceleration_, max_lead_time_;
 double px4_position_p_gain_, position_feedforward_time_;
+double offset_decay_rate_, position_step_safety_factor_;
 Eigen::Vector3d last_cmd_pos_ = Eigen::Vector3d::Zero();
 Eigen::Vector3d last_cmd_vel_ = Eigen::Vector3d::Zero();
+Eigen::Vector3d cmd_offset_ = Eigen::Vector3d::Zero();  // bumpless-transfer residual, see limitPositionSetpoint()
+bool trajectory_generation_changed_ = false;  // set by activatePendingTrajectoryPair(), consumed in limitPositionSetpoint()
 bool position_initialized_ = false;
 bool position_command_started_ = false;
 ros::Time last_position_cmd_time_;
@@ -139,21 +142,92 @@ void limitPositionSetpoint(Eigen::Vector3d &position,
     acceleration.setZero();
     jerk.setZero();
   } else if (dt > 0.0) {
-    // Prevent a replacement trajectory from creating a position step. The
-    // velocity field follows the limited position motion, and its change is
-    // acceleration-limited before publication.
+    // Bumpless-transfer offset. `position` on entry is pos_target, the raw
+    // trajectory sample at t_cur + position_feedforward_time_ (~1 s ahead of
+    // the vehicle). Publishing pos_target directly would either advance at a
+    // fixed rate regardless of the trajectory's own velocity profile (the
+    // bug this replaces), or, right after a trajectory swap, jump straight
+    // onto the new curve. PX4 only consumes position+yaw from /position_cmd
+    // (type_mask 2552 ignores velocity/accel/yaw_rate -- see
+    // px4_ctrl_bridge.cpp:134-150), so a position step there is a real
+    // disturbance to the vehicle, not merely a display artifact; that is why
+    // cmd_offset_ exists, and why velocity/acceleration below are published
+    // feed-forward from the trajectory instead of derived from the position
+    // motion. cmd_offset_ is the residual between what we publish and
+    // pos_target: on a new trajectory generation it normally preserves the
+    // previous command exactly. If that command is stale behind the new path,
+    // it instead converges from the odometry anchor through the hard step bound
+    // below. On every other tick the residual decays toward zero at
+    // offset_decay_rate_, so tracking converges onto the trajectory's own
+    // position/velocity profile.
+    const Eigen::Vector3d pos_target = position;
+
+    if (trajectory_generation_changed_) {
+      // Re-anchor only; do not also decay this same tick, or the equality
+      // below would be short by offset_decay_rate_ * dt and the swap would
+      // not be exactly step-free.
+      Eigen::Vector3d transfer_anchor = last_cmd_pos_;
+      if (odom_state_available_ && real_pos_.allFinite()) {
+        const Eigen::Vector3d new_progress = pos_target - real_pos_;
+        const double progress_norm = new_progress.norm();
+        if (progress_norm > 1.0e-6) {
+          const Eigen::Vector3d progress_dir = new_progress / progress_norm;
+          const double old_command_progress =
+              (last_cmd_pos_ - real_pos_).dot(progress_dir);
+          // Rapid replanning used to re-anchor the transfer residual to the
+          // previous command every 0.1--0.2 s. If that command was behind the
+          // measured vehicle along the *new* path, the residual never had time
+          // to decay and /position_cmd_vis remained behind a forward path.
+          // The new trajectory starts at odometry, so odometry is the safe
+          // zero-progress anchor in this one case. The hard step bound below
+          // still limits convergence to it; this does not introduce a jump.
+          if (old_command_progress < -1.0e-3) {
+            transfer_anchor = real_pos_;
+            ROS_DEBUG_THROTTLE(
+                1.0,
+                "[traj_server] stale transfer anchor %.3f m behind new path; "
+                "re-anchoring position command to odometry",
+                old_command_progress);
+          }
+        }
+      }
+      cmd_offset_ = transfer_anchor - pos_target;
+      trajectory_generation_changed_ = false;
+    } else {
+      const double step = offset_decay_rate_ * dt;
+      if (cmd_offset_.norm() <= step)
+        cmd_offset_.setZero();
+      else
+        cmd_offset_ -= cmd_offset_.normalized() * step;
+    }
+
+    position = pos_target + cmd_offset_;
+    boundPositionLookahead(position);
+
+    // Hard safety bound: bounds the published step regardless of what
+    // upstream does, so a bug can never turn into a PX4 position
+    // discontinuity. In normal flight the step above is at most
+    // |v_traj| * dt plus the (small, decaying) offset term, both well inside
+    // MaxVelMag, so this must not bind -- ROS_WARN if it ever does.
     const Eigen::Vector3d requested_step = position - last_cmd_pos_;
+    const double step_bound =
+        position_step_safety_factor_ * max_setpoint_velocity_ * dt;
     const Eigen::Vector3d limited_step =
-        clampVectorNorm(requested_step, max_setpoint_velocity_ * dt);
+        clampVectorNorm(requested_step, step_bound);
+    if ((limited_step - requested_step).norm() > 1.0e-9) {
+      ROS_WARN_THROTTLE(
+          1.0,
+          "[traj_server] position step safety bound engaged: requested "
+          "%.4f m, bound %.4f m",
+          requested_step.norm(), step_bound);
+    }
     position = last_cmd_pos_ + limited_step;
 
-    const Eigen::Vector3d requested_velocity = limited_step / dt;
-    const Eigen::Vector3d velocity_delta = clampVectorNorm(
-        requested_velocity - last_cmd_vel_,
-        max_setpoint_acceleration_ * dt);
-    velocity = clampVectorNorm(last_cmd_vel_ + velocity_delta,
-                               max_setpoint_velocity_);
-    acceleration = velocity_delta / dt;
+    // Velocity/acceleration are feed-forward from the trajectory itself
+    // (MINCO already respects MaxVelMag/MaxAccMag by construction); these
+    // are pure safety clamps and must not bind in normal flight.
+    velocity = clampVectorNorm(velocity, max_setpoint_velocity_);
+    acceleration = clampVectorNorm(acceleration, max_setpoint_acceleration_);
     if (!jerk.allFinite())
       jerk.setZero();
   } else {
@@ -278,6 +352,14 @@ void activatePendingTrajectoryPair() {
   if (!pending_traj_ || !pending_yaw_traj_ ||
       pending_traj_id_ != pending_yaw_traj_id_)
     return;
+
+  // A new traj_id_ becoming active is a new trajectory generation (this also
+  // fires on the very first activation, since traj_id_ starts at the -1
+  // sentinel). Flag it so cmdCallback re-anchors cmd_offset_ (bumpless
+  // transfer) on its next tick instead of publishing a raw jump onto the new
+  // curve's position sample.
+  if (pending_traj_id_ != traj_id_)
+    trajectory_generation_changed_ = true;
 
   traj_ = pending_traj_;
   yaw_traj_ = pending_yaw_traj_;
@@ -512,11 +594,14 @@ void cmdCallback(const ros::TimerEvent &e) {
     vel = traj_->getVel(position_cmd_time);
     acc = traj_->getAcc(position_cmd_time);
     jer = traj_->getJer(position_cmd_time);
-
-    boundPositionLookahead(pos);
-
+    // boundPositionLookahead() now runs inside limitPositionSetpoint(),
+    // after cmd_offset_ is applied -- see the comment there.
   } else {
-    pos = last_pos_;
+    // Keep the raw trajectory endpoint as the target. last_pos_ is already an
+    // offset/limit-processed command; feeding it back through cmd_offset_ on
+    // every timer tick recursively accumulates the transfer residual and can
+    // walk the command away from the finished collision-checked trajectory.
+    pos = traj_->getPos(traj_duration_);
     vel = Eigen::Vector3d::Zero();
     acc = Eigen::Vector3d::Zero();
     jer = Eigen::Vector3d::Zero();
@@ -920,6 +1005,19 @@ int main(int argc, char **argv) {
            "Kp=%.3f 1/s, lookahead=%.3f s, maximum forward lead=%.3f m",
            px4_position_p_gain_, position_feedforward_time_,
            max_setpoint_velocity_ / px4_position_p_gain_);
+  // Unlike the trajectory_execution/* params above, these two default rather
+  // than ROS_FATAL when absent: existing deployment yamls predate the
+  // bumpless-transfer offset scheme and should keep starting. The
+  // offset_decay_rate_ default reproduces today's bleed-off rate (a constant
+  // max_setpoint_velocity_, which is what the old limiter always used).
+  nh.param("/exploration_node/trajectory_execution/offset_decay_rate",
+           offset_decay_rate_, max_setpoint_velocity_);
+  nh.param(
+      "/exploration_node/trajectory_execution/position_step_safety_factor",
+      position_step_safety_factor_, 2.0);
+  ROS_INFO("[Traj server]: cmd_offset_ decay rate: %.3f m/s, position step "
+           "safety factor: %.3f",
+           offset_decay_rate_, position_step_safety_factor_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);

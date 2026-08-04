@@ -11,9 +11,11 @@
 
 #include <Eigen/Eigen>
 #include <algorithm>
+#include <cmath>
 #include <epic_planner/fast_exploration_manager.h>
 #include <iostream>
 #include <memory>
+#include <message_filters/simple_filter.h>
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <pointcloud_topo/graph_visualizer.hpp>
@@ -50,6 +52,45 @@ class PlanningVisualization;
 struct FSMParam;
 struct FSMData;
 
+// MAVROS can switch its odometry header from ROS time to an FCU clock domain
+// after time synchronisation locks. ApproximateTime then stops pairing odom
+// with the lidar cloud even though both messages still arrive normally. Keep
+// valid, near-ROS-time stamps untouched, but put grossly skewed stamps back in
+// the current ROS clock domain before they reach the synchronizer.
+class StampNormalizingOdomFilter
+    : public message_filters::SimpleFilter<nav_msgs::Odometry> {
+public:
+  void subscribe(ros::NodeHandle &nh, const string &topic, uint32_t queue_size,
+                 double max_stamp_skew) {
+    max_stamp_skew_ = std::max(0.0, max_stamp_skew);
+    subscriber_ = nh.subscribe(topic, queue_size,
+                               &StampNormalizingOdomFilter::callback, this);
+  }
+
+private:
+  void callback(const nav_msgs::OdometryConstPtr &message) {
+    const ros::Time now = ros::Time::now();
+    const double skew = (message->header.stamp - now).toSec();
+    if (!message->header.stamp.isZero() && std::isfinite(skew) &&
+        std::abs(skew) <= max_stamp_skew_) {
+      signalMessage(message);
+      return;
+    }
+
+    nav_msgs::OdometryPtr normalized(new nav_msgs::Odometry(*message));
+    normalized->header.stamp = now;
+    ROS_WARN_THROTTLE(
+        2.0,
+        "[OdomStamp] normalizing odometry stamp for cloud sync: "
+        "source=%.3f now=%.3f skew=%.3f s (limit %.3f s)",
+        message->header.stamp.toSec(), now.toSec(), skew, max_stamp_skew_);
+    signalMessage(normalized);
+  }
+
+  ros::Subscriber subscriber_;
+  double max_stamp_skew_ = 5.0;
+};
+
 // NOTE: TAKEOFF_HOVER/LANDED are appended at the END so existing enum indices
 // (used as indices into fd_->state_str_) stay unchanged.
 // LANDED: LAND(AUTO.LAND) 후 착지+disarm 이 확인된 최종 상태.
@@ -73,6 +114,13 @@ private:
   shared_ptr<FSMParam> fp_;
   shared_ptr<FSMData> fd_;
   EXPL_STATE state_;
+
+  // CAUTION is an owning FSM with two explicit phases.  While an escape is
+  // executing, no planning callback may replace it or infer completion from a
+  // transient clearance sample.
+  enum CAUTION_PHASE { CAUTION_IDLE, CAUTION_EXEC_ESCAPE };
+  CAUTION_PHASE caution_phase_ = CAUTION_IDLE;
+  int caution_escape_traj_id_ = 0;
 
   bool classic_;
 
@@ -142,9 +190,15 @@ private:
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, nav_msgs::Odometry> SyncPolicyCloudOdom;
   typedef shared_ptr<message_filters::Synchronizer<SyncPolicyCloudOdom>> SynchronizerCloudOdom;
 
-  SynchronizerCloudOdom sync_cloud_odom_;
+  // Keep the subscribers alive until after the synchronizer disconnects from
+  // their signals. Members are destroyed in reverse declaration order, so the
+  // synchronizer must be declared last. The old order destroyed odom_sub_ and
+  // cloud_sub_ first; then Synchronizer::~Synchronizer() tried to remove its
+  // callbacks through already-destroyed Signal1 mutexes and aborted with
+  // boost::lock_error whenever a same-name shutdown unwound main().
   shared_ptr<message_filters::Subscriber<sensor_msgs::PointCloud2>> cloud_sub_;
-  shared_ptr<message_filters::Subscriber<nav_msgs::Odometry>> odom_sub_;
+  shared_ptr<StampNormalizingOdomFilter> odom_sub_;
+  SynchronizerCloudOdom sync_cloud_odom_;
   void CloudOdomCallback(const sensor_msgs::PointCloud2ConstPtr &msg, const nav_msgs::Odometry::ConstPtr &odom_);
 
   /* goal-directed navigation */
@@ -257,6 +311,16 @@ private:
   int    early_finish_rebind_count_ = 0;       // 재바인딩 횟수 (진단용)
   string early_finish_status_ = "IDLE";
 
+  /* FINISH-time amnesty: global_planning.cpp 의 게이트(`if (!is_reachable_)
+     continue;`) 때문에 클러스터의 is_reachable_ 은 한 번 false 가 되면 재평가
+     경로가 없는 단방향 래치다. FINISH 진입 직전 딱 한 번 전부 사면하고 전역계획을
+     재시도해, 실제로는 도달 가능한 프론티어가 남았는데 조기 종료되는 것을 막는다.
+     사면 직후 라운드는 모든 클러스터가 is_reachable_=true 상태로 평가되므로
+     vp_stats_.unreachable_pre 가 0 이 된다. 따라서 prev_unreachable > 0 게이트만으로
+     "직전 사면 결과에 대고 연달아 또 사면하는" 경우가 자연히 차단되므로, 별도의
+     시간 기반 rate limit 은 두지 않는다 (retryWithUnreachableAmnesty() 주석 참조). */
+  bool   unreachable_amnesty_enable_ = true;
+
   /* helper functions */
   // 탐사 박스(lp_->global_box_*) 안인가. box_num_<=0 이면 제한 없음(true).
   bool insideExplorationBox(const Eigen::Vector3f &p) const;
@@ -282,6 +346,10 @@ private:
   void publishEarlyFinishStatus(const string &status,
                                 const string &detail = "");
   bool explorationReallyFinished();          // false during startup warmup, true once frontiers seen / timeout
+  // FINISH 진입 직전 마지막 방어선: 클러스터의 is_reachable_ 래치를 전부 풀고
+  // 전역계획을 한 번 더 시도한다. true 를 반환하면 재계획이 성공(≠NO_FRONTIER)한
+  // 것이므로 호출부는 FINISH 로 가지 말고 탐사를 계속해야 한다.
+  bool retryWithUnreachableAmnesty();
   void mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg);
   // yaw_dot 을 실어 보내면 px4_ctrl_bridge(use_yawrate=true)가 yawrate 로 회전시킨다.
   void pubHoldCmd(const Eigen::Vector3d &p, double yaw, double yaw_dot = 0.0);

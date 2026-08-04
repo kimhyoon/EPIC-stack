@@ -193,12 +193,71 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   if (!planner_manager_->lidar_map_interface_->updateCloudMapOdometry(msg,
                                                                       odom_))
     return;
-  double collision_time;
-  bool safe = planner_manager_->checkTrajCollision(collision_time);
-  if (!safe) {
-    EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+  double collision_time = planner_manager_->local_data_.duration_;
+  const bool rotate_hold = planner_manager_->isRotateInPlaceHoldActive();
+  // A rotate-in-place recovery samples the same position for its whole
+  // duration. That point may already be inside the inflated obstacle margin,
+  // which is exactly why recovery was requested; rechecking the identical
+  // point every cloud frame aborts the yaw motion after 30--100 ms. Suppress
+  // only that self-collision for the explicitly marked trajectory duration.
+  // CAUTION has a different collision invariant from an ordinary trajectory:
+  // its exact start can already be inside the soft/hard margin.  Its owning
+  // FSM therefore checks the certified raw-to-soft escape below instead of
+  // feeding that unavoidable t=0 condition to the ordinary checker.
+  bool safe = rotate_hold || state_ == CAUTION ||
+              planner_manager_->checkTrajCollision(collision_time);
+  // CAUTION 은 스스로 풀릴 때까지 건드리지 않는다. CAUTION 은 flyToSafeRegion 으로
+  // 탈출 궤적을 만들고, 그게 실제로 기체를 안전거리 밖으로 빼놓았는지를
+  // getDisToOcc(odom) > dilateRadiusSoft 로 직접 확인한 뒤에야 나간다
+  // (fast_exploration_fsm.cpp CAUTION case). 그런데 탈출 궤적은 "지금 장애물에
+  // 붙어 있으니 빠져나가는" 궤적이라 일반 충돌검사를 통과하지 못한다 — 여기서
+  // 그걸 근거로 상태를 되돌리면 CAUTION 이 탈출을 완주하지 못하고 매 클라우드
+  // 프레임마다 PLAN_TRAJ_EXP 로 끌려나간다(실측: 0804 09-06-08 bag, CAUTION 진입
+  // 2회에 강제 이탈 9회, ~0.24s 주기 flapping). stopTraj() 도 같은 이유로 막는다 —
+  // 방금 발행한 탈출 궤적을 잘라버리기 때문이다.
+  // 대신 CAUTION 전용 검사는 현재점보다 clearance 를 악화시키지 않는 egress와,
+  // soft margin 도달 후 유지, raw/safe FIRI, observed boundary, ceiling 을 갱신된
+  // 맵마다 검사한다. 실패해도 PLANNING 으로 넘기지 않고 CAUTION 이 궤적을
+  // 중단하고 현재 odom 에서 다시 만든다.
+  if (state_ == CAUTION && caution_phase_ == CAUTION_EXEC_ESCAPE) {
+    const Eigen::Vector3d actual_position(odom_->pose.pose.position.x,
+                                          odom_->pose.pose.position.y,
+                                          odom_->pose.pose.position.z);
+    double escape_violation_time = 0.0;
+    std::string escape_violation_reason;
+    if (!planner_manager_->checkCautionEscapeSafety(
+            actual_position, escape_violation_time,
+            escape_violation_reason)) {
+      ROS_ERROR_THROTTLE(
+          1.0,
+          "[CAUTION] live escape safety violation at t=%.3f: %s; "
+          "stopping and rebuilding inside CAUTION",
+          escape_violation_time, escape_violation_reason.c_str());
+      stopTraj();
+      caution_phase_ = CAUTION_IDLE;
+      caution_escape_traj_id_ = 0;
+    }
+  }
+  // 맵 갱신/odom 갱신/frontier 갱신 등 이 콜백의 나머지 일은 CAUTION 중에도 그대로 돈다.
+  //
+  // LAND/LANDED 도 같은 이유로 제외한다. 착륙 중에는 local_data_ 에 착륙 직전의
+  // 마지막 궤적이 그대로 남아 있고, 기체가 지면에 가까워질수록 그 궤적은 당연히
+  // 충돌검사를 통과하지 못한다. 그걸 근거로 PLAN_TRAJ_EXP 로 튀면 AUTO.LAND 재요청
+  // 루프와 착지(disarm) 감지가 통째로 중단되어 착륙이 취소된다.
+  if (!safe && state_ != CAUTION && state_ != LAND && state_ != LANDED) {
+    const bool rotate_needs_escape =
+        planner_manager_->local_data_.rotate_in_place_ &&
+        planner_manager_->lidar_map_interface_->getDisToOcc(
+            Eigen::Vector3d(odom_->pose.pose.position.x,
+                            odom_->pose.pose.position.y,
+                            odom_->pose.pose.position.z)) <=
+            planner_manager_->gcopter_config_->dilateRadiusSoft;
+    EXPL_STATE next_state = rotate_needs_escape
+                                ? CAUTION
+                                : (has_goal_rth_ ? PLAN_TRAJ_RTH
+                                                 : PLAN_TRAJ_EXP);
     transitState(next_state, "safetyCallback: not safe, time:" + to_string(collision_time), true);
-    if (collision_time < fp_->replan_time_ + 0.2)
+    if (!rotate_needs_escape && collision_time < fp_->replan_time_ + 0.2)
       stopTraj();
   }
   ros::Time t2 = ros::Time::now();
@@ -256,6 +315,10 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
 
 void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, bool red) {
   int pre_s = int(state_);
+  if (new_state == CAUTION && state_ != CAUTION) {
+    caution_phase_ = CAUTION_IDLE;
+    caution_escape_traj_id_ = 0;
+  }
   state_ = new_state;
   // 이벤트 로거가 상태전이를 기록한다. PLAN<->EXEC 리플랜 플래핑 같은 A<->B 교대
   // 패턴은 로거의 사이클 억제가 걸러 "cycling xN" heartbeat 만 남긴다.

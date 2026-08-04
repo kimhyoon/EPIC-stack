@@ -145,6 +145,9 @@ lidar_perception/fov_horizontal: 120.0      # 물리 수평 FOV [deg] (360=전�
 # Topology 갱신과 주변 장애물 KNN 검색에 사용하는 최대거리이며, 검색 결과가 없으면 이 거리만큼 빈 공간으로 간주한다.
 # LiDAR 유효거리와 점군 밀도에 맞춘 검증값이므로 임의로 수정하지 않는다.
 lidar_perception/max_ray_length: 30
+# 센서 원점에서 이 거리 이하인 반사점은 기체/센서 자체 또는 비정상 근접 반사로 보고 지도에 넣지 않는다.
+# /ml_/pointcloud의 frame_id 표기는 실제 좌표계와 다르므로 cloud_frame_mode=sensor 기준으로 적용한다.
+lidar_perception/min_ray_length: 0.30
 
 # --- 계획용 보수 FOV: 반드시 위 물리값 이내 (규칙 1) ---
 # 뷰포인트 yaw 선택 시 "이 각 안에 든 프론티어만 보인다"고 친다.
@@ -483,7 +486,7 @@ MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [PVA 가속도 제한]
 # 위치 궤적 최적화에서 허용할 최대 가속도이며 PX4의 실제 가속도 하드 제한은 아니다.
-MaxAccMag: 2.0  # 최대 계획 가속도[m/s^2]
+MaxAccMag: 4.0  # 최대 계획 가속도[m/s^2]
 
 # [이동 궤적에 따른 기체 자세 변화율]
 # 급가속·급감속·경로 굴곡을 따라가기 위해 필요한 기체 기울기 변화율의 최대 크기를 MINCO가 계산할 때 사용한다.

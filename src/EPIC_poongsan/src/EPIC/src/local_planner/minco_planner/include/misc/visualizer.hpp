@@ -411,15 +411,43 @@ public:
     traj_line_pts_.push_back(point);
 
     // Sparse frustums, never more than fov_max_slots_ (the DELETE-sweep range).
-    const double fov_dt = std::max(fov_sample_dt_, dur / fov_max_slots_);
-    for (double t = 0.0;
-         t < dur && static_cast<int>(traj_fov_samples_.size()) < fov_max_slots_;
-         t += fov_dt) {
-      FovSample s;
-      s.pos = traj.getPos(t);
-      s.yaw = yawAt(t);
-      s.t = t;
-      traj_fov_samples_.push_back(s);
+    //
+    // A rotate-in-place recovery has a constant position polynomial and is
+    // commonly only 0.30--0.40 s long. With the ordinary 0.30 s sampling it
+    // produced only the t=0 frustum; by the time the ~40 ms planning callback
+    // published it, publishTrajViz() quite correctly considered that sole
+    // sample stale and deleted it. The command uses the normal position+yaw
+    // pipeline, so visualize it through that same pipeline as a stationary
+    // sequence of FOVs spanning the yaw polynomial (including its endpoint).
+    const Eigen::Vector3d Xstart = traj.getPos(0.0);
+    const bool stationary = (Xend - Xstart).norm() <= 1.0e-5;
+    if (stationary && yaw_ok) {
+      const double yaw_delta = std::abs(yawAt(dur) - yawAt(0.0));
+      const int desired_samples = yaw_delta > 1.0e-5 ? 9 : 1;
+      const int sample_count = std::min(fov_max_slots_, desired_samples);
+      for (int i = 0; i < sample_count; ++i) {
+        const double t = sample_count == 1
+                             ? dur
+                             : dur * static_cast<double>(i) /
+                                   static_cast<double>(sample_count - 1);
+        FovSample s;
+        s.pos = traj.getPos(t);
+        s.yaw = yawAt(t);
+        s.t = t;
+        traj_fov_samples_.push_back(s);
+      }
+    } else {
+      const double fov_dt = std::max(fov_sample_dt_, dur / fov_max_slots_);
+      for (double t = 0.0;
+           t < dur &&
+           static_cast<int>(traj_fov_samples_.size()) < fov_max_slots_;
+           t += fov_dt) {
+        FovSample s;
+        s.pos = traj.getPos(t);
+        s.yaw = yawAt(t);
+        s.t = t;
+        traj_fov_samples_.push_back(s);
+      }
     }
 
     traj_start_time_ = traj_start_time;

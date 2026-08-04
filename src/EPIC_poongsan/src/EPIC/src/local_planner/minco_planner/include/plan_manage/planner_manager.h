@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <random>
 #include <stdexcept>
 #include "gcopter/firi.hpp"
@@ -281,7 +282,11 @@ public:
                        TopoGraph::Ptr &graph);
 
   bool checkTrajCollision(double &collision_time);
+  bool checkCautionEscapeSafety(const Eigen::Vector3d &actual_position,
+                                double &violation_time,
+                                std::string &reason);
   bool checkTrajVelocity();
+  bool isRotateInPlaceHoldActive() const;
 
   bool YawTrajOpt(const Eigen::Vector3d &initial_yaw_state, double &end_yaw,
                   bool use_shorten_path);
@@ -343,6 +348,14 @@ public:
   shared_ptr<FrontierManager> frontier_manager_;
   bool clip_corridor_to_observed_ = false; // master switch (default off = legacy)
   bool clip_cone_faces_ = false;           // Method B: FOV cone half-plane clipping
+  // Independent gate for the CAUTION escape bubble (flyToSafeRegion). False
+  // disables escape generation; it never falls back to an unobserved bubble.
+  bool clip_escape_to_observed_ = true;
+  // Observed-boundary face-activation probe geometry. Defaults reproduce the
+  // original behaviour; the proposed 3.0 / 2 widening ("variant A") measured
+  // WORSE live -- see the note in buildObservedBoundary().
+  double fov_face_tolerance_cells_ = 1.5; // on-plane band, x cell_size
+  int fov_face_neighbor_radius_ = 1;      // neighbour probe half-width, cells
   double p0_len_x_ = 0.6; // robot free box P0: body-x (fwd/back) full length
   double p0_len_y_ = 0.6; // P0: body-y (left/right) full length
   double p0_up_ = 0.2;    // P0: extent above the flight controller
@@ -389,6 +402,7 @@ private:
   // Replanning starts from the latest measured odometry state. Odometry twist
   // is expressed in child_frame_id, so posCallback converts it to the pose
   // parent frame and converts body rates to Euler yaw rate before storing it.
+  mutable std::mutex latest_odom_mutex_;
   Eigen::Matrix3d latest_odom_pva_ = Eigen::Matrix3d::Zero();
   Eigen::Vector3d latest_odom_yaw_state_ = Eigen::Vector3d::Zero();
   ros::Time latest_odom_stamp_;

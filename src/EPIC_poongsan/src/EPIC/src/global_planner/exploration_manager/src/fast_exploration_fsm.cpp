@@ -215,6 +215,12 @@ bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
 
 void FastExplorationFSM::publishEarlyFinishStatus(
     const string &status, const string &detail) {
+  // [race: name-collision-shutdown] this is the node's FIRST publish and is
+  // called from inside init() (right after early_finish_state_pub_ is
+  // advertised) -- if a same-name node collision triggered an async shutdown
+  // while init() is still running, the Publisher can already be invalid here.
+  // See exploration_node.cpp for the full race.
+  if (!ros::ok()) return;
   early_finish_status_ = status;
   std_msgs::String msg;
   msg.data = detail.empty() ? status : status + " | " + detail;
@@ -776,9 +782,16 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       // NO_FRONTIER 로 오지 않는다 (= RTH 봉쇄가 자동으로 성립한다). 별도 분기 없음.
       // if (planner_manager_->topo_graph_->global_view_points_.empty())
       if (explorationReallyFinished()) {
-        explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
-        transitState(FINISH, "PLAN_TRAJ_EXP: no frontier");
-        fd_->static_state_ = true;
+        if (retryWithUnreachableAmnesty()) {
+          // 사면 후 재계획이 성공 -> FINISH 로 가지 않고 탐사를 계속한다.
+          transitState(PLAN_TRAJ_EXP,
+                       "PLAN_TRAJ_EXP: no frontier -> unreachable amnesty recovered",
+                       true);
+        } else {
+          explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
+          transitState(FINISH, "PLAN_TRAJ_EXP: no frontier");
+          fd_->static_state_ = true;
+        }
       } else {
         // Map/frontiers not ready yet (just triggered) -> keep trying, don't finish.
         transitState(PLAN_TRAJ_EXP, "PLAN_TRAJ_EXP: no frontier yet (warming up)", true);
@@ -883,15 +896,25 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
   case EXEC_TRAJ: {
     // collision check
-    double collision_time;
-    bool safe = planner_manager_->checkTrajCollision(collision_time);
+    double collision_time = planner_manager_->local_data_.duration_;
+    const bool rotate_hold = planner_manager_->isRotateInPlaceHoldActive();
+    bool safe = rotate_hold ||
+                planner_manager_->checkTrajCollision(collision_time);
     if (!safe) {
       // Return to appropriate planning state
-      EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+      const bool rotate_needs_escape =
+          planner_manager_->local_data_.rotate_in_place_ &&
+          planner_manager_->lidar_map_interface_->getDisToOcc(
+              fd_->odom_pos_) <=
+              planner_manager_->gcopter_config_->dilateRadiusSoft;
+      EXPL_STATE next_state = rotate_needs_escape
+                                  ? CAUTION
+                                  : (has_goal_rth_ ? PLAN_TRAJ_RTH
+                                                   : PLAN_TRAJ_EXP);
       transitState(
           next_state,
           "safetyCallback: not safe, time:" + to_string(collision_time), true);
-      if (collision_time < fp_->replan_time_ + 0.2)
+      if (!rotate_needs_escape && collision_time < fp_->replan_time_ + 0.2)
         stopTraj();
     } else if (!planner_manager_->checkTrajVelocity()) {
       EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
@@ -929,9 +952,80 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case CAUTION: {
-    stopTraj();
     exec_timer_.stop();
-    bool success = planner_manager_->flyToSafeRegion(fd_->static_state_);
+
+    // CAUTION owns its escape until the published trajectory actually ends.
+    // Global planning already excludes CAUTION in updateTopoAndGlobalPath(),
+    // and CloudOdomCallback does not transition out of CAUTION.  This substate
+    // closes the remaining hole: CAUTION itself used to test clearance 0.2 s
+    // after publication and hand control back to planning mid-trajectory.
+    if (caution_phase_ == CAUTION_EXEC_ESCAPE) {
+      const LocalTrajData &escape = planner_manager_->local_data_;
+      const double elapsed =
+          (ros::Time::now() - escape.start_time_).toSec();
+      const bool same_trajectory =
+          escape.traj_id_ == caution_escape_traj_id_;
+      const bool trajectory_valid =
+          same_trajectory && std::isfinite(elapsed) &&
+          std::isfinite(escape.duration_) && escape.duration_ >= 0.0;
+
+      if (trajectory_valid && elapsed < escape.duration_) {
+        exec_timer_.start();
+        break;
+      }
+
+      if (!trajectory_valid) {
+        ROS_WARN_THROTTLE(
+            2.0,
+            "[CAUTION] escape ownership lost/invalid; rebuilding from odom");
+      } else {
+        const double dis2occ =
+            planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_);
+        const bool inside_virtual_ceiling =
+            std::isfinite(escape.escape_virtual_ceiling_z_) &&
+            fd_->odom_pos_.z() <= escape.escape_virtual_ceiling_z_ + 1.0e-5;
+        if (dis2occ > planner_manager_->gcopter_config_->dilateRadiusSoft &&
+            inside_virtual_ceiling) {
+          EXPL_STATE next_state =
+              has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+          transitState(next_state, "CAUTION: escape finished and safe");
+          exec_timer_.start();
+          break;
+        }
+      }
+
+      // The owned trajectory ended but the actual odometry is still unsafe
+      // (or ownership was invalidated). Re-enter IDLE and solve a fresh strict
+      // observed-space FIRI from the current pose.
+      caution_phase_ = CAUTION_IDLE;
+      caution_escape_traj_id_ = 0;
+    }
+
+    const double dis2occ =
+        planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_);
+    // Obstacle clearance alone is not enough: tracking overshoot can leave the
+    // vehicle in the one-voxel ceiling buffer.  CAUTION owns the descent back
+    // into the virtual flight volume even when obstacle clearance is already
+    // sufficient.
+    const double virtual_ceiling_z =
+        planner_manager_->lidar_map_interface_->lp_
+            ->global_box_max_boundary_.z() -
+        planner_manager_->gcopter_config_->corridorObstacleVoxelSize;
+    const bool inside_virtual_ceiling =
+        std::isfinite(virtual_ceiling_z) &&
+        fd_->odom_pos_.z() <= virtual_ceiling_z + 1.0e-5;
+    if (dis2occ > planner_manager_->gcopter_config_->dilateRadiusSoft &&
+        inside_virtual_ceiling) {
+      EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
+      transitState(next_state, "CAUTION: current odom is already safe");
+      exec_timer_.start();
+      break;
+    }
+
+    stopTraj();
+    // Recovery must be anchored at the actual current odometry, never a
+    // predicted point on the trajectory that just failed.
+    bool success = planner_manager_->flyToSafeRegion(true);
     if (success) {
       traj_utils::PolyTraj poly_traj_msg;
       auto info = &planner_manager_->local_data_;
@@ -957,15 +1051,10 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
       poly_yaw_traj_pub_.publish(fd_->newest_yaw_traj_);
       poly_traj_pub_.publish(fd_->newest_traj_);
-      ros::Duration(0.2).sleep();
+      caution_phase_ = CAUTION_EXEC_ESCAPE;
+      caution_escape_traj_id_ = info->traj_id_;
     }
     exec_timer_.start();
-    double dis2occ =
-        planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_);
-    if (dis2occ > planner_manager_->gcopter_config_->dilateRadiusSoft) {
-      EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
-      transitState(next_state, "safe now");
-    }
     break;
   }
   case LAND: {
@@ -1194,6 +1283,11 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/early_finish_probe_min_gain", early_finish_probe_min_gain_, 1.0);
   nh.param("fsm/early_finish_visited_radius", early_finish_visited_radius_, 1.5);
   nh.param("fsm/early_finish_max_retry", early_finish_max_retry_, 1);
+  // FINISH-time amnesty (도달불가 래치 사면). global_planning.cpp 의 is_reachable_
+  // 게이트는 한 번 false 가 되면 재평가 경로가 없는 단방향 래치라, FINISH 진입
+  // 직전 딱 한 번만 전부 풀고 전역계획을 재시도한다. 자세한 재발화 방지 근거는
+  // retryWithUnreachableAmnesty() 주석 참조.
+  nh.param("fsm/unreachable_amnesty_enable", unreachable_amnesty_enable_, true);
   // [도달 허용치 통일] EFP 도달 판정은 frontier viewpoint 도달 판정과 같은
   // 파라미터를 읽는다. FSM 이 ViewpointManager/ 네임스페이스를 읽는 것은 의도된
   // 것이다 — 새 설계에서 EFP 는 실제로 TSP 의 viewpoint 후보 하나이므로
@@ -1351,8 +1445,10 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   }
   cloud_sub_.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(
       nh, cloud_topic, 1));
-  odom_sub_.reset(
-      new message_filters::Subscriber<nav_msgs::Odometry>(nh, odom_topic, 5));
+  double odom_sync_max_stamp_skew = 5.0;
+  nh.param("fsm/odom_sync_max_stamp_skew", odom_sync_max_stamp_skew, 5.0);
+  odom_sub_.reset(new StampNormalizingOdomFilter());
+  odom_sub_->subscribe(nh, odom_topic, 5, odom_sync_max_stamp_skew);
   sync_cloud_odom_.reset(new message_filters::Synchronizer<SyncPolicyCloudOdom>(
       SyncPolicyCloudOdom(10), *cloud_sub_, *odom_sub_));
   sync_cloud_odom_->registerCallback(
@@ -1493,18 +1589,78 @@ void FastExplorationFSM::battaryCallback(
   // }
 }
 
+// FINISH 직전 마지막 방어선 — "도달불가" 낙인(ClusterInfo::is_reachable_=false)을
+// 한 번 사면(赦免)하고 전역계획을 딱 한 번 재시도한다.
+//
+// 배경: global_planning.cpp:63 의 게이트(`if (!cluster->is_reachable_) continue;`)
+// 때문에 is_reachable_ 은 한 번 false 가 되면(frontier_manager.cpp 의
+// CR_NO_CANDIDATE / CR_NO_VISIBILITY / CR_ODOM_DRIFT / CR_TOPO_UNREACHABLE) 재평가
+// 경로가 없는 단방향 래치다. 실비행(0804, bag 1970-01-01-09-10-25)에서 15개 중
+// 8개 클러스터가 7초 안에 이 낙인을 먹었고, 결국 GLOBAL result=NO_REACHABLE_VP 로
+// 도달 가능한 프론티어가 남았는데도 조기 FINISH 됐다.
+//
+// 래치 자체(단방향 문제)는 여기서 고치지 않는다 — FINISH 진입을 막기 위한 1회성
+// 구제일 뿐이다. 별도의 시간 기반 rate limit 은 두지 않는다: 사면 직후 라운드는
+// 모든 클러스터가 is_reachable_=true 상태로 평가되므로 vp_stats_.unreachable_pre
+// 가 0 이 된다. 따라서 prev_unreachable > 0 게이트만으로 "직전 사면 결과에 대고
+// 연달아 또 사면하는" 경우가 자연히 차단된다. 다시 사면이 발화하려면 클러스터가
+// 실제로 한 번 더 낙인을 먹어야 한다. 시간 기반 rate limit 을 두면 오히려 "3초
+// 안에 두 번째 NO_FRONTIER 가 오면 사면 없이 그대로 FINISH" 라는, 이 기능이
+// 막으려던 조기종료를 다시 만들어내므로 두지 않는다.
+bool FastExplorationFSM::retryWithUnreachableAmnesty() {
+  if (!unreachable_amnesty_enable_)
+    return false;
+
+  auto frt = expl_manager_->frontier_manager_ptr_;
+  // 새 카운터를 두지 않고 마지막 라운드의 pipeline 통계(prev_unreachable)를 그대로
+  // 재사용한다 (publishExplDiag()/logGlobalPlanEvent() 가 쓰는 것과 같은 값).
+  const int prev_unreachable = frt->vp_stats_.unreachable_pre;
+  if (prev_unreachable <= 0)
+    return false;  // 용서할 클러스터가 없음 -> 계획 주기를 낭비하지 않는다
+
+  int forgiven = 0;
+  for (auto &cluster : frt->cluster_list_) {
+    if (!cluster->is_reachable_) {
+      cluster->is_reachable_ = true;
+      forgiven++;
+    }
+  }
+
+  Eigen::Vector3d odom = fd_->odom_pos_.cast<double>();
+  Eigen::Vector3d vel = fd_->odom_vel_.cast<double>();
+  int res = expl_manager_->planGlobalPath(odom, vel);
+  const bool ok = (res != NO_FRONTIER);
+
+  auto ed = expl_manager_->ed_;
+  char d[288];
+  snprintf(d, sizeof(d),
+           "forgiven=%d(prev_unreachable=%d) re-run=%s clusters=%d(reachable %d) "
+           "viewpoints=%d(path_reachable %d)",
+           forgiven, prev_unreachable, ok ? "OK" : "NO_FRONTIER",
+           ed->diag_num_clusters_, ed->diag_num_clusters_reachable_,
+           ed->diag_num_viewpoints_, ed->diag_num_reachable_vp_);
+  elog_.log("AMNESTY",
+            ok ? "unreachable latch cleared -> global plan recovered, resume exploring"
+               : "unreachable latch cleared -> still no frontier, proceeding to FINISH",
+            d, 0.0, ok ? EventLogger::L_INFO : EventLogger::L_WARN, true);
+
+  return ok;
+}
+
 void FastExplorationFSM::updateTopoAndGlobalPath() {
   // WAIT_TRIGGER 제외: 트리거(2D Nav Goal) 전에는 토포/글로벌 경로 갱신을 하지 않는다.
-  // (launch 직후 빈 토포그래프에서 odom_node 이웃이 없어 CAUTION으로 전이 -> flyToSafeRegion
-  //  MINCO 최적화가 계속 실패("optimize failed")하는 것을 막음.) 트리거 후 TAKEOFF_HOVER ->
-  //  PLAN_TRAJ_EXP 부터 planning 시작. WAIT_TRIGGER 에서는 viz만 한다.
+  // TAKEOFF_HOVER 중에는 map/frontier(CloudOdomCallback)와 함께 topology
+  // skeleton/odom-node 연결도 미리 유지한다. 단, 아래 topology 갱신
+  // 직후 return하여 global planning, CAUTION 전이, trajectory 발행은 hover
+  // 완료 후까지 금지한다. 예전에는 hover 중 topology를 비워 두어
+  // 09-06-08에서 hover 종료 10 ms 후 `odom_node no nbrs` CAUTION이 발생했다.
   // EARLY_FINISH also needs one current topology update before selecting its path.
-  if (!(state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
+  if (!(state_ == TAKEOFF_HOVER || state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
         state_ == EXEC_TRAJ || state_ == FINISH || state_ == EARLY_FINISH)) {
     global_path_update_timer_.stop();
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
-  expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
+    expl_manager_->frontier_manager_ptr_->vizBestViewpoint();
     global_path_update_timer_.start();
     return;
   }
@@ -1521,6 +1677,38 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   ros::Time t3 = ros::Time::now();
   planner_manager_->topo_graph_->updateOdomNode(fd_->odom_pos_, fd_->odom_yaw_);
   planner_manager_->topo_graph_->updateHistoricalOdoms();
+
+  // Topology-only warmup: TAKEOFF_HOVER owns /position_cmd and must not be
+  // interrupted by exploration planning or a transient orphaned odom node.
+  if (state_ == TAKEOFF_HOVER) {
+    if (expl_manager_->ep_->view_graph_)
+      planner_manager_->graph_visualizer_->vizGraph(planner_manager_->topo_graph_);
+    global_path_update_timer_.start();
+    return;
+  }
+
+  // The ordinary global update intentionally replaces a trajectory after the
+  // short replan window (~0.5 s). A rotate recovery needs its full smooth yaw
+  // duration (up to 8 s), otherwise every replacement restarts at zero yaw
+  // rate and the vehicle barely turns. Keep map/topology maintenance above,
+  // but defer path replacement until this bounded hold finishes.
+  if (planner_manager_->isRotateInPlaceHoldActive()) {
+    global_path_update_timer_.start();
+    return;
+  }
+
+  // Rotation changes visibility, not position. If the freshly observed map
+  // still places the occupied current point inside the configured soft margin,
+  // use the FSM's existing positional recovery instead of publishing an
+  // ordinary trajectory that its t=0 collision check must immediately reject.
+  // CAUTION exits only after this same configured margin is cleared.
+  if (planner_manager_->local_data_.rotate_in_place_ &&
+      planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_) <=
+          planner_manager_->gcopter_config_->dilateRadiusSoft) {
+    transitState(CAUTION, "rotate complete: current point needs positional escape");
+    global_path_update_timer_.start();
+    return;
+  }
 
   if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty()) {
     double time;
@@ -1610,8 +1798,16 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
     // Only finish if the map/frontiers were actually ready (warmup elapsed or
     // frontiers seen before); otherwise this is a startup artifact -> wait.
     if (explorationReallyFinished()) {
-      explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
-      transitState(FINISH, "planGlobalPath: no frontier");
+      if (retryWithUnreachableAmnesty()) {
+        // 사면 후 재계획이 성공 -> 정상 SUCCEED 경로와 동일하게 탐사를 계속한다.
+        if (expl_manager_->ed_->diag_num_reachable_vp_ > 0)
+          frontiers_ever_seen_ = true;
+        transitState(PLAN_TRAJ_EXP,
+                     "planGlobalPath: no frontier -> unreachable amnesty recovered");
+      } else {
+        explore_finished_ = true;  // genuine exploration end -> enable auto RTH+land
+        transitState(FINISH, "planGlobalPath: no frontier");
+      }
     }
   } else if (res == SUCCEED && state_ != WAIT_TRIGGER) {
     // "실제로 경로가 나온 frontier 뷰포인트" 가 있었을 때만 warmup 을 푼다.
