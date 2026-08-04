@@ -40,6 +40,7 @@
              rviz_map_pcd:=$(find map_generator)/resource/poongsan_garage_rviz.pcd
        Measured: poongsan leaf 0.20 -> 108k pts, garage leaf 0.50 -> 406k pts. -->
   <arg name="rviz_map_pcd" default="$(arg map_pcd)" />
+  <arg name="rviz" default="true" />
 
   <!-- Coverage-evaluation bounds. MUST follow the map: scoring a 39x28 m site
        against the 182x150 box silently deflates coverage. Defaults = map2. -->
@@ -73,6 +74,18 @@
 
   <!-- Simulation-only reactive local avoidance. Real flight uses real_flight.launch. -->
   <arg name="enable_avoidance" default="false" />
+
+  <!-- true (default): cascadePID only ingests position + yaw, matching PX4's
+       type_mask=2552 in OFFBOARD (see px4_ctrl_bridge.cpp). false: legacy
+       cascadePID behaviour that also feeds it velocity/acceleration, which the
+       real vehicle never receives. Forwarded down to the cascade_pid node via
+       mars_drone_sim/garage.launch -> single_drone_with_fuel.xml. -->
+  <arg name="use_px4_bridge" default="true" />
+
+  <!-- Keep the historical simulation default (finish and hold), but expose an
+       explicit per-run override so the real-flight FINISH -> RTH -> LAND chain
+       can be exercised without editing the planner YAML. -->
+  <arg name="auto_rth_land" default="false" />
 
   <!-- Evaluation parameters -->
   <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
@@ -122,6 +135,8 @@
   <include file="$(find epic_planner)/launch/algorithm.xml">
     <arg name="config_file" value="$(arg config_file)" />
   </include>
+  <param name="/exploration_node/fsm/auto_rth_land"
+         value="$(arg auto_rth_land)" />
   <!-- Keep EPIC and the bridge mode synchronized. The explicit launch
        argument overrides garage.yaml for raw-cloud validation runs. -->
   <param name="/exploration_node/cloud_crop/enable"
@@ -245,10 +260,11 @@
     <arg name="init_y_" value="$(arg init_y_)" />
     <arg name="init_z_" value="$(arg init_z_)" />
     <arg name="init_yaw" value="$(arg init_yaw)" />
+    <arg name="use_px4_bridge" value="$(arg use_px4_bridge)" />
     <!-- The MARSIM launch chain does not consume odom_publish_rate/sensing_rate
          as args. Passing them here causes roslaunch "unused args" errors. -->
   </include>
 
   <!-- RViz visualization -->
-  <include file="$(find epic_planner)/launch/rviz.launch" />
+  <include if="$(arg rviz)" file="$(find epic_planner)/launch/rviz.launch" />
 </launch>

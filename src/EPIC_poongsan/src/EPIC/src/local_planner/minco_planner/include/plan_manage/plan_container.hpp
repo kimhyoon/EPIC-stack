@@ -41,6 +41,25 @@ struct LocalTrajData {
   Eigen::Vector3d curr_vel_ = Eigen::Vector3d::Zero();
   double curr_yaw_ = 0.0;
   double end_yaw_ = 0.0;
+  // Semantic marker for the zero-translation recovery trajectory synthesized
+  // when the observed corridor admits no forward progress.  Keeping this in
+  // LocalTrajData makes backup/restore preserve the marker together with the
+  // trajectory it describes.
+  bool rotate_in_place_ = false;
+  // Semantic + geometric certificate for a CAUTION-owned escape.  The first
+  // trajectory may start inside the configured obstacle margin, but it must
+  // remain in escape_raw_polytope_ while measured clearance monotonically
+  // improves.  From escape_soft_entry_time_ onward measured clearance must
+  // remain at least DilateRadiusSoft.  escape_safe_polytope_ records the legal
+  // FIRI volume applying to that phase (currently the same strict raw FIRI;
+  // FIRI separation planes are not physical obstacle surfaces).
+  bool caution_escape_ = false;
+  double escape_soft_entry_time_ = 0.0;
+  double escape_virtual_ceiling_z_ = 0.0;
+  double escape_hard_ceiling_z_ = 0.0;
+  Eigen::MatrixX4d escape_raw_polytope_;
+  Eigen::MatrixX4d escape_safe_polytope_;
+  Eigen::MatrixX4d escape_observed_halfspaces_;
   Trajectory<5> minco_traj_;
   Trajectory<5> minco_yaw_traj_;
 

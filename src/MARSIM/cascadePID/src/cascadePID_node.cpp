@@ -15,6 +15,12 @@ Vector3d pos_des,vel_des,acc_des;
 double yaw_des = 0.0;
 cascadePID quad_PID(20);
 
+// px4_ctrl_bridge sends /mavros/setpoint_raw/local with type_mask = 2552 on the
+// real vehicle (use_accel_ff_=false, use_yawrate_=false), which makes PX4 ignore
+// velocity/acceleration/yaw_rate and track position + yaw only. Mirror that here
+// so the sim controller doesn't get feed-forward the real aircraft never sees.
+bool px4_like_cmd_ = true;
+
 ros::Time t_init,t2;
 
 nav_msgs::Odometry current_odom, last_odom;
@@ -43,6 +49,13 @@ void fuel_position_cmd_callback(const quadrotor_msgs::PositionCommand::ConstPtr&
   pos_des = Eigen::Vector3d(cmd->position.x, cmd->position.y, cmd->position.z);
   vel_des = Eigen::Vector3d(cmd->velocity.x, cmd->velocity.y, cmd->velocity.z);
   acc_des = Eigen::Vector3d(cmd->acceleration.x, cmd->acceleration.y, cmd->acceleration.z);
+
+  if (px4_like_cmd_) {
+    // type_mask = 2552 (IGNORE_V*, IGNORE_AF*): PX4 never sees these, so neither
+    // should the sim controller.
+    vel_des = Eigen::Vector3d::Zero();
+    acc_des = Eigen::Vector3d::Zero();
+  }
 
   yaw_des = cmd->yaw;
 }
@@ -140,6 +153,10 @@ int main(int argc, char** argv)
     n.param("angle_stable_time", angle_stable_time, 0.1);
     n.param("damping_ratio", damping_ratio, 0.7);
     n.param("drone_id", drone_id, 0);
+    n.param("px4_like_cmd", px4_like_cmd_, true);
+    ROS_INFO("px4_like_cmd = %s (vel/acc feed-forward %s)",
+             px4_like_cmd_ ? "true" : "false",
+             px4_like_cmd_ ? "zeroed, matching PX4 type_mask 2552" : "passed through");
 
     control_RPM_pub = n.advertise<std_msgs::Float32MultiArray>("cmd_RPM", 100);
     ros::Subscriber odom_sub = n.subscribe("odom", 100, Odom_callback,

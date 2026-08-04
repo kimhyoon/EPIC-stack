@@ -18,17 +18,22 @@ cloud_topic: /quad0_pcl_render_node/cloud
 cloud_crop/enable: true
 cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
 # [파라미터 규약] cloud_crop/fov_* 는 body(기체) 프레임 기준. body 값 =
-# lidar_perception/fov_up/fov_down(15.0/-15.0) − lidar_perception/lidar_pitch(0.0) = 15.0/-15.0.
+# lidar_perception/fov_up/fov_down(15.0/-15.0) − lidar_perception/lidar_pitch(5.0) = 10.0/-20.0.
+# cloud_crop_bridge 가 기동 시 이 정합식을 자체검사한다(strict_fov_alignment=true이면
+# 안 맞으면 노드가 안 뜬다) — lidar_pitch 를 바꾸면 이 두 값도 같이 바꿔야 한다.
 cloud_crop/fov_horizontal: 120.0
-cloud_crop/fov_up: 15.0
-cloud_crop/fov_down: -15.0
+cloud_crop/fov_up: 10.0
+cloud_crop/fov_down: -20.0
 cloud_crop/yaw_offset_deg: 0.0
 cloud_crop/min_range: 0.0
 cloud_crop/max_range: 30.0
 # [SIM][불확실] MARSIM odom(/quad_0/lidar_slam/odom)이 수평(body) 자세인지 센서 자세인지
-# 확인하지 못했다. 다만 아래 lidar_perception/lidar_pitch가 0.0(라이다가 애초에 기울어
-# 있지 않음)이라 두 경우의 구분 자체가 무의미하므로 0.0으로 둔다. 실제 물리 장착각이 있는
-# real.yaml/mid360_mlx.yaml 프로파일에서만 이 값이 lidar_pitch와 짝을 이뤄 의미를 가진다.
+# 확인하지 못했다. 이 값은 그 확인이 필요한 별개의 물리 장착보정(odom→body)이며,
+# lidar_perception/lidar_pitch(FOV 콘/코리도어 클리핑용, odom 프레임 대비 회전)와는
+# 독립적이다 — 후자를 real2.yaml 정합을 위해 5.0으로 바꿔도 이 값이 자동으로 맞는 것은
+# 아니다. MARSIM 렌더 결과 점군은 odom 자세 그대로 world 프레임으로 발행되고 odom→body
+# 변환에 남는 잔여 장착각이 없어 0.0으로 둔다. 실제 물리 장착각이 있는
+# real.yaml/mid360_mlx.yaml 프로파일에서만 이 값이 의미를 가진다.
 cloud_crop/odom_mount_pitch_deg: 0.0
 # [SIM] MARSIM은 cloud/odom 스탬프 일치를 보장하지 않으므로 approximate 유지.
 cloud_crop/sync_policy: approximate
@@ -51,6 +56,11 @@ cloud_crop/visualization_elevation_samples: 8
 global_planning/w_vdir: 0.0
 global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
+# Topology A* time limits for the TSP cost matrix and the RTH/srv_rth goal
+# path. Too small silently mislabels reachable viewpoints/goals as
+# unreachable. Rationale and measured budgets are in real2.yaml; match here.
+global_planning/topo_cost_search_timeout: 0.01  # TSP 비용용 topo A* 제한시간[s]
+global_planning/goal_search_timeout: 0.1        # 목표 경로 topo A* 제한시간[s]
 #viz
 # [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
 view_graph: true
@@ -87,18 +97,22 @@ frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 lidar_perception/fov_up: 15.0
 lidar_perception/fov_down: -15.0
-# The crop bridge tests elevation after transforming each cloud point into the
-# odometry body frame. These bounds are therefore already body-frame bounds.
-# Keep this at zero so PR #1 uses the same effective cone as the crop bridge.
+lidar_perception/fov_horizontal: 120.0      # 물리 수평 FOV [deg] (real2.yaml 정합)
+# lidar_pitch now matches real2.yaml so the FOV cone geometry that the
+# corridor clipping (planner_manager.cpp) and the viewpoint FOV visibility
+# model (frontier_manager.cpp) build from lidar_perception/* is the same cone
+# as on the real ML-X mount. cloud_crop/fov_up|fov_down above are derived from
+# this value (see the cloud_crop/fov_* comment) and were updated to match.
 # This is not the physical MARSIM sensor mount pitch; see MARSIM garage.launch.
-lidar_perception/lidar_pitch: 0.0
-lidar_perception/fov_viewpoint_up: 15.0
-lidar_perception/fov_viewpoint_down: -15.0
-lidar_perception/fov_viewpoint_horizontal: 120.0
+lidar_perception/lidar_pitch: 5.0
+lidar_perception/lidar_yaw: 0.0
+lidar_perception/fov_viewpoint_up: 10.0
+lidar_perception/fov_viewpoint_down: -10.0
+lidar_perception/fov_viewpoint_horizontal: 90.0
 # [LiDAR 장애물 검색 최대거리][m][하드웨어 설정]
 # Topology 갱신과 주변 장애물 KNN 검색에 사용하는 최대거리이며, 검색 결과가 없으면 이 거리만큼 빈 공간으로 간주한다.
 # LiDAR 유효거리와 점군 밀도에 맞춘 검증값이므로 임의로 수정하지 않는다.
-lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.
+lidar_perception/max_ray_length: 30   # real2.yaml 정합
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
 # from growing its flight corridor into space a limited-FOV sensor has not seen.
@@ -119,6 +133,13 @@ FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
 FrontierManager/good_observation_direction_score: 0.6
 FrontierManager/good_observation_force_trust_length: 0.5
+# [Viewpoint 평가: FRONTIER_DIR 셀 신뢰 거리] force_trust_length 는 "라이다 -> 셀"
+# 거리 기준 매핑용이고, 이 값은 "후보 viewpoint -> 셀" 기준이라 의미가 다르다.
+# sample_pillar_max_radius 이상이어야 모든 후보가 공평하게 평가된다. real2.yaml 정합.
+FrontierManager/viewpoint_dir_trust_length: 4.5
+# [Viewpoint 유효 판정 최소 가시 셀 수] raycast 로 실제 보이는 Frontier 셀이 이
+# 개수 미만이면 yaw 스캔도 하지 않고 탈락한다(NO_VIS). real2.yaml 정합.
+FrontierManager/viewpoint_min_visible_cells: 2
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
 FrontierManager/cluster_max_size: 5.0
@@ -131,6 +152,9 @@ FrontierManager/cluster_minmum_point_num: 2
 # 너머는 관측 자체가 불가라, 두면 영영 해소되지 않는 frontier 가 남아 탐사가
 # 끝나지 않거나 같은 지점을 반복 방문한다. 0 이면 비활성.
 FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀]
+# [관측 거부 사유별 점군 발행][진단용] bad_obs 를 far/fov_edge/gap 사유별로 나눠
+# 추가 발행한다. 판정 로직에는 영향 없음(시각화/기록만 추가, bag 크기 증가). real2.yaml 정합.
+FrontierManager/viz_obs_breakdown: false
 # Cylindrical viewpoint sampling.
 ViewpointManager/sample_pillar_min_height: -1.0
 ViewpointManager/sample_pillar_max_height: 1.0
@@ -139,7 +163,14 @@ ViewpointManager/sample_pillar_min_radius: 0.8
 ViewpointManager/sample_pillar_max_radius: 3.0
 ViewpointManager/sample_pillar_radius_layer_num: 4
 ViewpointManager/sample_pillar_circle_sample_num: 12
+# [Viewpoint와 장애물의 최소 거리] 벽이나 장애물에 너무 가까운 viewpoint 후보를
+# 제거한다. real2.yaml 정합.
+ViewpointManager/min_obstacle_clearance: 0.6
 ViewpointManager/local_tsp_size: 8
+# [Viewpoint 도달성 판정 제한시간] topology graph 로 경로가 있는지 A* 로 확인할 때
+# 허용하는 연산시간. global_planning/topo_cost_search_timeout 이상이어야 한다
+# (뒷단이 같은 질의를 그 값으로 재평가하므로). 실측 근거는 real2.yaml 참고.
+ViewpointManager/reachability_search_timeout: 0.01
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
@@ -174,7 +205,7 @@ trajectory_execution/max_lead_time: 0.3
 trajectory_execution/px4_position_p_gain: 1.0  # PX4 수평 위치 P 게인[1/s]
 trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
 MaxVelMag: 0.75
-MaxAccMag: 2.0
+MaxAccMag: 4.0
 maxBdrMag: 10000.0
 MaxTiltAngle: 0.8
 MinThrust: 15.0
@@ -237,6 +268,10 @@ fsm/takeoff_timeout: 2000.0       # match real2.yaml
 fsm/auto_rth_land: false
 # Keep traj_server as the only /position_cmd publisher after FINISH.
 fsm/traj_server_owns_finish_cmd: true
+# Inert while auto_rth_land=false above; kept in sync with real2.yaml so a
+# manual auto_rth_land:=true test run behaves the same as real flight.
+fsm/finish_hover_duration: 3.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
+fsm/rth_land_xy_tol: 0.2          # 홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
 
 # [조기 종료 결론 유예]
 # NO_FRONTIER 는 '탐사 완료'와 '맵이 아직 안 참'을 구분하지 못한다. 첫
@@ -296,3 +331,10 @@ fsm/early_finish_max_retry: 1            # retry attempts before falling back to
 # 못한 공간을 관측완료로 기록하며 되돌릴 수 없다.
 ViewpointManager/vp_reached_pos_tol: 0.6         # 도달로 인정할 거리[m] (viewpoint 도달 + EFP 도달 공용)
 ViewpointManager/vp_reached_yaw_tol_deg: 60.0    # 도달로 인정할 yaw 차[deg] (viewpoint 도달 판정에만)
+# [도달했는데 안 없어지는 Frontier 강제 해소] 뷰포인트까지 갔는데도 그 클러스터의
+# Frontier 가 그대로면 실제로 관측되지 않는다고 보고 DENSE 로 표시해 제거한다
+# (영구적, 되돌릴 수 없음). 탐사가 한 목표에 묶여 멈추는 것을 막는다. 전체 근거는
+# real2.yaml 참고.
+ViewpointManager/vp_reached_clear_enable: true   # 강제 해소 사용
+# [도달 지점 주변 Frontier 일괄 해소][강한 옵션] 0 = 사용 안 함. real2.yaml 정합.
+ViewpointManager/vp_reached_clear_radius: 0.0    # 일괄 해소 반경[m], 0이면 사용 안 함

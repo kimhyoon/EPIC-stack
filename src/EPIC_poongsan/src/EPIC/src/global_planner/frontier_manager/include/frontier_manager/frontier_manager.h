@@ -32,21 +32,21 @@ struct Vector3i_Hash {
 };
 
 struct FrontierParam {
-  float cluster_radius_;
-  float cluster_min_radius_;
-  float cluster_direction_radius_;
-  int cluster_minmum_point_num_;
-  float cell_size_;
-  float inv_cell_size_;
+  float cluster_radius_ = 0.0f;
+  float cluster_min_radius_ = 0.0f;
+  float cluster_direction_radius_ = 0.0f;
+  int cluster_minmum_point_num_ = 0;
+  float cell_size_ = 0.0f;
+  float inv_cell_size_ = 0.0f;
   // [feature: cone-clip] limited-FOV LiDAR boundary model. is_360_lidar_ false
   // => the data-driven yaw FOV-edge scan runs; yaw_fov_ stored in radians.
   bool is_360_lidar_ = true;
   float yaw_fov_ = 2.0f * M_PI;
-  float occ_min_dis_;
-  float good_observation_direction_score_;
-  float good_observation_trust_length_;
-  float update_length_;
-  float good_observation_force_trust_length_;
+  float occ_min_dis_ = 0.0f;
+  float good_observation_direction_score_ = 0.0f;
+  float good_observation_trust_length_ = 0.0f;
+  float update_length_ = 0.0f;
+  float good_observation_force_trust_length_ = 0.0f;
   // [feature: split-trust-length] 뷰포인트 평가에서 FRONTIER_DIR 셀(gap/FOV-edge
   // 로 표시된 셀)을 "보인다"고 인정할 최대 거리 [m]. 기준점은 후보 뷰포인트다.
   //
@@ -62,9 +62,9 @@ struct FrontierParam {
   // 실제로 보여야 하는 최소 프론티어 셀 수. 원래 코드에 3 으로 박혀 있었다.
   // 이 문턱을 못 넘으면 yaw 스캔조차 하지 않고 score=0 -> NO_VIS 로 탈락한다.
   int viewpoint_min_visible_cells_ = 3;
-  int dense_cell_cloud_num_;
-  int sparse_cell_cloud_num_;
-  int noise_cell_range_;
+  int dense_cell_cloud_num_ = 0;
+  int sparse_cell_cloud_num_ = 0;
+  int noise_cell_range_ = 0;
   // [feature: box-margin] 탐사 박스 경계로부터 이 셀 수 이내의 bad 관측 셀은
   // frontier 로 승격하지 않는다 (경계 너머 관측 불가 → 해소 안 되는 frontier 방지).
   // 기본 0 = 비활성. yaml 의 FrontierManager/box_boundary_margin 으로만 켠다.
@@ -73,31 +73,32 @@ struct FrontierParam {
   // 진단 전용이며 판정 로직에는 영향이 없다. bad_obs 와 같은 양의 점군이 한 벌
   // 더 나가므로(약 2배) 대역폭·bag 크기가 늘어난다. 원인 규명이 끝나면 끌 것.
   bool viz_obs_breakdown_ = true;
-  float cluster_min_size_;
-  Eigen::Vector3f map_min_;
-  Eigen::Vector3f map_max_;
-  Eigen::Vector3i cell_max_cnt_;
-  Eigen::Vector3i bits_need_;
-  uint8_t idx_byte_size_;
-  bool view_cluster_, view_frt_;
+  float cluster_min_size_ = 0.0f;
+  Eigen::Vector3f map_min_ = Eigen::Vector3f::Zero();
+  Eigen::Vector3f map_max_ = Eigen::Vector3f::Zero();
+  Eigen::Vector3i cell_max_cnt_ = Eigen::Vector3i::Zero();
+  Eigen::Vector3i bits_need_ = Eigen::Vector3i::Zero();
+  uint8_t idx_byte_size_ = 0;
+  bool view_cluster_ = false, view_frt_ = false;
 };
 
 struct ViewpointParam {
-  int sample_pillar_circle_sample_num_, sample_pillar_radius_layer_num_,
-      sample_pillar_height_layer_num_;
-  float sample_pillar_min_height_, sample_pillar_max_height_,
-      sample_pillar_min_radius_, sample_pillar_max_radius_,
-      view_direction_range_;
-  float fov_up_, fov_down_, lidar_pitch_;
+  int sample_pillar_circle_sample_num_ = 0, sample_pillar_radius_layer_num_ = 0,
+      sample_pillar_height_layer_num_ = 0;
+  float sample_pillar_min_height_ = 0.0f, sample_pillar_max_height_ = 0.0f,
+      sample_pillar_min_radius_ = 0.0f, sample_pillar_max_radius_ = 0.0f;
+  float fov_up_ = 0.0f, fov_down_ = 0.0f, lidar_pitch_ = 0.0f;
   // 수평 FOV 절반각 [rad] (fov_viewpoint_horizontal/2, 미설정 시 180deg=전방위)
   // + 센서 장착 yaw [deg] (lidar_pitch_ 와 같은 의미: odom 프레임 대비 장착 회전)
-  float fov_h_half_, lidar_yaw_;
+  float fov_h_half_ = 0.0f, lidar_yaw_ = 0.0f;
   // 뷰포인트가 장애물(벽)에서 최소 떨어져야 하는 거리[m].
   // 이보다 가까운 후보 뷰포인트는 탈락 -> 폭이 2*이 값보다 좁은 복도는
   // 유효 뷰포인트가 없어 "도달 불가"로 낙인되어 탐사 제외됨.
   // 낮추면 좁은 복도까지 탐사(단 벽에 근접 비행), 높이면 보수적.
-  float min_obstacle_clearance_;
-  int consider_range_, global_recluster_size_, local_tsp_size_;
+  float min_obstacle_clearance_ = 0.0f;
+  // ViewpointManager/local_tsp_size: 실비행 config(real.yaml/real1.yaml/real2.yaml)가
+  // 공통으로 쓰는 값 8을 기본값으로 삼는다 (nh.param 기본값과 동일하게 맞춤).
+  int local_tsp_size_ = 8;
   // [feature: vp-viz] 샘플링된 viewpoint 후보 전체를 탈락 사유별 색으로 발행할지.
   // 후보는 클러스터당 radius_layer*circle_sample*height_layer 개라 수천 개가 될 수
   // 있어 기본 on 이되 화살표 수만 상한을 둔다 (구는 SPHERE_LIST 라 비용이 낮다).

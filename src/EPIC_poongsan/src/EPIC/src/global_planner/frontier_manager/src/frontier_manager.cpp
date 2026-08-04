@@ -84,10 +84,10 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.param("ViewpointManager/min_obstacle_clearance",
            vpp_.min_obstacle_clearance_, 0.9f);
 
-  nh.getParam("ViewpointManager/consider_range", vpp_.consider_range_);
-  nh.getParam("ViewpointManager/global_recluster_size",
-              vpp_.global_recluster_size_);
-  nh.getParam("ViewpointManager/local_tsp_size", vpp_.local_tsp_size_);
+  // 키 없으면 8 유지(동작 불변) — 실비행 config(real.yaml/real1.yaml/real2.yaml)가
+  // 공통으로 쓰는 값. getParam 은 실패해도 멤버를 건드리지 않아 미초기화로 남길
+  // 수 있어 nh.param 으로 바꿨다.
+  nh.param("ViewpointManager/local_tsp_size", vpp_.local_tsp_size_, 8);
   // [feature: vp-viz] 후보 시각화 (viewpoint_candidates 토픽)
   nh.param("ViewpointManager/viz_candidates", vpp_.viz_candidates_, true);
   nh.param("ViewpointManager/viz_max_yaw_arrows", vpp_.viz_max_yaw_arrows_, 300);
@@ -139,7 +139,6 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh.param("lidar_perception/yaw_fov", yaw_fov_deg, 360.0f);
   frtp_.yaw_fov_ = yaw_fov_deg * static_cast<float>(M_PI) / 180.0f;
 
-  vpp_.view_direction_range_ = cos(vpp_.view_direction_range_ * M_PI / 180.0);
   vpp_.fov_up_ = vpp_.fov_up_ * M_PI / 180.0;
   vpp_.fov_down_ = vpp_.fov_down_ * M_PI / 180.0;
   vpp_.fov_h_half_ = fov_vp_horizontal / 2.0f * M_PI / 180.0;

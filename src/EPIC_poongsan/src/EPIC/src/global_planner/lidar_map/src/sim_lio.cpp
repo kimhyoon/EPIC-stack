@@ -137,24 +137,45 @@ bool LIOInterface::updateCloudMapOdometry(
   pcl::removeNaNFromPointCloud(cloud_input, finite_cloud, finite_indices);
   cloud_input.swap(finite_cloud);
 
-  // The ML-X /ml_/pointcloud stream pads each organized scan with exact
-  // (0, 0, 0) placeholders. PCL considers them finite, and the voxel filter
-  // would otherwise turn hundreds of placeholders into a real obstacle at the
-  // world origin. Remove only the exact sentinel; valid nearby returns remain.
-  const auto zero_begin = std::remove_if(
+  // The ML-X /ml_/pointcloud stream contains exact zero placeholders and can
+  // also report physically invalid returns just centimetres from the sensor.
+  // Reject both before voxelization and, critically, before permanent map
+  // insertion. The radial range test is valid only for sensor-frame clouds;
+  // world-frame coordinates must never be measured from the world origin.
+  size_t zero_point_count = 0;
+  size_t near_point_count = 0;
+  const double min_range_squared =
+      lp_->min_ray_length_ * lp_->min_ray_length_;
+  const auto invalid_begin = std::remove_if(
       cloud_input.points.begin(), cloud_input.points.end(),
-      [](const pcl::PointXYZ &point) {
-        return point.x == 0.0f && point.y == 0.0f && point.z == 0.0f;
+      [&](const pcl::PointXYZ &point) {
+        if (point.x == 0.0f && point.y == 0.0f && point.z == 0.0f) {
+          ++zero_point_count;
+          return true;
+        }
+        const double range_squared =
+            static_cast<double>(point.x) * point.x +
+            static_cast<double>(point.y) * point.y +
+            static_cast<double>(point.z) * point.z;
+        if (needs_transform_ && range_squared <= min_range_squared) {
+          ++near_point_count;
+          return true;
+        }
+        return false;
       });
-  const size_t zero_point_count =
-      std::distance(zero_begin, cloud_input.points.end());
-  cloud_input.points.erase(zero_begin, cloud_input.points.end());
+  cloud_input.points.erase(invalid_begin, cloud_input.points.end());
   cloud_input.width = static_cast<uint32_t>(cloud_input.points.size());
   cloud_input.height = 1;
   if (zero_point_count > 0) {
     ROS_DEBUG_THROTTLE(5.0,
                        "[LIOInterface] removed %zu zero-point placeholders",
                        zero_point_count);
+  }
+  if (near_point_count > 0) {
+    ROS_DEBUG_THROTTLE(
+        5.0,
+        "[LIOInterface] rejected %zu sensor returns at/below %.3f m",
+        near_point_count, lp_->min_ray_length_);
   }
   if (cloud_input.empty()) {
     ROS_WARN_THROTTLE(1.0,

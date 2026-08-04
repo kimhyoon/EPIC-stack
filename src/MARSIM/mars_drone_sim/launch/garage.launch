@@ -17,6 +17,11 @@
              mounting angle from an NED/FRD drawing without converting frames. -->
         <arg name="lidar_pitch" default="25.0" />
 
+        <!-- true (default): cascadePID's px4_like_cmd param, matching PX4's
+             position+yaw-only OFFBOARD tracking (type_mask=2552). false:
+             legacy full pos+vel+acc feed-forward into cascadePID. -->
+        <arg name="use_px4_bridge" default="true" />
+
         <arg name="frame_id" value="world" />
         <arg name="global_cloud_topic" value="/map_generator/global_cloud" />
         <arg name="odom_topic" value="/lidar_slam/odom" />
@@ -96,6 +101,7 @@
                 <arg name="use_gpu" value="$(arg use_gpu_)" />
                 <arg name="use_uav_extra_model_" value="$(arg use_uav_extra_model)" />
                 <arg name="sensing_horizon" value="$(arg sensing_horizon)" />
+                <arg name="use_px4_bridge" value="$(arg use_px4_bridge)" />
         </include>
 
         <!-- <node name="rvizvisualisation" pkg="rviz" type="rviz" output="screen"

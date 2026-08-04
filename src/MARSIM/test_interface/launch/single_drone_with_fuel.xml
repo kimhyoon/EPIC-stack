@@ -13,6 +13,9 @@
     <arg name="use_uav_extra_model_" />
     <arg name="sensing_horizon" />
     <arg name="lidar_pitch_" />
+    <!-- true (default): cascadePID only ingests position + yaw, matching PX4's
+         type_mask=2552 in OFFBOARD. false: legacy full pos+vel+acc feed-forward. -->
+    <arg name="use_px4_bridge" default="true" />
 
 
     <node pkg="mars_drone_sim" name="quad$(arg drone_id)_quadrotor_dynamics"
@@ -43,6 +46,7 @@
         <param name="init_state_yaw" value="$(arg init_yaw)" />
         <param name="angle_stable_time" value="0.1" />
         <param name="damping_ratio" value="1.1" />
+        <param name="px4_like_cmd" value="$(arg use_px4_bridge)" />
     </node>
 
 

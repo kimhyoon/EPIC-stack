@@ -27,7 +27,7 @@
        (rviz/*, record/* 와 동일 패턴. 노드는 항상 뜨고 yaml 값으로 스스로 판단):
          local_avoidance/enable : 회피. false 면 노드가 시작 직후 자진 종료
          cloud_crop/enable      : ML-X crop. false 면 브릿지가 자진 종료 -->
-  <arg name="config_file" default="real.yaml"/>
+  <arg name="config_file" default="real2.yaml"/>
   <arg name="auto_arm"    default="false"/>              <!-- true 면 브리지가 OFFBOARD+arm 자동 요청 -->
 
   <!-- MID360-to-ML-X crop 브릿지. on/off 는 profile yaml 의 cloud_crop/enable.

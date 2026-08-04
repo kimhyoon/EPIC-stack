@@ -129,8 +129,24 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   nh.param("lidar_perception/fov_horizontal", lp_->fov_horizontal, 360.0);
   nh.param("lidar_perception/fov_viewpoint_up", lp_->fov_vp_up, -0.1);
   nh.param("lidar_perception/fov_viewpoint_down", lp_->fov_vp_down, -0.1);
+  // Keep older profiles valid while allowing raw sensor returns inside the
+  // LiDAR's reliable minimum range to be rejected before map insertion.
+  nh.param("lidar_perception/min_ray_length", lp_->min_ray_length_, 0.0);
+  if (!std::isfinite(lp_->min_ray_length_) || lp_->min_ray_length_ < 0.0) {
+    ROS_FATAL("[LIOInterface] lidar_perception/min_ray_length must be a "
+              "non-negative finite distance.");
+    ros::shutdown();
+    exit(1);
+  }
   requirePositiveFinite("lidar_perception/max_ray_length",
                         lp_->max_ray_length_);
+  if (lp_->min_ray_length_ >= lp_->max_ray_length_) {
+    ROS_FATAL("[LIOInterface] lidar_perception/min_ray_length (%.3f m) must "
+              "be less than max_ray_length (%.3f m).",
+              lp_->min_ray_length_, lp_->max_ray_length_);
+    ros::shutdown();
+    exit(1);
+  }
   ld_->first_map_flag_ = true;
 
   // Initialize TF listener for frame transforms.
@@ -188,6 +204,9 @@ void LIOInterface::init(ros::NodeHandle &nh) {
              mount_offset.size() == 3 ? mount_offset[0] : 0.0,
              mount_offset.size() == 3 ? mount_offset[1] : 0.0,
              mount_offset.size() == 3 ? mount_offset[2] : 0.0);
+    ROS_INFO("[LIOInterface] sensor minimum-range filter: rejecting returns "
+             "at or below %.3f m",
+             lp_->min_ray_length_);
   } else if (frame_mode == "auto") {
     ROS_WARN("[LIOInterface] cloud_frame_mode=auto: inferring cloud transform "
              "from frame_id strings. Use explicit world/sensor mode for real flight.");

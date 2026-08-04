@@ -1,17 +1,50 @@
 # ===========================================================================
 # map1 = garage.pcd  x  ML-X sensor config (120deg x 30deg cloud crop).
 #
-# Identical to garage.yaml (which is map2 = poongsan_garage) EXCEPT the three
-# map-dependent values below, restored from the pre-docker tree's
-# garage_120fov.yaml:
+# Aligned to real2.yaml (real-flight truth) the same way garage.yaml (map2)
+# was aligned earlier; see garage.yaml's inline comments for the per-key
+# rationale. Two map-dependent values are kept different from garage.yaml/
+# real2.yaml on purpose, because they depend on this site's geometry rather
+# than on the vehicle:
 #   box_0/*                        - garage.pcd spans x -5.13..177.33,
 #                                    y -4.60..144.27, z -0.03..10.03
-#   bubble_topo/odom_node_distance - map1 keeps the original 5.0 m trail
-#   global_planning/w_yawdir       - map1 ignores yaw-rotation cost
+#   bubble_topo/odom_node_distance - kept at the original 5.0 m trail
+#                                    spacing (garage_120fov.yaml); map2's
+#                                    poongsan_garage.pcd uses 1.5 m for its
+#                                    much narrower corridors.
 # The ML-X emulation (cloud_crop/*) is identical to map2 by design: same
 # sensor, different site.
 #
 # Launch with: roslaunch sim_bringup garage_map1_mlx.launch
+#
+# ---------------------------------------------------------------------------
+# [조사 기록] "이 파일을 real2.yaml 에 정합했더니 exploration_node 가 죽는다"
+# 는 보고가 있었으나, 원인은 **이 파일의 어떤 값도 아니다**. 범인은 공유
+# roscore 에서 발생한 ROS 노드 이름 충돌이다.
+#
+#   [WARN] Shutdown request received.
+#   [WARN] Reason given for shutdown: [[/exploration_node] Reason: new node
+#          registered with same name]
+#
+# 두 번째 노드가 같은 이름으로 등록되면 master 가 먼저 뜬 노드에 shutdown 을
+# 지시하고, roscpp 는 이를 **별도 스레드에서 비동기로** 처리한다. main() 이
+# 아직 init() 안에 있는 동안 ros::shutdown() 이 돌면 Publisher/mutex 가 먼저
+# 무효화되어, 그 다음 publish 나 소멸자가 그대로 터진다:
+#   FastExplorationFSM::init -> publishEarlyFinishStatus -> Publisher::publish
+#   또는  ~FastExplorationFSM -> ... -> boost::lock_error
+#     (what(): boost: mutex lock failed in pthread_mutex_lock: Invalid argument)
+#
+# 검증: **원본(정합 전) 설정 그대로** 격리된 roscore 에서 같은 이름의 노드를
+# init 도중(약 20.6~26 s)에 띄우면 위 두 스택이 100% 재현된다. 반대로 충돌이
+# 없으면 정합된 설정으로도 crash 가 나지 않는다(격리 8회 0 crash).
+# 즉 A/B 실험이 "정합=crash / 원본=정상" 으로 보였던 것은 정합 쪽 실행만
+# 다른 sim/replay 와 겹쳐 돌았기 때문이다(로그에 노드 12개가 이름 충돌로
+# 죽은 기록이 남아 있다).
+#
+# => 이 파일에는 crash 를 유발하는 값이 없으므로 real2.yaml 정합값을 전부
+#    유지한다. sim 을 돌릴 때는 이전 실행의 노드가 남아 있지 않은지 먼저
+#    확인할 것 (`rosnode list`) — 그것이 이 crash 의 유일한 방아쇠다.
+# ---------------------------------------------------------------------------
 # ===========================================================================
 planner_debug/enable: true
 #topic param:
@@ -25,17 +58,22 @@ cloud_topic: /quad0_pcl_render_node/cloud
 cloud_crop/enable: true
 cloud_crop/output_topic: /quad0_pcl_render_node/cloud_cropped
 # [파라미터 규약] cloud_crop/fov_* 는 body(기체) 프레임 기준. body 값 =
-# lidar_perception/fov_up/fov_down(15.0/-15.0) − lidar_perception/lidar_pitch(0.0) = 15.0/-15.0.
+# lidar_perception/fov_up/fov_down(15.0/-15.0) − lidar_perception/lidar_pitch(5.0) = 10.0/-20.0.
+# cloud_crop_bridge 가 기동 시 이 정합식을 자체검사한다(strict_fov_alignment=true이면
+# 안 맞으면 노드가 안 뜬다) — lidar_pitch 를 바꾸면 이 두 값도 같이 바꿔야 한다.
 cloud_crop/fov_horizontal: 120.0
-cloud_crop/fov_up: 15.0
-cloud_crop/fov_down: -15.0
+cloud_crop/fov_up: 10.0
+cloud_crop/fov_down: -20.0
 cloud_crop/yaw_offset_deg: 0.0
 cloud_crop/min_range: 0.0
 cloud_crop/max_range: 30.0
 # [SIM][불확실] MARSIM odom(/quad_0/lidar_slam/odom)이 수평(body) 자세인지 센서 자세인지
-# 확인하지 못했다. 다만 아래 lidar_perception/lidar_pitch가 0.0(라이다가 애초에 기울어
-# 있지 않음)이라 두 경우의 구분 자체가 무의미하므로 0.0으로 둔다. 실제 물리 장착각이 있는
-# real.yaml/mid360_mlx.yaml 프로파일에서만 이 값이 lidar_pitch와 짝을 이뤄 의미를 가진다.
+# 확인하지 못했다. 이 값은 그 확인이 필요한 별개의 물리 장착보정(odom→body)이며,
+# lidar_perception/lidar_pitch(FOV 콘/코리도어 클리핑용, odom 프레임 대비 회전)와는
+# 독립적이다 — 후자를 real2.yaml 정합을 위해 5.0으로 바꿔도 이 값이 자동으로 맞는 것은
+# 아니다. MARSIM 렌더 결과 점군은 odom 자세 그대로 world 프레임으로 발행되고 odom→body
+# 변환에 남는 잔여 장착각이 없어 0.0으로 둔다. 실제 물리 장착각이 있는
+# real.yaml/mid360_mlx.yaml 프로파일에서만 이 값이 의미를 가진다.
 cloud_crop/odom_mount_pitch_deg: 0.0
 # [SIM] MARSIM은 cloud/odom 스탬프 일치를 보장하지 않으므로 approximate 유지.
 cloud_crop/sync_policy: approximate
@@ -55,9 +93,14 @@ cloud_crop/visualization_rate_hz: 1.0
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
-global_planning/w_vdir: 1.2          # Desktop 120-degree comparison value.
-global_planning/w_yawdir: 0.0        # [map1] ignore yaw-rotation cost (garage_120fov.yaml value).
+global_planning/w_vdir: 0.0
+global_planning/w_yawdir: 0.0
 global_planning/w_firstnode: 0.2
+# Topology A* time limits for the TSP cost matrix and the RTH/srv_rth goal
+# path. Too small silently mislabels reachable viewpoints/goals as
+# unreachable. Rationale and measured budgets are in real2.yaml; match here.
+global_planning/topo_cost_search_timeout: 0.01  # TSP 비용용 topo A* 제한시간[s]
+global_planning/goal_search_timeout: 0.1        # 목표 경로 topo A* 제한시간[s]
 #viz
 # [SIM keep] real=true enables heavy visualization and can overload RViz; keep false.
 view_graph: true
@@ -67,17 +110,18 @@ FrontierManager/view_frt: true
 bubble_topo/min_x: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_y: 0.6                # Desktop 120-degree comparison value.
 bubble_topo/min_z: 0.3                # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_x: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_y: 2.5   # Desktop 120-degree comparison value.
-bubble_topo/init_region_size_z: 2.0
+bubble_topo/init_region_size_x: 1.5
+bubble_topo/init_region_size_y: 1.5
+bubble_topo/init_region_size_z: 1.0
 bubble_topo/cube_discrete_size: 0.25  # Desktop YAML value; algorithm.xml overrides both runtimes to 0.3.
-bubble_topo/odom_node_distance: 5.0   # [map1] original odom-trail spacing [m]; map2 uses 1.0 for narrow corridors.
+bubble_topo/odom_node_distance: 5.0   # [map1] kept at the original garage_120fov.yaml trail spacing [m];
+                                       # map2/real2.yaml use 1.5 for their narrower corridors. See header.
 # topology 노드 생성·유지와 엣지 연결은 이 안전거리 하나를 공통으로 사용한다.
 # 별도 node 반경, 하드코딩 +0.1 m 및 goal 반경 추가 0.01 m로 판정이 달랐던 기존 구조는 연결 실패와 설정 해석 혼선을 줄이기 위해 제거했다.
 bubble_astar/safe_distance: 0.6
 # 갱신 전후 node 중심이 이 거리 이내이고 기존 node가 safe_distance를 만족하면 같은 연결점으로 유지한다.
 # 안전거리 미달 node는 위치 차이와 관계없이 매칭하지 않고 제거한다.
-bubble_topo/node_match_tolerance: 0.10
+bubble_topo/node_match_tolerance: 0.30
 # [신규 Topology 노드 생성 안정화 여유거리]
 # 새 경로 연결점은 공통 안전거리보다 이 값만큼 더 멀리 있을 때만 topology graph에 처음 추가한다.
 # 값 증가 시 안전거리 경계의 node 생성·삭제 반복은 줄지만 좁은 통로의 신규 연결점이 감소할 수 있고, 값 감소 시 신규 연결점은 늘지만 경계에서 graph가 흔들릴 수 있다.
@@ -94,18 +138,22 @@ frontier/candidate_dphi: 0.26
 frontier/candidate_znum: 3
 lidar_perception/fov_up: 15.0
 lidar_perception/fov_down: -15.0
-# The crop bridge tests elevation after transforming each cloud point into the
-# odometry body frame. These bounds are therefore already body-frame bounds.
-# Keep this at zero so PR #1 uses the same effective cone as the crop bridge.
+lidar_perception/fov_horizontal: 120.0      # 물리 수평 FOV [deg] (real2.yaml 정합)
+# lidar_pitch now matches real2.yaml so the FOV cone geometry that the
+# corridor clipping (planner_manager.cpp) and the viewpoint FOV visibility
+# model (frontier_manager.cpp) build from lidar_perception/* is the same cone
+# as on the real ML-X mount. cloud_crop/fov_up|fov_down above are derived from
+# this value (see the cloud_crop/fov_* comment) and were updated to match.
 # This is not the physical MARSIM sensor mount pitch; see MARSIM garage.launch.
-lidar_perception/lidar_pitch: 0.0
-lidar_perception/fov_viewpoint_up: 15.0
-lidar_perception/fov_viewpoint_down: -15.0
-lidar_perception/fov_viewpoint_horizontal: 120.0
+lidar_perception/lidar_pitch: 5.0
+lidar_perception/lidar_yaw: 0.0
+lidar_perception/fov_viewpoint_up: 10.0
+lidar_perception/fov_viewpoint_down: -10.0
+lidar_perception/fov_viewpoint_horizontal: 90.0
 # [LiDAR 장애물 검색 최대거리][m][하드웨어 설정]
 # Topology 갱신과 주변 장애물 KNN 검색에 사용하는 최대거리이며, 검색 결과가 없으면 이 거리만큼 빈 공간으로 간주한다.
 # LiDAR 유효거리와 점군 밀도에 맞춘 검증값이므로 임의로 수정하지 않는다.
-lidar_perception/max_ray_length: 18   # [SIM keep] real=1.5 would limit sensing beyond 1.5 m.
+lidar_perception/max_ray_length: 30   # real2.yaml 정합
 # ===== [feature: cone-clip] Local SFC corridor clipping to observed FOV cone =====
 # OFF by default -> behavior identical to before. Enable to stop the local planner
 # from growing its flight corridor into space a limited-FOV sensor has not seen.
@@ -120,33 +168,50 @@ local_planning/p0_len_x: 0.6   # P0 seed box body-x (fwd/back) full length [m]
 local_planning/p0_len_y: 0.6   # P0 seed box body-y (left/right) full length [m]
 local_planning/p0_up: 0.2      # P0 extent above the flight controller [m]
 local_planning/p0_down: 0.2    # P0 extent below the flight controller [m]
-parallel_astar/update_connection_timeout: 0.002
-parallel_astar/insert_node_timeout: 0.002
+parallel_astar/update_connection_timeout: 0.01
+parallel_astar/insert_node_timeout: 0.01
 FrontierManager/cell_size: 0.2
 FrontierManager/noise_cell_range: 1
-FrontierManager/good_observation_direction_score: 0.8   # Desktop 120-degree comparison value.
-FrontierManager/good_observation_force_trust_length: 5.0
+FrontierManager/good_observation_direction_score: 0.6
+FrontierManager/good_observation_force_trust_length: 0.5
+# [Viewpoint 평가: FRONTIER_DIR 셀 신뢰 거리] force_trust_length 는 "라이다 -> 셀"
+# 거리 기준 매핑용이고, 이 값은 "후보 viewpoint -> 셀" 기준이라 의미가 다르다.
+# sample_pillar_max_radius 이상이어야 모든 후보가 공평하게 평가된다. real2.yaml 정합.
+FrontierManager/viewpoint_dir_trust_length: 4.5
+# [Viewpoint 유효 판정 최소 가시 셀 수] raycast 로 실제 보이는 Frontier 셀이 이
+# 개수 미만이면 yaw 스캔도 하지 않고 탈락한다(NO_VIS). real2.yaml 정합.
+FrontierManager/viewpoint_min_visible_cells: 2
 FrontierManager/good_observation_trust_length: 12.0
 FrontierManager/update_length: 15.0 # Keep slightly larger than trust_length; larger values add little benefit.
-FrontierManager/cluster_max_size: 3.0
-FrontierManager/cluster_min_size: 1.0
+FrontierManager/cluster_max_size: 5.0
+FrontierManager/cluster_min_size: 0.5
 FrontierManager/cluster_min_radius: 1.0 # Desktop 120-degree comparison value.
-FrontierManager/cluster_direction_radius: 0.75 # Desktop 120-degree comparison value.
-FrontierManager/cluster_minmum_point_num: 3
+FrontierManager/cluster_direction_radius: 0.8
+FrontierManager/cluster_minmum_point_num: 2
 # [탐사 박스 경계 Frontier 제거]
 # 박스 경계 margin*cell_size 이내의 셀은 frontier 승격 경로에서 제외한다. 경계
 # 너머는 관측 자체가 불가라, 두면 영영 해소되지 않는 frontier 가 남아 탐사가
 # 끝나지 않거나 같은 지점을 반복 방문한다. 0 이면 비활성.
 FrontierManager/box_boundary_margin: 2  # 경계 Frontier 억제 폭[셀]
+# [관측 거부 사유별 점군 발행][진단용] bad_obs 를 far/fov_edge/gap 사유별로 나눠
+# 추가 발행한다. 판정 로직에는 영향 없음(시각화/기록만 추가, bag 크기 증가). real2.yaml 정합.
+FrontierManager/viz_obs_breakdown: false
 # Cylindrical viewpoint sampling.
-ViewpointManager/sample_pillar_min_height: -1.5  # Desktop 120-degree comparison value.
-ViewpointManager/sample_pillar_max_height: 1.5   # Desktop 120-degree comparison value.
-ViewpointManager/sample_pillar_height_layer_num: 5      # [synced: real]
-ViewpointManager/sample_pillar_min_radius: 0.3
-ViewpointManager/sample_pillar_max_radius: 9.0
-ViewpointManager/sample_pillar_radius_layer_num: 8
+ViewpointManager/sample_pillar_min_height: -1.0
+ViewpointManager/sample_pillar_max_height: 1.0
+ViewpointManager/sample_pillar_height_layer_num: 9
+ViewpointManager/sample_pillar_min_radius: 0.8
+ViewpointManager/sample_pillar_max_radius: 3.0
+ViewpointManager/sample_pillar_radius_layer_num: 4
 ViewpointManager/sample_pillar_circle_sample_num: 12
-ViewpointManager/local_tsp_size: 20
+# [Viewpoint와 장애물의 최소 거리] 벽이나 장애물에 너무 가까운 viewpoint 후보를
+# 제거한다. real2.yaml 정합.
+ViewpointManager/min_obstacle_clearance: 0.6
+ViewpointManager/local_tsp_size: 8
+# [Viewpoint 도달성 판정 제한시간] topology graph 로 경로가 있는지 A* 로 확인할 때
+# 허용하는 연산시간. global_planning/topo_cost_search_timeout 이상이어야 한다
+# (뒷단이 같은 질의를 그 값으로 재평가하므로). 실측 근거는 real2.yaml 참고.
+ViewpointManager/reachability_search_timeout: 0.01
 # area  [map1: garage.pcd — the large ~177x144 m site, NOT poongsan's 39x28 box]
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
@@ -155,7 +220,7 @@ box_0/down: [-10.0, -6.0, 0.2]
 box_0/up: [182.0, 150.2, 3.8]
 dead_area_num: 0
 # trajectory param
-max_traj_len: 10.0
+max_traj_len: 5.0
 
 # Corridor/FIRI generation parameters. Field-tuning effects are documented in real.yaml.
 local_planning/corridor/obstacle_voxel_size: 0.28       # Increase: faster/coarser obstacle input; decrease: slower/denser input.
@@ -170,31 +235,34 @@ local_planning/corridor/overlap_tolerance: 0.01         # Minimum numerical inte
 local_planning/corridor/fallback_target_margin: 0.1     # Keep fallback targets this far inside the connected corridor [m].
 local_planning/corridor/fallback_min_progress: 0.5      # Reject fallback targets with less guide-path progress [m].
 
-DilateRadiusSoft: 0.7 # Desktop 120-degree comparison value.
-DilateRadiusHard: 0.4 # Desktop 120-degree comparison value.
-MaxCorridorSize: 3.5   # Desktop 120-degree comparison value.
-# Slow trajectory phase continuously as the position command approaches its odometry-based lead limit.
+DilateRadiusSoft: 0.6
+DilateRadiusHard: 0.45
+MaxCorridorSize: 4.0
+# Slow trajectory phase continuously as the command approaches the measured vehicle lead limit.
 trajectory_execution/max_lead_time: 0.3
+# PX4에는 velocity setpoint를 보내지 않고 position setpoint만 전달한다.
+# 계획 속도를 PX4 위치 P 제어의 위치 오차로 변환하기 위해 실제 MPC_XY_P와 동일하게 설정한다.
+trajectory_execution/px4_position_p_gain: 1.0  # PX4 수평 위치 P 게인[1/s]
 trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
-MaxVelMag: 2.0
-MaxAccMag: 2.0
+MaxVelMag: 0.75
+MaxAccMag: 4.0
 maxBdrMag: 10000.0
-MaxTiltAngle: 0.5 # Desktop 120-degree comparison value.
+MaxTiltAngle: 0.8
 MinThrust: 15.0
 MaxThrust: 22.0
 VehicleMass: 1.9
 GravAcc: 9.8
-HorizDrag: 0.70   # [SIM keep] matched to simulation dynamics; do not use real=0.0 here.
-VertDrag: 0.80    # [SIM keep] do not use real=0.0 here.
-ParasDrag: 0.01   # [SIM keep] do not use real=0.0 here.
+HorizDrag: 0.0
+VertDrag: 0.0
+ParasDrag: 0.0
 SpeedEps: 0.0001
-WeightT: 2000.0   # Desktop 120-degree comparison value.
-WeightSafeT: 400.0 # Desktop 120-degree comparison value.
+WeightT: 700.0
+WeightSafeT: 200.0
 # [pos_weight, vel_weight, omg_weight, theta_weight, thrust_weight]
-ChiVec: [2.0e+5, 1.5e+4, 1.0e+4, 1.0e+5, 1.0e+5]  # Desktop 120-degree comparison value.
-PvaRunningWeights: [2.0e+5, 1.5e+4, 1.0e+4]
+ChiVec: [1.1e+5, 1.5e+4, 1.1e+4, 1.1e+5, 1.1e+6]
+PvaRunningWeights: [1.1e+5, 1.5e+4, 1.1e+4]
 PvaInitialWeights: [1.0e+2, 1.0e+2]
-PvaTerminalWeights: [2.0e+5, 1.5e+4, 1.0e+4]
+PvaTerminalWeights: [1.1e+5, 1.5e+4, 1.1e+4]
 SmoothingEps: 0.015
 IntegralIntervs: 32
 
@@ -209,13 +277,13 @@ numerical/flatness_norm_eps: 1.0e-6  # Flatness 변환의 norm·분모 하한
 numerical/min_path_segment_length: 5.0e-2  # 서로 붙은 guide point를 하나로 합칠 거리[m]
 numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 pivot 절대값 하한
 
-RelCostTol: 1.0e-6  # Desktop 120-degree comparison value.
+RelCostTol: 1.1e-6
 #param for yaw opt
-yaw_max_vel: 2.0    # Desktop 120-degree comparison value.
+yaw_max_vel: 1.5
 yaw_rho_vis: 10000.0
-yaw_time_fwd: 3.0   # Desktop 120-degree comparison value.
+yaw_time_fwd: 2.5
 # FSM param
-fsm/goal_tolerance: 0.2
+fsm/goal_tolerance: 0.3
 fsm/max_segment_length: 99.0
 fsm/local_planning_max_hz: 30.0  # Max local planning frequency (Hz). Lower to simulate slow planning.
 
@@ -232,14 +300,18 @@ fsm/emergency_replan_control_error: 3.0
 fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain below box_0/up z.
 fsm/takeoff_reach_tol: 0.15       # height is reached when |z - target| is below this value.
 fsm/takeoff_settle_vel: 0.4       # considered settled when odom velocity is below this value.
-fsm/takeoff_settle_time: 0.3      # start exploration after this many seconds in the reached+settled state.
-fsm/takeoff_timeout: 20.0         # timeout [s]: explore if near height; otherwise keep hover and warn.
+fsm/takeoff_settle_time: 0.03     # match real2.yaml
+fsm/takeoff_timeout: 2000.0       # match real2.yaml
 
 # MARSIM validation stops in FINISH. Automatic RTH and landing remain disabled
 # until FINISH command ownership between the FSM and traj_server is resolved.
 fsm/auto_rth_land: false
 # Keep traj_server as the only /position_cmd publisher after FINISH.
 fsm/traj_server_owns_finish_cmd: true
+# Inert while auto_rth_land=false above; kept in sync with real2.yaml so a
+# manual auto_rth_land:=true test run behaves the same as real flight.
+fsm/finish_hover_duration: 3.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
+fsm/rth_land_xy_tol: 0.2          # 홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
 
 # [조기 종료 결론 유예]
 # NO_FRONTIER 는 '탐사 완료'와 '맵이 아직 안 참'을 구분하지 못한다. 첫
@@ -247,7 +319,7 @@ fsm/traj_server_owns_finish_cmd: true
 # frontier 가 한 번이라도 잡히면 즉시 통과한다. 아래 EARLY_FINISH 와는
 # 별개의 1차 방어선이며, 여태 어느 프로파일에도 없어 코드 기본값 5.0초로
 # 돌고 있었다.
-fsm/explore_warmup_timeout: 15.0   # [s] frontier 0개 결론 유예 시간
+fsm/explore_warmup_timeout: 5.0    # [s] frontier 0개 결론 유예 시간
 
 # Early-finish rescue. When exploration ends after travelling only a short
 # distance, the narrow LiDAR FOV most likely hid the remaining frontiers rather
@@ -289,3 +361,10 @@ fsm/early_finish_max_retry: 1            # retry attempts before falling back to
 # 못한 공간을 관측완료로 기록하며 되돌릴 수 없다.
 ViewpointManager/vp_reached_pos_tol: 0.6         # 도달로 인정할 거리[m] (viewpoint 도달 + EFP 도달 공용)
 ViewpointManager/vp_reached_yaw_tol_deg: 60.0    # 도달로 인정할 yaw 차[deg] (viewpoint 도달 판정에만)
+# [도달했는데 안 없어지는 Frontier 강제 해소] 뷰포인트까지 갔는데도 그 클러스터의
+# Frontier 가 그대로면 실제로 관측되지 않는다고 보고 DENSE 로 표시해 제거한다
+# (영구적, 되돌릴 수 없음). 탐사가 한 목표에 묶여 멈추는 것을 막는다. 전체 근거는
+# real2.yaml 참고.
+ViewpointManager/vp_reached_clear_enable: true   # 강제 해소 사용
+# [도달 지점 주변 Frontier 일괄 해소][강한 옵션] 0 = 사용 안 함. real2.yaml 정합.
+ViewpointManager/vp_reached_clear_radius: 0.0    # 일괄 해소 반경[m], 0이면 사용 안 함

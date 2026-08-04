@@ -18,6 +18,18 @@
   <arg name="init_yaw"  default="0.0" />
   <!-- ========================================================= -->
 
+  <!-- true (default): cascadePID only ingests position + yaw, matching PX4's
+       type_mask=2552 in OFFBOARD. false: legacy full pos+vel+acc feed-forward.
+       roslaunch only applies a CLI override (use_px4_bridge:=...) to an <arg>
+       declared in the launch file given directly to roslaunch, so this must be
+       re-declared (and passed through) at every wrapper down to cascadePID. -->
+  <arg name="use_px4_bridge" default="true" />
+  <arg name="auto_rth_land" default="false" />
+  <arg name="rviz" default="true" />
+  <arg name="record_results" default="true" />
+  <arg name="eval_output_dir" default="$(find epic_planner)/experiments" />
+  <arg name="shutdown_on_finish" default="true" />
+
   <include file="$(find sim_bringup)/launch/garage_sim.launch">
     <arg name="map_name" value="garage" />
     <arg name="config_file" value="garage_map1.yaml" />
@@ -34,5 +46,11 @@
     <arg name="init_y_" value="$(arg init_y_)" />
     <arg name="init_z_" value="$(arg init_z_)" />
     <arg name="init_yaw" value="$(arg init_yaw)" />
+    <arg name="use_px4_bridge" value="$(arg use_px4_bridge)" />
+    <arg name="auto_rth_land" value="$(arg auto_rth_land)" />
+    <arg name="rviz" value="$(arg rviz)" />
+    <arg name="record_results" value="$(arg record_results)" />
+    <arg name="eval_output_dir" value="$(arg eval_output_dir)" />
+    <arg name="shutdown_on_finish" value="$(arg shutdown_on_finish)" />
   </include>
 </launch>

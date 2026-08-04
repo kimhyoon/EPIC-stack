@@ -71,6 +71,7 @@ private:
   int spatialDim_yaw;
   int temporalDim_yaw;
   double dilate_radius_ = 0.2;
+  const char *last_setup_error_ = "not run";
   double smoothEps;
   int integralRes;
   double maxVelocity;
@@ -793,8 +794,21 @@ private:
   static inline bool getShortestPath(const Eigen::Vector3d &ini, const Eigen::Vector3d &fin,
                                      const PolyhedraV &vPolys, const double &smoothD,
                                      const double &vectorNormEps,
-                                     Eigen::Matrix3Xd &path) {
+                                     Eigen::Matrix3Xd &path,
+                                     int &optimizerResult) {
     const int overlaps = vPolys.size() / 2;
+    // A fallback may intentionally retain one safe corridor piece. There are
+    // then no overlap waypoints to optimize: the shortest path is exactly the
+    // segment from the measured start to the selected endpoint. Calling
+    // L-BFGS with the resulting zero-dimensional vector returns INVALID_N and
+    // used to leave PLAN_TRAJ_EXP without a published trajectory indefinitely.
+    if (overlaps == 0) {
+      path.resize(3, 2);
+      path.col(0) = ini;
+      path.col(1) = fin;
+      optimizerResult = lbfgs::LBFGS_CONVERGENCE;
+      return path.allFinite();
+    }
     Eigen::VectorXi vSizes(overlaps);
     for (int i = 0; i < overlaps; i++) {
       vSizes(i) = vPolys[2 * i + 1].cols();
@@ -817,11 +831,11 @@ private:
     shortest_path_params.delta = 1.0e-3;
     shortest_path_params.g_epsilon = 1.0e-5;
 
-    const int result =
+    optimizerResult =
         lbfgs::lbfgs_optimize(xi, minDistance,
                               &GCOPTER_PolytopeSFC::costDistance, nullptr,
                               nullptr, dataPtrs, shortest_path_params);
-    if (result < 0 || !std::isfinite(minDistance) || !xi.allFinite()) {
+    if (optimizerResult < 0 || !std::isfinite(minDistance) || !xi.allFinite()) {
       return false;
     }
 
@@ -919,6 +933,8 @@ private:
   }
 
 public:
+  inline const char *lastSetupError() const { return last_setup_error_; }
+
   // magnitudeBounds = [v_max, a_max]^T
   // penaltyWeights = [corridor_weight, velocity_weight, acceleration_weight]^T
   // initialWeights = [velocity_reference_weight, acceleration_reference_weight]^T
@@ -936,12 +952,14 @@ public:
                     const double &vectorNormEps,
                     const double &minSegmentTime,
                     const double &linearSolvePivotEps) {
+    last_setup_error_ = "invalid numerical configuration";
     if (integralResolution <= 0 || !std::isfinite(vectorNormEps) ||
         !std::isfinite(minSegmentTime) ||
         !std::isfinite(linearSolvePivotEps) || vectorNormEps <= 0.0 ||
         minSegmentTime <= 0.0 || linearSolvePivotEps <= 0.0) {
       return false;
     }
+    last_setup_error_ = "invalid bounds, weights, state, or empty corridor";
     if (!std::isfinite(timeWeight) || timeWeight < 0.0 ||
         !std::isfinite(dilate_radius) || dilate_radius < 0.0 ||
         (!std::isfinite(lengthPerPiece) &&
@@ -969,15 +987,18 @@ public:
     for (size_t i = 0; i < hPolytopes.size(); i++) {
       const Eigen::ArrayXd norms = hPolytopes[i].leftCols<3>().rowwise().norm();
       if (!norms.isFinite().all() || (norms <= vector_norm_eps).any()) {
+        last_setup_error_ = "corridor has a non-finite or zero plane normal";
         return false;
       }
       hPolytopes[i].array().colwise() /= norms;
     } // hPolytope 的每个平面 法向量 归一化
     if (!processCorridor(hPolytopes, vPolytopes)) {
+      last_setup_error_ = "corridor or adjacent overlap has no bounded vertices";
       return false;
     }
     for (const auto &polytope : vPolytopes) {
       if (polytope.cols() < 2 || !polytope.allFinite()) {
+        last_setup_error_ = "corridor vertex representation is invalid";
         return false;
       }
     }
@@ -991,9 +1012,14 @@ public:
     initialStateWeights = initialWeights;
     terminalStateWeights = terminalWeights;
 
+    int shortestPathResult = lbfgs::LBFGSERR_UNKNOWNERROR;
     if (!getShortestPath(headPVA.col(0), tailPVA.col(0), vPolytopes,
-                         smoothEps, vector_norm_eps, shortPath) ||
+                         smoothEps, vector_norm_eps, shortPath,
+                         shortestPathResult) ||
         !shortPath.allFinite()) {
+      last_setup_error_ = shortestPathResult < 0
+                              ? lbfgs::lbfgs_strerror(shortestPathResult)
+                              : "shortest path through corridor overlaps is non-finite";
       return false;
     }
     const Eigen::Matrix3Xd deltas = shortPath.rightCols(polyN) - shortPath.leftCols(polyN);
@@ -1031,6 +1057,7 @@ public:
     partialGradByCoeffs.resize(6 * pieceN, 3);
     partialGradByTimes.resize(pieceN);
 
+    last_setup_error_ = "ok";
     return true;
   }
 
@@ -1118,7 +1145,11 @@ public:
 
   inline double optimize_yaw(const Eigen::Matrix3d &inityaw, const Eigen::Matrix3d &endyaw,
                              const int &pieceNum, const Eigen::Matrix3Xd &yaw_points,
-                             const Eigen::VectorXd &ts, Trajectory<5> &traj) {
+                             const Eigen::VectorXd &ts, Trajectory<5> &traj,
+                             bool *used_initial_fallback = nullptr) {
+    if (used_initial_fallback != nullptr) {
+      *used_initial_fallback = false;
+    }
     use_shorten_path = false;
     // if(use_shorten_path){
     guide_path.setZero();
@@ -1181,9 +1212,26 @@ public:
       }
       yaw_minco.getTrajectory(traj);
     } else {
-      // traj.clear();
+      // LBFGS can reject an otherwise valid yaw seed when its line search
+      // reaches min_step.  Position planning has already succeeded at this
+      // point, so throwing that trajectory away leaves the vehicle stationary
+      // and simply repeats the same failing yaw solve forever.  Rebuild the
+      // seed trajectory explicitly; it already has finite, clamped segment
+      // times and waypoints limited by YawTrajOpt().
+      if (yaw_minco.setParameters(yaw_points, safe_ts,
+                                  linear_solve_pivot_eps)) {
+        yaw_minco.getEnergy(minCostFunctional);
+        if (std::isfinite(minCostFunctional)) {
+          yaw_minco.getTrajectory(traj);
+          if (used_initial_fallback != nullptr) {
+            *used_initial_fallback = true;
+          }
+          return minCostFunctional;
+        }
+      }
       minCostFunctional = INFINITY;
-      std::cout << "Optimization Failed: " << lbfgs::lbfgs_strerror(ret) << std::endl;
+      std::cout << "Optimization Failed: " << lbfgs::lbfgs_strerror(ret)
+                << "; initial yaw fallback invalid" << std::endl;
     }
 
     return minCostFunctional;

@@ -15,7 +15,7 @@
             rviz 에서 어느 쪽이 새로 계획된 경로인지 구분할 수 없다.
          2) 실비행과 "완전히 같은" 스택을 띄운다 = real_flight.launch 를 그대로 include
             (exploration_node + traj_server + px4_ctrl_bridge + waypoint_generator
-             + crop 브릿지 + odom_visualization). config 도 real.yaml 그대로.
+             + crop 브릿지 + odom_visualization). 기본 config 도 real2.yaml.
          3) rviz 를 함께 띄운다.
 
        분류 결과는 실행 시 표로 출력된다. 인식하지 못한 토픽은 기본적으로 재생하되
@@ -33,7 +33,7 @@
        =================================================================== -->
 
   <arg name="bag"          doc="재생할 flight bag 경로 (필수)"/>
-  <arg name="config_file"  default="real.yaml"  doc="EPIC 파라미터 yaml (실비행과 동일)"/>
+  <arg name="config_file"  default="real2.yaml" doc="EPIC 파라미터 yaml (실비행과 동일)"/>
   <arg name="rate"         default="1.0"        doc="재생 배속"/>
   <arg name="start"        default="0.0"        doc="시작 오프셋 [s]"/>
   <arg name="duration"     default=""           doc="재생 길이 [s], 비우면 끝까지"/>
@@ -44,7 +44,7 @@
   <arg name="dry_run"      default="false"      doc="true 면 분류표만 출력하고 종료"/>
   <arg name="allow"        default=""           doc="강제로 재생할 토픽/글롭 (쉼표 구분)"/>
   <arg name="deny"         default=""           doc="추가로 제외할 토픽/글롭 (쉼표 구분)"/>
-  <arg name="rviz"         default="true"        doc="rviz 자동 실행 (real.yaml 값을 덮어씀)"/>
+  <arg name="rviz"         default="true"        doc="rviz 자동 실행 (profile 값을 덮어씀)"/>
   <arg name="record"       default="false"
        doc="재생 중 녹화. 기본 false — 리플레이 결과가 records 폴더를 오염시키지 않게"/>
   <arg name="auto_trigger" default="true"
@@ -53,14 +53,18 @@
   <arg name="takeoff_height" default=""
        doc="이륙 목표고도 [m] 직접 지정. 비우면 skip_takeoff 로 결정한다.
             리플레이는 odom 이 녹화분이라 실제 고도가 프로파일 목표에 못 미치는 일이
-            흔하다 (예: 0.85m 인데 real.yaml 목표는 1.25m). TAKEOFF_HOVER 이후 경로를
+            흔하다 (예: 0.85m 인데 프로파일 목표는 1.25m). TAKEOFF_HOVER 이후 경로를
             시험하려면 bag 이 실제로 도달하는 값으로 낮춰 지정한다."/>
-  <arg name="skip_takeoff" default="true"
-       doc="이륙 게이트를 건너뛰고 바로 PLAN_TRAJ_EXP 로. 리플레이는 기체를 제어하지
-            않으므로(odom 은 녹화분 재생) TAKEOFF_HOVER 의 고도 도달 조건이 충족되지
-            않으면 takeoff_timeout 까지 묶여 재계획을 볼 수 없다"/>
+  <arg name="skip_takeoff" default="false"
+       doc="true면 이륙 게이트를 건너뛰고 바로 PLAN_TRAJ_EXP로 간다. 기본 false는 지상
+            odom에서 계획을 시작하지 않고, 녹화된 기체가 설정 이륙고도에 도달할 때까지
+            TAKEOFF_HOVER로 대기하므로 실비행 시각을 재현하는 안전한 기본값이다. 도달하지 않는
+            bag만 skip_takeoff:=true 또는 takeoff_height:=0.85처럼 녹화 고도를 명시하라"/>
   <arg name="static_tf"    default="false"
        doc="bag 에 TF 가 없을 때만 true. identity odom/world/camera_init 브릿지"/>
+  <arg name="play_bag"     default="true"
+       doc="true면 launch 내부에서 bag을 재생. replay.sh는 키보드 제어를 위해 false로 두고
+            bag_replay.py를 포그라운드 터미널에서 별도 실행한다."/>
 
   <!-- bag 을 clock 플래그 으로 재생하므로 sim time. 노드보다 먼저 설정해야 한다. -->
   <param name="/use_sim_time" value="true"/>
@@ -72,7 +76,7 @@
   </include>
 
   <!-- 1.5) 리플레이용 오버라이드.
-       real.yaml 은 rviz/enable=false, record/enable=true 로 실비행에 맞춰져 있다.
+       실비행 profile 은 rviz/enable=false, record/enable=true 로 맞춰져 있다.
        roslaunch 는 노드를 띄우기 전에 파라미터를 모두 서버에 올리고, 나중에 선언된
        <param> 이 앞의 rosparam 로드를 덮으므로 여기서 리플레이용 값으로 바꾼다.
        (두 스크립트 모두 절대 이름 /exploration_node/... 로 읽는다) -->
@@ -105,7 +109,8 @@
         args="pub -r 10 /waypoint_generator/waypoints nav_msgs/Path '{poses: [{pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}]}'"/>
 
   <!-- 3) bag 재생 (입력 토픽만). required=true 라 재생이 끝나면 launch 도 종료. -->
-  <node pkg="epic_planner" type="bag_replay.py" name="bag_replay"
+  <node if="$(arg play_bag)"
+        pkg="epic_planner" type="bag_replay.py" name="bag_replay"
         output="screen" required="true"
         args="--bag='$(arg bag)'
               --rate $(arg rate)

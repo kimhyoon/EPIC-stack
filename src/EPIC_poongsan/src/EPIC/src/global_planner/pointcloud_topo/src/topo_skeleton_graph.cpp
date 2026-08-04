@@ -1194,7 +1194,10 @@ void TopoGraph::updateSkeleton() {
         node_update_events.push_back(TopologyNodeUpdateEvent{
             action, old_node, clearance, missed_before, nearest_distance,
             old_node->neighbors_.size()});
-        ROS_WARN(
+        // Per-node retirement is routine topology maintenance, not a planner
+        // warning. Keep it available to a DEBUG logger for lifecycle audits
+        // without flooding the flight/replay console on every graph refresh.
+        ROS_DEBUG(
             "[TopoNodeLifecycle] action=%s id=%lu center=(%.3f,%.3f,%.3f) "
             "clearance=%.3f safe_distance=%.3f missed=%d hysteresis=%d "
             "nearest_new=%.3f match_tolerance=%.3f neighbors=%zu",

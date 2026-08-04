@@ -295,6 +295,32 @@ void FastPlannerManager::initPlanModules(
   // ---- Local SFC corridor clipping to the observed FOV cone (Method B) ----
   nh.param("local_planning/clip_corridor_to_observed", clip_corridor_to_observed_, false);
   nh.param("local_planning/clip_cone_faces", clip_cone_faces_, false);
+  // Independent of the two above: false disables CAUTION escape generation;
+  // flyToSafeRegion never uses an unclipped fallback.
+  nh.param("local_planning/clip_escape_to_observed", clip_escape_to_observed_,
+           true);
+  // Face-activation probe geometry. Read here rather than hardcoded so the
+  // "variant A" widening (3.0 / 2) can be switched on from config once it has
+  // been re-validated; the DEFAULTS deliberately reproduce the long-standing
+  // behaviour (1.5 / 1) because variant A measured WORSE in the built code --
+  // see the note in buildObservedBoundary().
+  nh.param("local_planning/fov_face_tolerance_cells",
+           fov_face_tolerance_cells_, 1.5);
+  if (!std::isfinite(fov_face_tolerance_cells_) ||
+      fov_face_tolerance_cells_ <= 0.0) {
+    ROS_WARN("[PlannerManager] local_planning/fov_face_tolerance_cells=%.3f is "
+             "not a positive finite number; falling back to 1.5",
+             fov_face_tolerance_cells_);
+    fov_face_tolerance_cells_ = 1.5;
+  }
+  nh.param("local_planning/fov_face_neighbor_radius",
+           fov_face_neighbor_radius_, 1);
+  if (fov_face_neighbor_radius_ < 1) {
+    ROS_WARN("[PlannerManager] local_planning/fov_face_neighbor_radius=%d is "
+             "below 1 (the probe would see nothing); falling back to 1",
+             fov_face_neighbor_radius_);
+    fov_face_neighbor_radius_ = 1;
+  }
   nh.param("local_planning/p0_len_x", p0_len_x_, 0.6);
   nh.param("local_planning/p0_len_y", p0_len_y_, 0.6);
   nh.param("local_planning/p0_up", p0_up_, 0.2);
@@ -420,14 +446,17 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
         "last state");
     return;
   }
-  latest_odom_pva_.col(0) =
-      Eigen::Vector3d(position.x, position.y, position.z);
-  latest_odom_pva_.col(1) = planner_velocity;
-  latest_odom_pva_.col(2).setZero();
-  latest_odom_yaw_state_ << yaw, yaw_rate, 0.0;
-  latest_odom_stamp_ =
-      msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
-  latest_odom_state_available_ = true;
+  {
+    std::lock_guard<std::mutex> lock(latest_odom_mutex_);
+    latest_odom_pva_.col(0) =
+        Eigen::Vector3d(position.x, position.y, position.z);
+    latest_odom_pva_.col(1) = planner_velocity;
+    latest_odom_pva_.col(2).setZero();
+    latest_odom_yaw_state_ << yaw, yaw_rate, 0.0;
+    latest_odom_stamp_ =
+        msg->header.stamp.isZero() ? ros::Time::now() : msg->header.stamp;
+    latest_odom_state_available_ = true;
+  }
   local_data_.curr_yaw_ = yaw;
 }
 
@@ -476,6 +505,15 @@ bool FastPlannerManager::checkTrajVelocity() {
   return true;
 }
 
+bool FastPlannerManager::isRotateInPlaceHoldActive() const {
+  if (!local_data_.rotate_in_place_ ||
+      !std::isfinite(local_data_.duration_))
+    return false;
+
+  const double elapsed = (ros::Time::now() - local_data_.start_time_).toSec();
+  return elapsed >= 0.0 && elapsed < local_data_.duration_;
+}
+
 bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   ros::Time check_start = ros::Time::now();
   
@@ -516,7 +554,7 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
           : std::numeric_limits<double>::infinity();
   Eigen::Vector3d min_distance_position = last_sphere_cen_;
   double last_radius_ = initial_distance - gcopter_config_->dilateRadiusHard;
-  
+
   // Measure path collision check time
   ros::Time path_collision_start = ros::Time::now();
   
@@ -576,6 +614,151 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   return true;
 }
 
+bool FastPlannerManager::checkCautionEscapeSafety(
+    const Eigen::Vector3d &actual_position, double &violation_time,
+    std::string &reason) {
+  reason.clear();
+  violation_time = 0.0;
+  const LocalTrajData &escape = local_data_;
+  constexpr double kSampleStep = 0.02;
+  constexpr double kBoundaryTolerance = 1.0e-5;
+  constexpr double kClearanceTolerance = 1.0e-3;
+
+  auto fail = [&](const std::string &why, const double t) {
+    reason = why;
+    violation_time = t;
+    return false;
+  };
+  if (!escape.caution_escape_ || escape.minco_traj_.getPieceNum() < 2 ||
+      !std::isfinite(escape.duration_) || escape.duration_ <= 0.0 ||
+      !std::isfinite(escape.escape_soft_entry_time_) ||
+      escape.escape_soft_entry_time_ < 0.0 ||
+      escape.escape_soft_entry_time_ > escape.duration_ ||
+      !std::isfinite(escape.escape_virtual_ceiling_z_) ||
+      !std::isfinite(escape.escape_hard_ceiling_z_) ||
+      escape.escape_hard_ceiling_z_ < escape.escape_virtual_ceiling_z_ ||
+      escape.escape_raw_polytope_.rows() <= 0 ||
+      escape.escape_safe_polytope_.rows() <= 0 ||
+      !escape.escape_raw_polytope_.allFinite() ||
+      !escape.escape_safe_polytope_.allFinite()) {
+    return fail("invalid escape safety certificate", 0.0);
+  }
+
+  const double elapsed = (ros::Time::now() - escape.start_time_).toSec();
+  if (!std::isfinite(elapsed))
+    return fail("non-finite escape execution time", 0.0);
+  const bool execution_complete = elapsed >= escape.duration_;
+  const double start_time =
+      std::min(std::max(0.0, elapsed), escape.duration_);
+  if (!actual_position.allFinite() ||
+      actual_position.z() >
+          escape.escape_hard_ceiling_z_ + kBoundaryTolerance)
+    return fail("actual odometry violates hard escape ceiling", start_time);
+  const Eigen::Vector4d actual_h(actual_position.x(), actual_position.y(),
+                                 actual_position.z(), 1.0);
+  if ((escape.escape_raw_polytope_ * actual_h).maxCoeff() >
+      kBoundaryTolerance) {
+    return fail("actual odometry left raw escape FIRI", start_time);
+  }
+  if (escape.escape_observed_halfspaces_.rows() > 0 &&
+      (escape.escape_observed_halfspaces_ * actual_h).maxCoeff() >
+          kBoundaryTolerance) {
+    return fail("actual odometry left observed escape region", start_time);
+  }
+
+  const double actual_clearance =
+      lidar_map_interface_->getDisToOcc(actual_position);
+  if (!std::isfinite(actual_clearance) || actual_clearance < 0.0)
+    return fail("invalid actual obstacle clearance", start_time);
+  // Do not let trajectory expiry bypass the terminal safety conditions.  The
+  // current-point exceptions exist only while actively moving out: once the
+  // escape has ended, actual odometry must be inside both the virtual ceiling
+  // and the configured soft obstacle margin.
+  if (execution_complete) {
+    if (actual_position.z() >
+        escape.escape_virtual_ceiling_z_ + kBoundaryTolerance)
+      return fail("completed escape remains above virtual ceiling", start_time);
+    if (actual_clearance + kClearanceTolerance <
+        gcopter_config_->dilateRadiusSoft)
+      return fail("completed escape remains inside soft clearance", start_time);
+    violation_time = escape.duration_;
+    return true;
+  }
+
+  double clearance_floor = actual_clearance;
+  bool reached_soft =
+      actual_clearance + kClearanceTolerance >=
+      gcopter_config_->dilateRadiusSoft;
+  // Tracking can put the vehicle just outside the virtual safety ceiling even
+  // though the published trajectory stayed below it.  That current state is
+  // unavoidable; permit only a monotonically descending egress until the
+  // virtual ceiling is re-entered, then make the ceiling strict again.  The
+  // map/flight-volume ceiling remains a hard limit throughout.
+  double ceiling_floor = actual_position.z();
+  bool reached_virtual_ceiling =
+      actual_position.z() <=
+      escape.escape_virtual_ceiling_z_ + kBoundaryTolerance;
+  for (double sample_time = start_time;; sample_time += kSampleStep) {
+    const double t = std::min(sample_time, escape.duration_);
+    const Eigen::Vector3d position = escape.minco_traj_.getPos(t);
+    if (!position.allFinite() ||
+        position.z() > escape.escape_hard_ceiling_z_ + kBoundaryTolerance)
+      return fail("updated map check: invalid/hard-over-ceiling sample", t);
+    if (!reached_virtual_ceiling) {
+      if (position.z() > ceiling_floor + kBoundaryTolerance)
+        return fail("updated map check: escape climbs above current ceiling violation",
+                    t);
+      ceiling_floor = std::min(ceiling_floor, position.z());
+      reached_virtual_ceiling =
+          position.z() <=
+          escape.escape_virtual_ceiling_z_ + kBoundaryTolerance;
+    } else if (position.z() >
+               escape.escape_virtual_ceiling_z_ + kBoundaryTolerance) {
+      return fail("updated map check: escape leaves virtual ceiling", t);
+    }
+    const Eigen::Vector4d position_h(position.x(), position.y(), position.z(),
+                                     1.0);
+    if ((escape.escape_raw_polytope_ * position_h).maxCoeff() >
+        kBoundaryTolerance) {
+      return fail("updated map check: escape leaves raw FIRI", t);
+    }
+    if (t + 1.0e-9 >= escape.escape_soft_entry_time_ &&
+        (escape.escape_safe_polytope_ * position_h).maxCoeff() >
+            kBoundaryTolerance) {
+      return fail("updated map check: escape leaves soft FIRI", t);
+    }
+    if (escape.escape_observed_halfspaces_.rows() > 0 &&
+        (escape.escape_observed_halfspaces_ * position_h).maxCoeff() >
+            kBoundaryTolerance) {
+      return fail("updated map check: escape leaves observed region", t);
+    }
+
+    const double clearance = lidar_map_interface_->getDisToOcc(position);
+    if (!std::isfinite(clearance) || clearance < 0.0)
+      return fail("updated map check: invalid obstacle clearance", t);
+    if (!reached_soft) {
+      if (clearance + kClearanceTolerance < clearance_floor)
+        return fail("updated obstacle worsens egress clearance", t);
+      clearance_floor = std::max(clearance_floor, clearance);
+      reached_soft = clearance + kClearanceTolerance >=
+                     gcopter_config_->dilateRadiusSoft;
+    } else if (clearance + kClearanceTolerance <
+               gcopter_config_->dilateRadiusSoft) {
+      return fail("updated obstacle violates attained soft clearance", t);
+    }
+    if (t >= escape.duration_)
+      break;
+  }
+  if (!reached_soft)
+    return fail("updated map leaves no soft-clearance escape", escape.duration_);
+  if (!reached_virtual_ceiling)
+    return fail("updated trajectory never re-enters virtual ceiling",
+                escape.duration_);
+
+  violation_time = escape.duration_;
+  return true;
+}
+
 bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                                          bool is_static) {
 
@@ -593,6 +776,40 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     return false;
   }
 
+  // Take one atomic odometry snapshot for the complete planning attempt. P0
+  // and the optimizer initial state must never be built from different odom
+  // callbacks. Also reject a stale cloud/map pose instead of turning it into a
+  // positional escape from the wrong location.
+  Eigen::Matrix3d iniState;
+  Eigen::Vector3d initialYawState;
+  {
+    std::lock_guard<std::mutex> lock(latest_odom_mutex_);
+    if (!latest_odom_state_available_) {
+      last_plan_fail_reason_ =
+          "latest odometry state unavailable for replan initialization";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+    iniState = latest_odom_pva_;
+    initialYawState = latest_odom_yaw_state_;
+  }
+  const double map_odom_disagreement =
+      (local_data_.curr_pos_ - iniState.col(0)).norm();
+  if (!std::isfinite(map_odom_disagreement) || map_odom_disagreement > 0.5) {
+    last_plan_fail_reason_ =
+        "cloud/map odometry is stale relative to current odometry";
+    ROS_ERROR_THROTTLE(
+        1.0,
+        "[local-plan] %s: map=(%.3f,%.3f,%.3f) odom=(%.3f,%.3f,%.3f) "
+        "error=%.3f m",
+        last_plan_fail_reason_.c_str(), local_data_.curr_pos_.x(),
+        local_data_.curr_pos_.y(), local_data_.curr_pos_.z(),
+        iniState(0, 0), iniState(1, 0), iniState(2, 0),
+        map_odom_disagreement);
+    return false;
+  }
+
   // Reserve one obstacle-voxel layer at the top of the exploration box as an
   // exact vehicle-center ceiling. Keeping this independent of obstacle
   // dilation avoids applying the real-obstacle margin twice.
@@ -602,12 +819,12 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (!std::isfinite(virtual_ceiling_z) ||
       virtual_ceiling_z <=
           lidar_map_interface_->lp_->global_box_min_boundary_.z() ||
-      !local_data_.curr_pos_.allFinite() ||
-      local_data_.curr_pos_.z() > virtual_ceiling_z + 1.0e-6) {
+      !iniState.col(0).allFinite() ||
+      iniState(2, 0) > virtual_ceiling_z + 1.0e-6) {
     last_plan_fail_reason_ = "invalid or already violated virtual ceiling";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s (ceiling=%.3f, z=%.3f)",
                       last_plan_fail_reason_.c_str(), virtual_ceiling_z,
-                      local_data_.curr_pos_.z());
+                      iniState(2, 0));
     return false;
   }
 
@@ -818,8 +1035,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   // position not in corridor" -> flyToSafeRegion escape in tight spaces). Fixed
   // to the robot's physical extent -- must NOT be grown into unobserved space.
   if (clip_corridor_to_observed_) {
-    const Eigen::Vector3d p = local_data_.curr_pos_;
-    const double psi = local_data_.curr_yaw_; // live odom yaw
+    const Eigen::Vector3d p = iniState.col(0);
+    const double psi = initialYawState.x(); // same live-odom snapshot as PVA
     const double c = std::cos(psi), s = std::sin(psi);
     const Eigen::Vector3d bx(c, s, 0.0);  // body +x (forward)
     const Eigen::Vector3d by(-s, c, 0.0); // body +y (left)
@@ -846,15 +1063,6 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   // start farther away from the actual vehicle state.
   const ros::Time trajectory_start_time = ros::Time::now();
   Eigen::Matrix3d finState;
-  if (!latest_odom_state_available_) {
-    last_plan_fail_reason_ =
-        "latest odometry state unavailable for replan initialization";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                      last_plan_fail_reason_.c_str());
-    return false;
-  }
-  const Eigen::Matrix3d iniState = latest_odom_pva_;
-  const Eigen::Vector3d initialYawState = latest_odom_yaw_state_;
 
   const auto findStartCorridor =
       [&hPolys](const Eigen::Vector3d &position) -> int {
@@ -925,52 +1133,194 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
       chainFullyConnected &&
       isPointInsidePolytope(hPolys.back(), path_shorten.back(), 1.0e-6);
   if (!chainFullyConnected || !goalInsideLastCorridor) {
-    const GuidePathTarget fallback = findFarthestGuidePathTarget(
-        path_shorten, hPolys[lastConnected],
-        gcopter_config_->corridorFallbackTargetMargin);
-    if (!fallback.found) {
-      last_plan_fail_reason_ =
-          "corridor fallback has no guide-path point inside connected prefix";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                        last_plan_fail_reason_.c_str());
-      return false;
+    // [degrade-do-not-fail] The corridor does not reach the goal. Instead of
+    // giving up, go as far as the corridor legally allows and let yaw rotate
+    // toward the goal, which swings the FOV cone and can reopen the corridor on
+    // the next cycle. Failing here is what produced the 57.7 s PLAN_TRAJ_RTH
+    // deadlock in flight bag 0804/1970-01-01-09-10-25: the single-polytope
+    // lookup below returned nothing, the plan returned false, and because yaw
+    // is only planned AFTER a successful position trajectory the vehicle could
+    // never turn to look where it needed to go.
+    //
+    // Walk BACKWARDS from the last connected piece toward the vehicle and take
+    // the FIRST (i.e. highest-index, maximum-progress) piece that yields a
+    // target. Index 0 is the piece that contains the odometry start, so the
+    // walk terminates on something that contains the vehicle itself; if even
+    // that is refused by the boundary margin, retry the whole walk with a zero
+    // margin and finally fall back to holding position. corridorFallbackMinProgress
+    // is now a PREFERENCE, not a hard failure.
+    const double fallbackMargin =
+        gcopter_config_->corridorFallbackTargetMargin;
+    size_t fallbackIndex = lastConnected;
+    double usedMargin = fallbackMargin;
+    GuidePathTarget fallback;
+    for (size_t attempt = 0; attempt < 2 && !fallback.found; ++attempt) {
+      usedMargin = (attempt == 0) ? fallbackMargin : 0.0;
+      for (size_t index = lastConnected + 1; index-- > 0;) {
+        const GuidePathTarget candidate =
+            findFarthestGuidePathTarget(path_shorten, hPolys[index],
+                                        usedMargin);
+        if (candidate.found) {
+          fallback = candidate;
+          fallbackIndex = index;
+          break;
+        }
+      }
     }
-    if (fallback.progress <
-        gcopter_config_->corridorFallbackMinProgress) {
-      last_plan_fail_reason_ =
-          "corridor fallback progress below configured minimum";
+    const bool degenerate_hold = !fallback.found;
+    if (degenerate_hold) {
+      fallback.found = true;
+      fallback.segment_index = 0;
+      fallback.progress = 0.0;
+      fallback.point = path_shorten.front();
+      fallbackIndex = 0;
+    }
+    const bool below_min_progress =
+        fallback.progress < gcopter_config_->corridorFallbackMinProgress;
+
+    // Direction we WANTED to travel, taken from the guide path BEFORE
+    // truncation. truncateGuidePath keeps [0 .. segment_index] plus the target,
+    // so for a heavily truncated path the post-truncation direction is already
+    // the first guide segment; this pre-computed value is the fallback for the
+    // degenerate cases where that difference collapses to (near) zero and
+    // atan2 would return a meaningless 0.
+    double desired_yaw = local_data_.end_yaw_;
+    bool desired_yaw_valid = false;
+    for (size_t index = 1; index < path_shorten.size(); ++index) {
+      const Eigen::Vector3d dir = path_shorten[index] - path_shorten.front();
+      if (dir.head<2>().squaredNorm() >
+          std::max(dir.z() * dir.z(), 1.0e-6)) {
+        desired_yaw = std::atan2(dir.y(), dir.x());
+        desired_yaw_valid = true;
+        break;
+      }
+    }
+
+    // [rotate-in-place] The corridor admits no forward motion at all: the best
+    // target is the start point itself. Do NOT hand that to gcopter -- a
+    // zero-length problem is a non-problem and setup() rightly refuses it
+    // ("gcopter setup failed", measured 6/6 on the hold cases). Synthesize both
+    // trajectories directly instead: hold position, and slew yaw to the
+    // direction we could not travel in, so the FOV cone swings and the next
+    // cycle can find a real corridor. Mirror of the constant-yaw PolyTraj that
+    // CAUTION hand-builds in fast_exploration_fsm.cpp:944-956.
+    const double target_step = (fallback.point - iniState.col(0)).norm();
+    constexpr double kUsefulStep = 1.0e-3; // [m]
+    // A degenerate fallback is semantically HOLD-IN-PLACE even when the guide
+    // path's first point and the replanning initial state differ. That mismatch
+    // was measured at 0.6007 m in MARSIM, so checking target_step alone sent a
+    // zero-progress problem to gcopter and failed forever instead of rotating.
+    if (degenerate_hold || !std::isfinite(target_step) ||
+        target_step < kUsefulStep) {
+      const double yaw0 = initialYawState.x();
+      double yaw_delta = (desired_yaw_valid ? desired_yaw : yaw0) - yaw0;
+      angleLimite(yaw_delta); // shortest signed rotation, (-pi, pi]
+
+      // Quintic smoothstep: zero yaw rate AND acceleration at both ends, so the
+      // traj_server yaw limiter never has to absorb a step. Its peak rate is
+      // 1.875*|d|/T, hence the duration floor below; clamped so a tiny delta
+      // still yields a usable trajectory and a large one does not stall.
+      constexpr double kMinHoldTime = 0.3; // [s]
+      constexpr double kMaxHoldTime = 8.0; // [s]
+      const double yaw_rate_limit =
+          (std::isfinite(gcopter_config_->yaw_max_vel) &&
+           gcopter_config_->yaw_max_vel > 1.0e-6)
+              ? gcopter_config_->yaw_max_vel
+              : 1.0;
+      double hold_T = 1.875 * std::abs(yaw_delta) / yaw_rate_limit;
+      if (!std::isfinite(hold_T))
+        hold_T = kMinHoldTime;
+      hold_T = std::max(kMinHoldTime, std::min(kMaxHoldTime, hold_T));
+
+      // Coefficients are HIGHEST ORDER FIRST: col(0) is t^5 ... col(5) is the
+      // constant (Piece::getPos walks i = D..0 with increasing powers,
+      // trajectory.hpp:60-68), and polyTraj2ROSMsg copies cMat(row, j) straight
+      // into coef_*[i*6 + j], so the published message keeps the same layout.
+      Piece<5>::CoefficientMat pos_coeff = Piece<5>::CoefficientMat::Zero();
+      pos_coeff.col(5) = iniState.col(0); // constant position, all rows
+      Piece<5>::CoefficientMat yaw_coeff = Piece<5>::CoefficientMat::Zero();
+      const double t2 = hold_T * hold_T;
+      const double t3 = t2 * hold_T;
+      const double t4 = t3 * hold_T;
+      const double t5 = t4 * hold_T;
+      yaw_coeff(0, 0) = 6.0 * yaw_delta / t5;   // t^5
+      yaw_coeff(0, 1) = -15.0 * yaw_delta / t4; // t^4
+      yaw_coeff(0, 2) = 10.0 * yaw_delta / t3;  // t^3
+      yaw_coeff(0, 5) = yaw0;                   // constant; only x carries yaw
+                                                // (traj_server get_yaw reads
+                                                // yaw_traj_->getPos(t).x())
+
+      const std::vector<double> durations(1, hold_T);
+      local_data_.minco_traj_ = Trajectory<5>(
+          durations, std::vector<Piece<5>::CoefficientMat>(1, pos_coeff));
+      local_data_.minco_yaw_traj_ = Trajectory<5>(
+          durations, std::vector<Piece<5>::CoefficientMat>(1, yaw_coeff));
+      local_data_.end_yaw_ = yaw0 + yaw_delta;
+
+      // Same bookkeeping as the normal success path below.
+      local_data_.traj_id_ += 1;
+      local_data_.start_time_ = trajectory_start_time;
+      local_data_.start_pos_ = iniState.col(0);
+      local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+      local_data_.rotate_in_place_ = true;
+      local_data_.caution_escape_ = false;
+      last_plan_fail_reason_.clear();
+      last_plan_was_escape_ = false;
+
+      hPolys.resize(fallbackIndex + 1);
+      gcopter_viz_->visualizePolytope(hPolys, true);
+      gcopter_viz_->visualize(local_data_.minco_traj_,
+                              local_data_.minco_yaw_traj_,
+                              trajectory_start_time,
+                              gcopter_config_->maxVelMag);
       ROS_WARN_THROTTLE(
-          2.0, "[local-plan] %s (%.3f < %.3f m)",
-          last_plan_fail_reason_.c_str(), fallback.progress,
-          gcopter_config_->corridorFallbackMinProgress);
-      return false;
+          1.0,
+          "[local-plan] corridor admits no progress -- rotate in place: "
+          "yaw %.1f -> %.1f deg over %.2f s (peak %.2f rad/s, limit %.2f)",
+          yaw0 * 180.0 / M_PI, local_data_.end_yaw_ * 180.0 / M_PI, hold_T,
+          1.875 * std::abs(yaw_delta) / hold_T, yaw_rate_limit);
+      return true;
     }
 
     const size_t originalCorridorCount = hPolys.size();
-    hPolys.resize(lastConnected + 1);
+    hPolys.resize(fallbackIndex + 1);
     truncateGuidePath(path_shorten, fallback);
-    if (path_shorten.size() < 2) {
-      last_plan_fail_reason_ =
-          "corridor fallback produced fewer than two guide-path points";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                        last_plan_fail_reason_.c_str());
-      return false;
-    }
 
     use_shorten_path = true;
-    const Eigen::Vector3d fwdDir =
-        path_shorten.back() - path_shorten[path_shorten.size() - 2];
-    if (fwdDir.x() * fwdDir.x() + fwdDir.y() * fwdDir.y() >
-        fwdDir.z() * fwdDir.z()) {
-      local_data_.end_yaw_ = std::atan2(fwdDir.y(), fwdDir.x());
+    // path_shorten can legitimately hold a single point here (target == start),
+    // so guard the [size-2] access instead of failing the plan.
+    bool end_yaw_set = false;
+    if (path_shorten.size() >= 2) {
+      const Eigen::Vector3d fwdDir =
+          path_shorten.back() - path_shorten[path_shorten.size() - 2];
+      if (fwdDir.x() * fwdDir.x() + fwdDir.y() * fwdDir.y() >
+          std::max(fwdDir.z() * fwdDir.z(), 1.0e-6)) {
+        local_data_.end_yaw_ = std::atan2(fwdDir.y(), fwdDir.x());
+        end_yaw_set = true;
+      }
     }
+    if (!end_yaw_set && desired_yaw_valid)
+      local_data_.end_yaw_ = desired_yaw;
+
     finState << fallback.point, Eigen::Vector3d::Zero(),
         Eigen::Vector3d::Zero();
-    ROS_WARN_THROTTLE(
-        1.0,
-        "corridor fallback target selected at %.2f m guide progress "
-        "(connected pieces %zu/%zu)",
-        fallback.progress, lastConnected + 1, originalCorridorCount);
+    if (degenerate_hold || below_min_progress) {
+      ROS_WARN_THROTTLE(
+          1.0,
+          "[local-plan] degraded corridor fallback: %.3f m progress "
+          "(< %.3f m minimum%s), piece %zu/%zu, margin %.2f m, end_yaw %.1f deg "
+          "-- holding/creeping and rotating toward the goal",
+          fallback.progress, gcopter_config_->corridorFallbackMinProgress,
+          degenerate_hold ? ", HOLD-IN-PLACE" : "", fallbackIndex + 1,
+          originalCorridorCount, usedMargin,
+          local_data_.end_yaw_ * 180.0 / M_PI);
+    } else {
+      ROS_WARN_THROTTLE(
+          1.0,
+          "corridor fallback target selected at %.2f m guide progress "
+          "(connected pieces %zu/%zu)",
+          fallback.progress, fallbackIndex + 1, originalCorridorCount);
+    }
     gcopter_viz_->visualizePolytope(hPolys, true);
   } else {
     finState << path_shorten.back(), Eigen::Vector3d::Zero(),
@@ -1005,7 +1355,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
           gcopter_config_->linearSolvePivotEps)) {
-    last_plan_fail_reason_ = "gcopter setup failed (corridor/start-state infeasible)";
+    last_plan_fail_reason_ = std::string("gcopter setup failed: ") +
+                             gcopter.lastSetupError();
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
@@ -1120,6 +1471,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   local_data_.start_time_ = trajectory_start_time;
   local_data_.start_pos_ = iniState.col(0);
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
+  local_data_.rotate_in_place_ = false;
+  local_data_.caution_escape_ = false;
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = false;
   return true;
@@ -1177,8 +1530,26 @@ FastPlannerManager::buildObservedBoundary() const {
 
   // Preserve PR #1 gating exactly: a face is active only when an FOV-edge
   // frontier lies on it and no DENSE neighbor continues outside it.
+  //
+  // The probe geometry (on-plane band, neighbour radius) is parameterised but
+  // DEFAULTS TO THE ORIGINAL 1.5 cells / radius 1. A widening to 3.0 / 2
+  // ("variant A") was proposed and then MEASURED TO BE WORSE, so it is not the
+  // default; keeping it reachable from config only so it can be re-tested.
+  //
+  // Why it looked good and was not: an offline sweep over flight bag
+  // 0804/1970-01-01-09-10-25 predicted the RTH-deadlock window (bag t
+  // 683.9-706.0) would go from 74.3% to 0.0% UP-face activation. That sweep had
+  // to approximate fov_edge_cells_ with the published /exploration_node/frt
+  // cloud, which is a far denser set. Re-run live against this code, widening
+  // moved the same window the WRONG way: UP active 31-39% -> 97.2%. Cause: with
+  // the real (sparse) fov_edge_cells_, a wider band mostly turns has_frontier ON
+  // for plans that previously had no on-plane cell at all, while the wider
+  // neighbourhood still finds no DENSE outside -- so more plans end up
+  // has_frontier && !observed_outside. Do not re-enable without instrumenting
+  // fov_edge_cells_ itself.
   const double cell_size = frontier_manager_->getCellSize();
-  const double face_tolerance = 1.5 * cell_size;
+  const double face_tolerance = fov_face_tolerance_cells_ * cell_size;
+  const int neighbor_radius = fov_face_neighbor_radius_;
   for (const auto &cell : frontier_manager_->fov_edge_cells_) {
     const Eigen::Vector3d center(cell.x, cell.y, cell.z);
     const Eigen::Vector3d relative = center - p;
@@ -1193,15 +1564,27 @@ FastPlannerManager::buildObservedBoundary() const {
         continue;
 
       face.has_frontier = true;
-      for (int dx = -1; dx <= 1 && !face.observed_outside; ++dx)
-        for (int dy = -1; dy <= 1 && !face.observed_outside; ++dy)
-          for (int dz = -1; dz <= 1 && !face.observed_outside; ++dz) {
+      // Neighbour half-width is local_planning/fov_face_neighbor_radius (2 by
+      // default, was 1) -- see the variant-A note above the tolerance.
+      for (int dx = -neighbor_radius;
+           dx <= neighbor_radius && !face.observed_outside; ++dx)
+        for (int dy = -neighbor_radius;
+             dy <= neighbor_radius && !face.observed_outside; ++dy)
+          for (int dz = -neighbor_radius;
+               dz <= neighbor_radius && !face.observed_outside; ++dz) {
             if (!dx && !dy && !dz)
               continue;
             const Eigen::Vector3d neighbor =
                 center + cell_size * Eigen::Vector3d(dx, dy, dz);
             if (face.normal.dot(neighbor) + face.offset <= 0.0)
               continue;
+            // DENSE only, deliberately. SPARSE was measured and REJECTED: on
+            // bag 0804/1970-01-01-09-10-25 every DENSE||SPARSE variant drops
+            // the takeoff-hover anchor to 0% active (0/28 frames, and 0/24 on
+            // 1970-01-01-09-06-08), i.e. it would let the corridor reach into
+            // rear space the vehicle has NEVER observed, immediately after
+            // takeoff. That is the failure this face exists to prevent, so do
+            // not widen this test to SPARSE.
             if (frontier_manager_->getCellState(neighbor.cast<float>()) ==
                 DENSE)
               face.observed_outside = true;
@@ -1261,6 +1644,18 @@ void FastPlannerManager::publishObservedBoundaryDebug(
 
 // Keep PR #1 post-clipping as a validation and compatibility layer. P0 remains
 // exempt and a face that would empty a polytope is skipped, exactly as before.
+//
+// The corridor is now allowed to be clipped FULLY, even when that removes the
+// guide path and the goal from every forward polytope. A guard used to skip any
+// face that cut the covered guide path, because losing coverage made
+// planExploreTraj fail outright -- the 57.7 s PLAN_TRAJ_RTH deadlock in flight
+// bag 0804/1970-01-01-09-10-25. That was the wrong trade: it bought liveness by
+// silently dropping the observed-space constraint and letting the corridor
+// extend past what the sensor has actually seen. planExploreTraj now degrades
+// the local goal instead (walks back through the corridor to the farthest
+// admissible point and rotates yaw toward the unreachable goal), so an
+// unreachable goal no longer needs the constraint relaxed. Go only as far as we
+// legally can; never further.
 void FastPlannerManager::clipCorridorToObservedBoundary(
     std::vector<Eigen::MatrixX4d> &hPolys,
     const ObservedBoundary &boundary) {
@@ -1445,12 +1840,21 @@ bool FastPlannerManager::YawTrajOpt(
   // cout << endl;
 
   local_data_.minco_yaw_traj_.clear();
+  bool used_initial_yaw_fallback = false;
   const double yaw_cost =
       gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM, wpsYaw,
-                               opt_times_Yaw, local_data_.minco_yaw_traj_);
+                               opt_times_Yaw, local_data_.minco_yaw_traj_,
+                               &used_initial_yaw_fallback);
   if (!std::isfinite(yaw_cost)) {
     std::cout << "optimize yaw failed!" << std::endl;
     return false;
+  }
+  if (used_initial_yaw_fallback) {
+    ROS_WARN_THROTTLE(
+        2.0,
+        "[local-plan] yaw LBFGS line search failed; using finite initial yaw "
+        "trajectory (%d pieces, %.2f s)",
+        pieceNUM, opt_times_Yaw.sum());
   }
   const double yaw_duration =
       local_data_.minco_yaw_traj_.getTotalDuration();
@@ -1468,10 +1872,49 @@ bool FastPlannerManager::YawTrajOpt(
 }
 
 bool FastPlannerManager::flyToSafeRegion(bool is_static) {
+  // Use the same exact vehicle-center ceiling as normal local planning.  The
+  // old escape bubble was capped only by map bounds (often several metres
+  // above the exploration box), so its FIRI interior could command a climb out
+  // of the legal flight volume.
+  const double virtual_ceiling_z =
+      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
+      gcopter_config_->corridorObstacleVoxelSize;
+  const double hard_ceiling_z =
+      lidar_map_interface_->lp_->global_box_max_boundary_.z();
+  if (!std::isfinite(virtual_ceiling_z) ||
+      !std::isfinite(hard_ceiling_z) ||
+      hard_ceiling_z < virtual_ceiling_z ||
+      virtual_ceiling_z <=
+          lidar_map_interface_->lp_->global_box_min_boundary_.z() ||
+      !local_data_.curr_pos_.allFinite() ||
+      local_data_.curr_pos_.z() > hard_ceiling_z + 1.0e-6) {
+    last_plan_fail_reason_ =
+        "escape: invalid or already violated hard ceiling";
+    ROS_WARN_THROTTLE(
+        2.0, "[local-plan] %s (virtual=%.3f, hard=%.3f, z=%.3f)",
+        last_plan_fail_reason_.c_str(), virtual_ceiling_z, hard_ceiling_z,
+        local_data_.curr_pos_.z());
+    return false;
+  }
+
+  double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
+  Eigen::Vector3d start_pos;
+  if (is_static) {
+    start_pos = local_data_.curr_pos_;
+  } else {
+    time_now =
+        time_now > local_data_.duration_ ? local_data_.duration_ : time_now;
+    start_pos = local_data_.minco_traj_.getPos(time_now);
+  }
+  if (!start_pos.allFinite()) {
+    last_plan_fail_reason_ = "escape: invalid current start position";
+    return false;
+  }
+
   Eigen::Vector3f min_bd, max_bd;
   for (int i = 0; i < 3; i++) {
-    min_bd[i] = topo_graph_->odom_node_->center_[i] - 2.0;
-    max_bd[i] = topo_graph_->odom_node_->center_[i] + 2.0;
+    min_bd[i] = static_cast<float>(start_pos[i] - 2.0);
+    max_bd[i] = static_cast<float>(start_pos[i] + 2.0);
   }
   PointVector Searched_Points;
   lidar_map_interface_->boxSearch(min_bd, max_bd, Searched_Points);
@@ -1490,6 +1933,12 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   for (const pcl::PointXYZ &point : cloud_tmp->points) {
     surf_points.emplace_back(point.x, point.y, point.z);
   }
+  if (surf_points.empty()) {
+    last_plan_fail_reason_ = "escape: no local obstacle samples for FIRI";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
   Eigen::Matrix<double, 6, 4> bd = Eigen::Matrix<double, 6, 4>::Zero();
   bd(0, 0) = 1.0;
   bd(1, 0) = -1.0;
@@ -1498,67 +1947,267 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   bd(4, 2) = 1.0;
   bd(5, 2) = -1.0;
   bd(0, 3) =
-      -(std::min(topo_graph_->odom_node_->center_(0) + 2.0f,
-                 lidar_map_interface_->lp_->global_map_max_boundary_[0]));
-  bd(1, 3) = std::max(topo_graph_->odom_node_->center_(0) - 2.0f,
-                      lidar_map_interface_->lp_->global_box_min_boundary_[0]);
+      -std::min(start_pos.x() + 2.0,
+                static_cast<double>(
+                    lidar_map_interface_->lp_->global_map_max_boundary_[0]));
+  bd(1, 3) = std::max(start_pos.x() - 2.0,
+                      static_cast<double>(
+                          lidar_map_interface_->lp_->global_box_min_boundary_[0]));
   bd(2, 3) =
-      -(std::min(topo_graph_->odom_node_->center_(1) + 2.0f,
-                 lidar_map_interface_->lp_->global_map_max_boundary_[1]));
-  bd(3, 3) = std::max(topo_graph_->odom_node_->center_(1) - 2.0f,
-                      lidar_map_interface_->lp_->global_box_min_boundary_[1]);
+      -std::min(start_pos.y() + 2.0,
+                static_cast<double>(
+                    lidar_map_interface_->lp_->global_map_max_boundary_[1]));
+  bd(3, 3) = std::max(start_pos.y() - 2.0,
+                      static_cast<double>(
+                          lidar_map_interface_->lp_->global_box_min_boundary_[1]));
   bd(4, 3) =
-      -(std::min(topo_graph_->odom_node_->center_(2) + 1.0f,
-                 lidar_map_interface_->lp_->global_map_max_boundary_[2]));
-  bd(5, 3) = std::max(topo_graph_->odom_node_->center_(2) - 1.0f,
-                      lidar_map_interface_->lp_->global_box_min_boundary_[2]);
+      -std::min(start_pos.z() + 1.0,
+                std::min(static_cast<double>(
+                             lidar_map_interface_->lp_
+                                 ->global_map_max_boundary_[2]),
+                         std::max(virtual_ceiling_z, start_pos.z())));
+  bd(5, 3) = std::max(start_pos.z() - 1.0,
+                      static_cast<double>(
+                          lidar_map_interface_->lp_->global_box_min_boundary_[2]));
   Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(
       surf_points[0].data(), 3, surf_points.size());
+
+  // Use the exact recovery start as FIRI's seed.  In CAUTION `is_static` is
+  // always true, so this is actual odometry rather than topo odom_node.
+  const Eigen::Vector3d firi_seed = start_pos;
   Eigen::MatrixX4d hp;
-  firi::firi(bd, pc, topo_graph_->odom_node_->center_.cast<double>(),
-             topo_graph_->odom_node_->center_.cast<double>(), hp, 2, 1.0e-6,
-             gcopter_config_->firiObstacleDistanceLimit,
-             gcopter_config_->firiMaxPlaneCount); // 计算出包含a和b的凸包
-  std::vector<Eigen::MatrixX4d> hPolys;
-  hPolys.push_back(hp);
-  hPolys.push_back(hp);
+  if (!firi::firi(bd, pc, firi_seed, firi_seed, hp, 2, 1.0e-6,
+                  gcopter_config_->firiObstacleDistanceLimit,
+                  gcopter_config_->firiMaxPlaneCount) ||
+      hp.rows() <= 0) {
+    last_plan_fail_reason_ = "escape: base FIRI failed";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
   Eigen::Vector3d inner;
-  geo_utils::findInterior(hp, inner);
+  if (!geo_utils::findInterior(hp, inner)) {
+    last_plan_fail_reason_ = "escape: base FIRI has no interior";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
+
+  // --- Keep the CAUTION escape bubble inside the observed region. -----------
+  // flyToSafeRegion used to run FIRI against a bare +-2 m / +-1 m box, so the
+  // escape polytope could grow into space the sensor has never seen. This
+  // applies every active observed-boundary face that contains both the actual
+  // escape start and FIRI's seed. The old bubble interior is deliberately NOT
+  // a gate: if it lies on the unobserved side, clipping it away and solving for
+  // a new interior is exactly the desired behaviour. If start/seed containment
+  // or clipped FIRI fails, return failure and remain in CAUTION; never fall back
+  // to the unobserved base bubble. Deliberately NOT
+  // clipCorridorToObservedBoundary(): that one is driven by a guide path, which
+  // an escape does not have.
+  if (!clip_escape_to_observed_ || !frontier_manager_) {
+    last_plan_fail_reason_ =
+        "escape: strict observed-region clipping unavailable";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                      last_plan_fail_reason_.c_str());
+    return false;
+  }
+  Eigen::MatrixX4d escape_observed_halfspaces(0, 4);
+  {
+    constexpr double kEps = 1.0e-6;
+    ObservedBoundary escape_boundary = buildObservedBoundary();
+    // Normal exploration activates a cone face only when frontier evidence
+    // proves that it is a current observation boundary. CAUTION cannot use
+    // that permissive gate: immediately after takeoff fov_edge_cells_ may be
+    // empty, which previously produced zero clipping faces and selected an
+    // escape point behind the limited-FOV sensor (09-06-08: first two body-x
+    // displacements were -0.399 m and -0.390 m). An emergency positional
+    // escape must remain inside what the sensor can see now, even if older map
+    // data exists elsewhere, so all four current frustum faces are mandatory.
+    for (ObservedBoundaryFace &face : escape_boundary.faces)
+      face.active = true;
+    publishObservedBoundaryDebug(escape_boundary);
+    const Eigen::MatrixX4d active = activeObservedHalfspaces(escape_boundary);
+    escape_observed_halfspaces = active;
+    const Eigen::Vector4d start_h(start_pos.x(), start_pos.y(), start_pos.z(),
+                                  1.0);
+    const Eigen::Vector4d seed_h(firi_seed.x(), firi_seed.y(), firi_seed.z(),
+                                 1.0);
+    for (int row = 0; row < active.rows(); ++row) {
+      if ((active.row(row) * start_h)(0) > kEps ||
+          (active.row(row) * seed_h)(0) > kEps) {
+        last_plan_fail_reason_ =
+            "escape: start/seed outside observed boundary";
+        ROS_WARN_THROTTLE(2.0,
+                          "[local-plan] %s (face %d/%d)",
+                          last_plan_fail_reason_.c_str(), row + 1,
+                          static_cast<int>(active.rows()));
+        return false;
+      }
+    }
+    if (active.rows() > 0) {
+      Eigen::MatrixX4d escape_bd(6 + active.rows(), 4);
+      escape_bd.topRows<6>() = bd;
+      escape_bd.bottomRows(active.rows()) = active;
+      // The cone faces pass exactly through the current pose, so the seed sits
+      // ON them. firi() tests seed containment with an exact `> 0.0`
+      // (firi.hpp:267), which floating-point rounding alone can fail; relax the
+      // added rows by the geometric epsilon while solving, as convexCover does
+      // (sfc_gen.hpp:167-174). 1e-6 m is far below any physical margin.
+      Eigen::MatrixX4d escape_bd_relaxed = escape_bd;
+      for (int row = 6; row < escape_bd_relaxed.rows(); ++row)
+        escape_bd_relaxed(row, 3) -=
+            kEps * escape_bd_relaxed.row(row).head<3>().norm();
+      Eigen::MatrixX4d clipped_hp;
+      Eigen::Vector3d clipped_inner;
+      if (firi::firi(escape_bd_relaxed, pc, firi_seed, firi_seed, clipped_hp, 2,
+                     kEps, gcopter_config_->firiObstacleDistanceLimit,
+                     gcopter_config_->firiMaxPlaneCount) &&
+          clipped_hp.rows() > 0 &&
+          geo_utils::findInterior(clipped_hp, clipped_inner) &&
+          (clipped_hp * start_h).maxCoeff() <= kEps) {
+        hp.swap(clipped_hp);
+        inner = clipped_inner;
+      } else {
+        last_plan_fail_reason_ =
+            "escape: strict observed-region FIRI/interior failed";
+        ROS_WARN_THROTTLE(2.0,
+                          "[local-plan] %s (%d active face(s))",
+                          last_plan_fail_reason_.c_str(),
+                          static_cast<int>(active.rows()));
+        return false;
+      }
+    }
+    if ((hp * start_h).maxCoeff() > kEps) {
+      last_plan_fail_reason_ =
+          "escape: actual start outside strict escape polytope";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+                        last_plan_fail_reason_.c_str());
+      return false;
+    }
+  }
+
+  // A FIRI plane is a separating plane, not necessarily the physical obstacle
+  // surface.  Contracting every such plane by DilateRadiusSoft can therefore
+  // erase a corridor even when the measured map contains a valid safe point.
+  // Use FIRI only as the strict convex/observed free-space certificate, and use
+  // the map's nearest-obstacle distance (the same quantity used by the runtime
+  // collision checker) for the actual vehicle clearance.
+  const Eigen::MatrixX4d escape_raw_hp = hp;
+  const Eigen::MatrixX4d escape_safe_hp = escape_raw_hp;
+  constexpr double kTargetGridStep = 0.2; // same resolution as escape cloud
+  constexpr double kTargetLineStep = 0.05;
+  constexpr double kTargetClearanceTolerance = 1.0e-3;
+  const double start_clearance = lidar_map_interface_->getDisToOcc(start_pos);
+  Eigen::Vector3d safe_target = Eigen::Vector3d::Zero();
+  double safe_target_clearance = -1.0;
+  double safe_target_distance = std::numeric_limits<double>::infinity();
+  if (std::isfinite(start_clearance) && start_clearance >= 0.0) {
+    for (int ix = -10; ix <= 10; ++ix) {
+      for (int iy = -10; iy <= 10; ++iy) {
+        for (int iz = -5; iz <= 5; ++iz) {
+          const Eigen::Vector3d candidate =
+              start_pos +
+              Eigen::Vector3d(ix * kTargetGridStep, iy * kTargetGridStep,
+                              iz * kTargetGridStep);
+          const Eigen::Vector4d candidate_h(
+              candidate.x(), candidate.y(), candidate.z(), 1.0);
+          if (candidate.z() > virtual_ceiling_z + 1.0e-6 ||
+              (escape_raw_hp * candidate_h).maxCoeff() > 1.0e-6 ||
+              (escape_observed_halfspaces.rows() > 0 &&
+               (escape_observed_halfspaces * candidate_h).maxCoeff() >
+                   1.0e-6))
+            continue;
+          const double candidate_clearance =
+              lidar_map_interface_->getDisToOcc(candidate);
+          if (!std::isfinite(candidate_clearance) ||
+              candidate_clearance + kTargetClearanceTolerance <
+                  gcopter_config_->dilateRadiusSoft)
+            continue;
+
+          // A safe endpoint is insufficient if reaching it first moves closer
+          // to an obstacle.  Because the raw FIRI is convex, the straight
+          // segment stays inside it; verify that the measured clearance along
+          // that segment never drops below the clearance already present at
+          // the current pose.
+          const Eigen::Vector3d delta = candidate - start_pos;
+          const double distance = delta.norm();
+          if (!std::isfinite(distance) ||
+              distance <= gcopter_config_->vectorNormEps)
+            continue;
+          const int line_samples =
+              std::max(1, static_cast<int>(std::ceil(distance /
+                                                     kTargetLineStep)));
+          double line_clearance_floor = start_clearance;
+          bool non_worsening_line = true;
+          for (int sample = 1; sample <= line_samples; ++sample) {
+            const Eigen::Vector3d point =
+                start_pos + delta *
+                                (static_cast<double>(sample) / line_samples);
+            const double clearance = lidar_map_interface_->getDisToOcc(point);
+            if (!std::isfinite(clearance) ||
+                clearance + kTargetClearanceTolerance <
+                    line_clearance_floor) {
+              non_worsening_line = false;
+              break;
+            }
+            line_clearance_floor =
+                std::max(line_clearance_floor, clearance);
+          }
+          if (!non_worsening_line)
+            continue;
+
+          // Prefer the shortest certified egress; clearance breaks ties.
+          if (distance + 1.0e-6 < safe_target_distance ||
+              (std::abs(distance - safe_target_distance) <= 1.0e-6 &&
+               candidate_clearance > safe_target_clearance)) {
+            safe_target = candidate;
+            safe_target_distance = distance;
+            safe_target_clearance = candidate_clearance;
+          }
+        }
+      }
+    }
+  }
+  if (!safe_target.allFinite() || !std::isfinite(safe_target_clearance) ||
+      safe_target_clearance < 0.0) {
+    last_plan_fail_reason_ =
+        "escape: no observed non-worsening path to DilateRadiusSoft";
+    ROS_WARN_THROTTLE(2.0, "[local-plan] %s (start clearance=%.3f)",
+                      last_plan_fail_reason_.c_str(), start_clearance);
+    return false;
+  }
+  inner = safe_target;
+
+  std::vector<Eigen::MatrixX4d> hPolys;
+  hPolys.push_back(escape_raw_hp);
+  hPolys.push_back(escape_safe_hp);
   Eigen::Vector4d bh;
-  double time_now = (ros::Time::now() - local_data_.start_time_).toSec();
-  const Eigen::Vector3d inner_delta =
-      inner - topo_graph_->odom_node_->center_.cast<double>();
+  const Eigen::Vector3d inner_delta = inner - firi_seed;
   const double inner_delta_norm = inner_delta.norm();
   Eigen::Vector3d dir = Eigen::Vector3d::Zero();
   if (inner_delta.allFinite() &&
       inner_delta_norm > gcopter_config_->vectorNormEps) {
     dir = inner_delta / inner_delta_norm;
   }
-  
-  // Declare iniState variable
+
   Eigen::Matrix3d iniState;
-  
-  if (is_static) {
-    // TSP、更新地图等会阻塞里程计回调函数，导致这里的数据不准，所以只有static才用
-    iniState << local_data_.curr_pos_, dir * 0.2, Eigen::Vector3d::Zero();
-    // iniState << topo_graph_->odom_node_->center_, local_data_.curr_vel_,
-    // Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-  } else {
-    time_now =
-        time_now > local_data_.duration_ ? local_data_.duration_ : time_now;
-    Eigen::Vector3d current_pose = local_data_.minco_traj_.getPos(time_now);
-    iniState << current_pose, dir * 0.2, Eigen::Vector3d::Zero();
-  }
+  iniState << start_pos, dir * 0.2, Eigen::Vector3d::Zero();
   Eigen::Matrix3d finState;
   ros::Time hpoly_gen_end = ros::Time::now();
   // iniState << topo_graph_->odom_node_->center_, local_data_.curr_vel_,
   // Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
-  finState << inner, dir, Eigen::Vector3d::Zero();
+  finState << inner, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
   bh << iniState.topLeftCorner<3, 1>(), 1.0;
   int start_idx = -1;
   for (int i = hPolys.size() - 1; i >= 0; i--) {
-    Eigen::MatrixX4d hp = hPolys[i];
-    if ((((hp * bh).array() > -1.0e-6).cast<int>().sum() <= 0)) {
+    const Eigen::MatrixX4d &candidate_hp = hPolys[i];
+    // The observed cone can pass exactly through the current pose.  The
+    // strict observed-FIRI check above already accepts that geometric boundary
+    // with +1e-6 tolerance; demanding every face be at least 1e-6 *inside*
+    // here contradicted that check and rejected every such recovery as
+    // "start not in local free bubble".  Containment is sufficient for the
+    // raw egress phase; the completed trajectory is independently postchecked.
+    if ((candidate_hp * bh).maxCoeff() <= 1.0e-6) {
       start_idx = i;
       break;
     }
@@ -1605,7 +2254,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
           gcopter_config_->vectorNormEps,
           gcopter_config_->minSegmentTime,
           gcopter_config_->linearSolvePivotEps)) {
-    last_plan_fail_reason_ = "escape: gcopter setup failed";
+    last_plan_fail_reason_ = std::string("escape: gcopter setup failed: ") +
+                             gcopter.lastSetupError();
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
@@ -1618,6 +2268,153 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     last_plan_fail_reason_ = "escape: minco optimize failed";
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
+    return false;
+  }
+  const double escape_duration =
+      local_data_.minco_traj_.getTotalDuration();
+  if (!std::isfinite(escape_duration) ||
+      escape_duration < gcopter_config_->minSegmentTime) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ = "escape: invalid trajectory duration";
+    return false;
+  }
+  const Eigen::VectorXd escape_piece_durations =
+      local_data_.minco_traj_.getDurations();
+  if (escape_piece_durations.size() < 2 ||
+      !escape_piece_durations.allFinite() ||
+      (escape_piece_durations.array() <= 0.0).any()) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ =
+        "escape: trajectory does not preserve raw-to-safe corridor phases";
+    return false;
+  }
+
+  // Optimizer constraints are soft/numerical.  Before publishing a CAUTION
+  // recovery, independently sample the finished trajectory against the exact
+  // observed half-spaces, raw/safe FIRI phases, measured obstacle clearance,
+  // and the virtual ceiling.  Before the safe phase, the only exception is the
+  // clearance already present at t=0: clearance may never decrease.  Once the
+  // soft margin is reached it may never be surrendered.
+  constexpr double kEscapeSampleStep = 0.02;
+  constexpr double kEscapeBoundaryTolerance = 1.0e-5;
+  constexpr double kEscapeClearanceTolerance = 1.0e-3;
+  const double escape_start_clearance =
+      lidar_map_interface_->getDisToOcc(start_pos);
+  if (!std::isfinite(escape_start_clearance) ||
+      escape_start_clearance < 0.0) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ = "escape: invalid start clearance";
+    return false;
+  }
+  double clearance_floor = escape_start_clearance;
+  bool reached_soft_clearance =
+      escape_start_clearance + kEscapeClearanceTolerance >=
+      gcopter_config_->dilateRadiusSoft;
+  double escape_soft_entry_time =
+      reached_soft_clearance ? 0.0
+                             : std::numeric_limits<double>::quiet_NaN();
+  double minimum_clearance = escape_start_clearance;
+  double ceiling_floor = start_pos.z();
+  bool reached_virtual_ceiling =
+      start_pos.z() <= virtual_ceiling_z + kEscapeBoundaryTolerance;
+  for (double sample_time = 0.0;; sample_time += kEscapeSampleStep) {
+    const double t = std::min(sample_time, escape_duration);
+    const Eigen::Vector3d position = local_data_.minco_traj_.getPos(t);
+    const Eigen::Vector4d position_h(position.x(), position.y(), position.z(),
+                                     1.0);
+    if (!position.allFinite() ||
+        position.z() > hard_ceiling_z + kEscapeBoundaryTolerance) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ =
+          "escape: post-check exceeds hard ceiling";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                        last_plan_fail_reason_.c_str(), t);
+      return false;
+    }
+    if (!reached_virtual_ceiling) {
+      if (position.z() > ceiling_floor + kEscapeBoundaryTolerance) {
+        local_data_ = local_data_backup;
+        last_plan_fail_reason_ =
+            "escape: post-check climbs during ceiling recovery";
+        ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                          last_plan_fail_reason_.c_str(), t);
+        return false;
+      }
+      ceiling_floor = std::min(ceiling_floor, position.z());
+      reached_virtual_ceiling =
+          position.z() <= virtual_ceiling_z + kEscapeBoundaryTolerance;
+    } else if (position.z() >
+               virtual_ceiling_z + kEscapeBoundaryTolerance) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ =
+          "escape: post-check leaves virtual ceiling";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                        last_plan_fail_reason_.c_str(), t);
+      return false;
+    }
+    if ((escape_raw_hp * position_h).maxCoeff() >
+        kEscapeBoundaryTolerance) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ = "escape: post-check leaves raw FIRI polytope";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                        last_plan_fail_reason_.c_str(), t);
+      return false;
+    }
+    if (escape_observed_halfspaces.rows() > 0 &&
+        (escape_observed_halfspaces * position_h).maxCoeff() >
+            kEscapeBoundaryTolerance) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ =
+          "escape: post-check leaves observed region";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                        last_plan_fail_reason_.c_str(), t);
+      return false;
+    }
+    const double clearance = lidar_map_interface_->getDisToOcc(position);
+    if (!std::isfinite(clearance) || clearance < 0.0) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ = "escape: post-check invalid obstacle clearance";
+      return false;
+    }
+    minimum_clearance = std::min(minimum_clearance, clearance);
+    if (!reached_soft_clearance) {
+      if (clearance + kEscapeClearanceTolerance < clearance_floor) {
+        local_data_ = local_data_backup;
+        last_plan_fail_reason_ =
+            "escape: post-check worsens clearance before safe region";
+        ROS_WARN_THROTTLE(
+            2.0, "[local-plan] %s at t=%.3f (%.3f < %.3f)",
+            last_plan_fail_reason_.c_str(), t, clearance, clearance_floor);
+        return false;
+      }
+      clearance_floor = std::max(clearance_floor, clearance);
+      reached_soft_clearance =
+          clearance + kEscapeClearanceTolerance >=
+          gcopter_config_->dilateRadiusSoft;
+      if (reached_soft_clearance)
+        escape_soft_entry_time = t;
+    } else if (clearance + kEscapeClearanceTolerance <
+               gcopter_config_->dilateRadiusSoft) {
+      local_data_ = local_data_backup;
+      last_plan_fail_reason_ =
+          "escape: post-check loses soft clearance after reaching it";
+      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+                        last_plan_fail_reason_.c_str(), t);
+      return false;
+    }
+    if (t >= escape_duration)
+      break;
+  }
+  if (!reached_soft_clearance || !std::isfinite(escape_soft_entry_time)) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ =
+        "escape: post-check never reaches DilateRadiusSoft";
+    return false;
+  }
+  if (!reached_virtual_ceiling) {
+    local_data_ = local_data_backup;
+    last_plan_fail_reason_ =
+        "escape: post-check never re-enters virtual ceiling";
     return false;
   }
   if (local_data_.minco_traj_.getPieceNum() > 0) {
@@ -1638,20 +2435,26 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
     return false;
   }
-  ros::Time optimize_end_stamp = ros::Time::now();
   local_data_.traj_id_ += 1;
   local_data_.start_time_ = hpoly_gen_end;
-  local_data_.start_pos_ = topo_graph_->odom_node_->center_.cast<double>();
-  local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
-  if (!std::isfinite(local_data_.duration_) ||
-      local_data_.duration_ < gcopter_config_->minSegmentTime) {
-    local_data_ = local_data_backup;
-    last_plan_fail_reason_ = "escape: invalid trajectory duration";
-    return false;
-  }
+  local_data_.start_pos_ = start_pos;
+  local_data_.duration_ = escape_duration;
   // 성공: 단 이것은 요청 경로가 아니라 "안전지대 탈출" 궤적임을 표시
+  local_data_.rotate_in_place_ = false;
+  local_data_.caution_escape_ = true;
+  local_data_.escape_soft_entry_time_ = escape_soft_entry_time;
+  local_data_.escape_virtual_ceiling_z_ = virtual_ceiling_z;
+  local_data_.escape_hard_ceiling_z_ = hard_ceiling_z;
+  local_data_.escape_raw_polytope_ = escape_raw_hp;
+  local_data_.escape_safe_polytope_ = escape_safe_hp;
+  local_data_.escape_observed_halfspaces_ = escape_observed_halfspaces;
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = true;
+  ROS_INFO("[CAUTION] accepted escape: duration=%.2f s, soft-entry=%.2f s, "
+           "clearance %.3f -> %.3f (required %.3f, min %.3f)",
+           escape_duration, escape_soft_entry_time, escape_start_clearance,
+           safe_target_clearance, gcopter_config_->dilateRadiusSoft,
+           minimum_clearance);
   return true;
 }
 

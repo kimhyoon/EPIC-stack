@@ -116,6 +116,19 @@ BATT 23.0V | voltage=23.10V percent=52%
 ```
 전압이 비행 내내 미동도 없으면 모터 무부하(=실제 비행 아님) 신호로도 쓸 수 있다.
 
+### AMNESTY — FINISH 직전 "도달불가" 낙인 사면 (fsm/unreachable_amnesty_*)
+```
+AMNESTY unreachable latch cleared -> global plan recovered, resume exploring | forgiven=8(prev_unreachable=8) re-run=OK clusters=15(reachable 7) viewpoints=6(path_reachable 6)
+AMNESTY unreachable latch cleared -> still no frontier, proceeding to FINISH | forgiven=8(prev_unreachable=8) re-run=NO_FRONTIER clusters=15(reachable 0) viewpoints=0(path_reachable 0)
+```
+FINISH 진입 조건(NO_FRONTIER)을 만나면, 넘어가기 전에 모든 클러스터의
+`is_reachable_` 낙인(§3의 `prev_unreachable`)을 한 번 풀고 전역계획을 딱 한 번
+재시도한다. `forgiven` = 이번에 풀어준 클러스터 수(=직전 라운드 `prev_unreachable`).
+재계획이 성공(`re-run=OK`)하면 FINISH 로 가지 않고 탐사를 계속하며 INFO, 그래도
+frontier 가 없으면(`re-run=NO_FRONTIER`) 정상적으로 FINISH 로 넘어가며 WARN.
+직전 라운드 `prev_unreachable=0`(용서할 게 없음)이면 아예 시도하지 않고 조용히
+FINISH 로 진행한다 — 이 경우 이벤트가 찍히지 않는다.
+
 ### PARAM / EVENT
 `PARAM box|corridor|frontier|viewpoint|fsm|topics ...` = 핵심 파라미터 스냅샷
 (기동 시 1회 + 트리거 시 재발행). `EVENT` = 트리거 수신, /srv_rth 수신.

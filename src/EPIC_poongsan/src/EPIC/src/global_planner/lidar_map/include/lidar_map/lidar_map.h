@@ -110,6 +110,7 @@ struct LIOInterfaceParam {
   double lidar_pitch_;
   double lidar_yaw_;
 
+  double min_ray_length_;
   double max_ray_length_;
   double vector_norm_eps_;
   double trig_gradient_eps_;
