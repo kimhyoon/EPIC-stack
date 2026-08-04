@@ -631,7 +631,6 @@ fsm/early_finish_enable: true
 # 값 증가 시 재시도가 더 자주 발동하지만, 2단 gain 조건이 이득 없는 probe 를
 # 걸러주므로 정상 종료 오인 위험은 예전보다 작다.
 # 이륙 상승/초기 회전 구간은 포함되지 않으며, 탐사가 실제로 시작된 시점부터 잰다.
-fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 최대 직선 이탈거리 상한[m]
 fsm/early_finish_probe_min_gain: 1.0     # EFP 원점거리가 최대변위를 이만큼 넘어야 probe[m]
 fsm/early_finish_visited_radius: 1.5     # 비행경로에서 이 반경 안 노드는 방문 간주[m] (<=0 끄기)
 

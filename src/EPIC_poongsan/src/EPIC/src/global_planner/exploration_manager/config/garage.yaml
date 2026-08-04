@@ -314,7 +314,6 @@ fsm/early_finish_enable: true
 #      최대 노드를 EFP 로 고르되, 그 원점거리가 (최대 변위 + probe_min_gain) 을
 #      넘어야 probe 를 보낸다. 못 넘으면 관측 이득이 없으므로 정상 FINISH.
 # 강제 /srv_early_finish 는 2단의 gain 조건을 걸지 않는다.
-fsm/early_finish_dist_thresh: 3.0        # [m] max displacement less than this at FINISH -> probe
 fsm/early_finish_probe_min_gain: 1.0     # [m] EFP origin-dist must exceed max_disp by this
 fsm/early_finish_visited_radius: 1.5     # [m] nodes within this of flown path = visited (<=0 off)
 fsm/early_finish_max_retry: 1            # retry attempts before falling back to normal FINISH
