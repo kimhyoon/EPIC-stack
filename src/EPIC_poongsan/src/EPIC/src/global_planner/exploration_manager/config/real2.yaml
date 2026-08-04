@@ -32,7 +32,7 @@ record/dir: ""         # 저장 폴더. 빈 값 = <epic_planner 패키지>/recor
 record/args: "-a"      # rosbag record 인자 (예: 토픽만 추리려면 변경)
 
 # rviz 시각화 on/off (rviz_on_param.py 가 읽음, launch 인자 아님)
-rviz/enable: false     # true 면 real.rviz 로 rviz 자동 실행
+rviz/enable: true      # true 면 real.rviz 로 rviz 자동 실행
 rviz/config: ""        # rviz 설정 파일. 빈 값 = <epic_planner 패키지>/config/real.rviz
 # ══════════════════════════════════════════════════════════════════
 
@@ -622,13 +622,14 @@ fsm/yaw_rotate_init_rate: 0.5     # [rad/s] 회전 각속도 (0.5 = 약 29 deg/s
 
 fsm/early_finish_enable: true
 
-# [조기 종료 판정 거리]
-# 탐사 종료 시점의 누적 이동거리가 이 값보다 짧으면 "제대로 못 돌아다녔다"고 보고 재시도한다.
-# 값 증가 시 재시도가 더 자주 발동하지만 정상 종료까지 재시도로 오인할 수 있고,
-# 값 감소 시 확실한 조기 종료만 구제하지만 놓치는 경우가 늘어난다.
-# 이륙 상승 구간은 포함되지 않으며, 탐사가 실제로 시작된 시점부터 누적한다.
-fsm/early_finish_dist_thresh: 3.0        # 조기 종료로 볼 최대 직선 이탈거리 상한[m] (경로적분 아님)
-fsm/early_finish_probe_min_gain: 1.0     # EFP 원점거리가 최대변위를 이만큼 넘어야 probe[m]
+# [조기 종료 구제 판정]
+# 자동 탐사 종료는 (retry 래치 안에서) 항상 EARLY_FINISH 를 한 번 거치며, probe
+# 발사 여부는 아래 gain 조건이 유일하게 결정한다: "가본 범위(최대 직선 이탈거리)
+# + probe_min_gain 을 넘는 도달 가능 미방문 노드가 있으면" probe, 없으면 즉시
+# 정상 FINISH. 거리 게이트(early_finish_dist_thresh)는 폐지 — 절대 임계는 환경
+# 규모를 몰라 3m 이상 진출한 조기 종료(0804 실비행 2회)를 구제하지 못했다.
+# gain 증가 = 보수적(확실히 새 공간일 때만 probe), 감소 = 적극적(오탐 probe 위험).
+fsm/early_finish_probe_min_gain: 1.0     # EFP 원점거리가 최대변위를 이만큼 넘어야 probe[m] 즉, 가봤던 범위보다 좀더 여유분을 주고 probe하는 것
 fsm/early_finish_visited_radius: 1.5     # 비행경로에서 이 반경 안 노드는 방문 간주[m] (<=0 끄기)
 
 # [재시도 횟수 상한]
