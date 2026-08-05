@@ -148,6 +148,11 @@ lidar_perception/max_ray_length: 30
 # 센서 원점에서 이 거리 이하인 반사점은 기체/센서 자체 또는 비정상 근접 반사로 보고 지도에 넣지 않는다.
 # /ml_/pointcloud의 frame_id 표기는 실제 좌표계와 다르므로 cloud_frame_mode=sensor 기준으로 적용한다.
 lidar_perception/min_ray_length: 0.30
+# 현재 LiDAR의 실제 측정 ray가 통과한 free 구간에서만 오래된 IKD-tree 점을
+# 즉시 삭제한 뒤, 현재 scan 끝점은 기존 Add_Points 경로로 다시 삽입한다.
+lidar_perception/ray_clearing_enabled: true
+lidar_perception/ray_clearing_radius: 0.10       # ray 주변 삭제 tube 반경 [m]
+lidar_perception/ray_endpoint_margin: 0.20       # 측정 끝점 앞 보호 구간 [m]
 
 # --- 계획용 보수 FOV: 반드시 위 물리값 이내 (규칙 1) ---
 # 뷰포인트 yaw 선택 시 "이 각 안에 든 프론티어만 보인다"고 친다.
