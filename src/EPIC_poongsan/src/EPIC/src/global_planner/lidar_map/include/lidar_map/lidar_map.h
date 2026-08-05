@@ -91,6 +91,9 @@ private:
   void initializeTransform(const std::string& map_frame,
                           const std::string& body_frame,
                           const std::string& cloud_frame);
+  int clearFreeSpaceAlongRays(
+      const Eigen::Vector3f &sensor_origin,
+      const pcl::PointCloud<pcl::PointXYZ> &current_world_cloud);
 
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
@@ -112,6 +115,9 @@ struct LIOInterfaceParam {
 
   double min_ray_length_;
   double max_ray_length_;
+  bool ray_clearing_enabled_;
+  double ray_clearing_radius_;
+  double ray_endpoint_margin_;
   double vector_norm_eps_;
   double trig_gradient_eps_;
   double fov_up, fov_down;

@@ -147,6 +147,26 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     ros::shutdown();
     exit(1);
   }
+  nh.param("lidar_perception/ray_clearing_enabled",
+           lp_->ray_clearing_enabled_, false);
+  nh.param("lidar_perception/ray_clearing_radius",
+           lp_->ray_clearing_radius_, 0.10);
+  nh.param("lidar_perception/ray_endpoint_margin",
+           lp_->ray_endpoint_margin_, 0.20);
+  if (lp_->ray_clearing_enabled_ &&
+      (!std::isfinite(lp_->ray_clearing_radius_) ||
+       lp_->ray_clearing_radius_ <= 0.0 ||
+       !std::isfinite(lp_->ray_endpoint_margin_) ||
+       lp_->ray_endpoint_margin_ < 0.0)) {
+    ROS_FATAL("[LIOInterface] ray clearing requires a positive finite radius "
+              "and a non-negative finite endpoint margin.");
+    ros::shutdown();
+    exit(1);
+  }
+  ROS_INFO("[LIOInterface] ray clearing: %s, radius=%.3f m, endpoint "
+           "margin=%.3f m",
+           lp_->ray_clearing_enabled_ ? "enabled" : "disabled",
+           lp_->ray_clearing_radius_, lp_->ray_endpoint_margin_);
   ld_->first_map_flag_ = true;
 
   // Initialize TF listener for frame transforms.
