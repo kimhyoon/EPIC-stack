@@ -323,8 +323,8 @@ private:
   bool   unreachable_amnesty_enable_ = true;
 
   /* helper functions */
-  // 탐사 박스(lp_->global_box_*) 안인가. box_num_<=0 이면 제한 없음(true).
-  bool insideExplorationBox(const Eigen::Vector3f &p) const;
+  // 기체 중심 planning_box 안인가. planning_box_num_<=0 이면 제한 없음(true).
+  bool insidePlanningBox(const Eigen::Vector3f &p) const;
   // odom_node_ 에서 Dijkstra 를 한 번 흘려 "도달 가능한 노드 -> 그래프 거리[m]"
   // 를 통째로 반환한다. EFP 선정(가장 먼 노드)과 매 주기 연결성 확인/재바인딩이
   // 모두 이 한 함수를 공유한다.

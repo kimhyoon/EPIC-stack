@@ -1,6 +1,7 @@
 #include "visualization_msgs/Marker.h"
 #include <cmath>
 #include <lidar_map/lidar_map.h>
+#include <lidar_map/structured_log.h>
 #include <pcl/filters/voxel_grid.h>
 namespace fast_planner {
 
@@ -21,14 +22,14 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   // silently running with a stale fallback topic.
   if (!nh.getParam("odometry_topic", odom_topic) || odom_topic.empty() ||
       !nh.getParam("cloud_topic", cloud_topic) || cloud_topic.empty()) {
-    ROS_FATAL("[LIOInterface] odometry_topic / cloud_topic not set in config "
+    EPIC_SENSOR_FATAL("sensor.lidar", "odometry_topic / cloud_topic not set in config "
               "yaml. REFUSING TO START - no fallback.");
     ros::shutdown();
     exit(1);
   }
   auto requirePositiveFinite = [&nh](const std::string &name, double &value) {
     if (!nh.getParam(name, value) || !std::isfinite(value) || value <= 0.0) {
-      ROS_FATAL("[LIOInterface] required positive finite parameter '%s' is "
+      EPIC_SENSOR_FATAL("sensor.lidar", "required positive finite parameter '%s' is "
                 "missing or invalid.",
                 name.c_str());
       ros::shutdown();
@@ -47,32 +48,76 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     string cropped_topic;
     if (!nh.getParam("cloud_crop/output_topic", cropped_topic) ||
         cropped_topic.empty()) {
-      ROS_FATAL("[LIOInterface] cloud_crop/enable=true but "
+      EPIC_SENSOR_FATAL("sensor.lidar", "cloud_crop/enable=true but "
                 "cloud_crop/output_topic is not configured.");
       ros::shutdown();
       exit(1);
     }
-    ROS_WARN("[LIOInterface] cloud crop enabled: EPIC uses %s (raw: %s)",
+    EPIC_SENSOR_INFO("sensor.lidar", "cloud crop enabled input=%s raw=%s",
              cropped_topic.c_str(), cloud_topic.c_str());
     cloud_topic = cropped_topic;
   }
-  nh.getParam("box_num", lp_->box_num_);
+  if (!nh.getParam("planning_box_num", lp_->planning_box_num_) ||
+      lp_->planning_box_num_ <= 0) {
+    EPIC_SENSOR_FATAL("sensor.map",
+                      "planning_box_num must be configured and positive");
+    ros::shutdown();
+    exit(1);
+  }
   nh.getParam("lidar_perception/lidar_pitch", lp_->lidar_pitch_);
   // Keep old configs valid when the yaw key is absent.
   nh.param("lidar_perception/lidar_yaw", lp_->lidar_yaw_, 0.0);
-  for (int i = 0; i < lp_->box_num_; i++) {
+  for (int i = 0; i < lp_->planning_box_num_; i++) {
     std::vector<double> tmp;
-    nh.getParam("box_" + to_string(i) + "/down", tmp);
+    const std::string prefix = "planning_box_" + to_string(i);
+    if (!nh.getParam(prefix + "/down", tmp) || tmp.size() != 3) {
+      EPIC_SENSOR_FATAL("sensor.map", "%s/down must contain three values",
+                        prefix.c_str());
+      ros::shutdown();
+      exit(1);
+    }
     Eigen::Vector3f tmp1(tmp[0], tmp[1], tmp[2]);
-    nh.getParam("box_" + to_string(i) + "/up", tmp);
+    if (!nh.getParam(prefix + "/up", tmp) || tmp.size() != 3) {
+      EPIC_SENSOR_FATAL("sensor.map", "%s/up must contain three values",
+                        prefix.c_str());
+      ros::shutdown();
+      exit(1);
+    }
     Eigen::Vector3f tmp2(tmp[0], tmp[1], tmp[2]);
     Eigen::Vector3f min, max;
     for (int i = 0; i < 3; i++) {
       min(i) = fmin(tmp1(i), tmp2(i));
       max(i) = fmax(tmp1(i), tmp2(i));
     }
-    lp_->global_box_min_boundary_vec_.emplace_back(min);
-    lp_->global_box_max_boundary_vec_.emplace_back(max);
+    lp_->planning_box_min_boundary_vec_.emplace_back(min);
+    lp_->planning_box_max_boundary_vec_.emplace_back(max);
+  }
+  nh.param("mapping_box/shrink_voxels", lp_->mapping_box_shrink_voxels_, 1);
+  double frontier_cell_size = 0.0;
+  requirePositiveFinite("FrontierManager/cell_size", frontier_cell_size);
+  if (lp_->mapping_box_shrink_voxels_ < 0) {
+    EPIC_SENSOR_FATAL("sensor.map",
+                      "mapping_box/shrink_voxels must be non-negative");
+    ros::shutdown();
+    exit(1);
+  }
+  lp_->mapping_box_shrink_distance_ =
+      lp_->mapping_box_shrink_voxels_ * frontier_cell_size;
+  for (int i = 0; i < lp_->planning_box_num_; ++i) {
+    Eigen::Vector3f min = lp_->planning_box_min_boundary_vec_[i];
+    Eigen::Vector3f max = lp_->planning_box_max_boundary_vec_[i];
+    min.array() += static_cast<float>(lp_->mapping_box_shrink_distance_);
+    max.array() -= static_cast<float>(lp_->mapping_box_shrink_distance_);
+    if ((min.array() >= max.array()).any()) {
+      EPIC_SENSOR_FATAL(
+          "sensor.map",
+          "planning_box_%d is too small for mapping shrink %.3fm", i,
+          lp_->mapping_box_shrink_distance_);
+      ros::shutdown();
+      exit(1);
+    }
+    lp_->mapping_box_min_boundary_vec_.emplace_back(min);
+    lp_->mapping_box_max_boundary_vec_.emplace_back(max);
   }
   nh.getParam("dead_area_num", lp_->dead_area_num_);
   for (int i = 0; i < lp_->dead_area_num_; i++) {
@@ -90,40 +135,34 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     lp_->dead_area_max_boundary_vec_.emplace_back(max);
   }
 
-  lp_->global_box_max_boundary_ = lp_->global_box_min_boundary_vec_[0];
-  lp_->global_box_min_boundary_ = lp_->global_box_max_boundary_vec_[0];
-  for (auto &vec : lp_->global_box_min_boundary_vec_) {
-    lp_->global_box_min_boundary_.x() =
-        vec.x() < lp_->global_box_min_boundary_.x()
-            ? vec.x()
-            : lp_->global_box_min_boundary_.x();
-    lp_->global_box_min_boundary_.y() =
-        vec.y() < lp_->global_box_min_boundary_.y()
-            ? vec.y()
-            : lp_->global_box_min_boundary_.y();
-    lp_->global_box_min_boundary_.z() =
-        vec.z() < lp_->global_box_min_boundary_.z()
-            ? vec.z()
-            : lp_->global_box_min_boundary_.z();
-  }
-  for (auto &vec : lp_->global_box_max_boundary_vec_) {
-    lp_->global_box_max_boundary_.x() =
-        vec.x() > lp_->global_box_max_boundary_.x()
-            ? vec.x()
-            : lp_->global_box_max_boundary_.x();
-    lp_->global_box_max_boundary_.y() =
-        vec.y() > lp_->global_box_max_boundary_.y()
-            ? vec.y()
-            : lp_->global_box_max_boundary_.y();
-    lp_->global_box_max_boundary_.z() =
-        vec.z() > lp_->global_box_max_boundary_.z()
-            ? vec.z()
-            : lp_->global_box_max_boundary_.z();
-  }
-  lp_->global_map_max_boundary_ = lp_->global_box_max_boundary_;
-  lp_->global_map_min_boundary_ = lp_->global_box_min_boundary_;
-  cout << "max boundary: " << lp_->global_map_max_boundary_ << endl;
-  cout << "min boundary: " << lp_->global_map_min_boundary_ << endl;
+  auto aggregate = [](const vector<Eigen::Vector3f> &mins,
+                      const vector<Eigen::Vector3f> &maxs,
+                      Eigen::Vector3f &out_min, Eigen::Vector3f &out_max) {
+    out_min = mins.front();
+    out_max = maxs.front();
+    for (size_t i = 1; i < mins.size(); ++i) {
+      out_min = out_min.cwiseMin(mins[i]);
+      out_max = out_max.cwiseMax(maxs[i]);
+    }
+  };
+  aggregate(lp_->planning_box_min_boundary_vec_,
+            lp_->planning_box_max_boundary_vec_,
+            lp_->planning_box_min_boundary_, lp_->planning_box_max_boundary_);
+  aggregate(lp_->mapping_box_min_boundary_vec_,
+            lp_->mapping_box_max_boundary_vec_,
+            lp_->mapping_box_min_boundary_, lp_->mapping_box_max_boundary_);
+  EPIC_SENSOR_INFO(
+      "sensor.map",
+      "planning_box min=(%.2f,%.2f,%.2f) max=(%.2f,%.2f,%.2f); "
+      "mapping_box shrink=%d voxel(s)=%.2fm min=(%.2f,%.2f,%.2f) "
+      "max=(%.2f,%.2f,%.2f)",
+      lp_->planning_box_min_boundary_.x(), lp_->planning_box_min_boundary_.y(),
+      lp_->planning_box_min_boundary_.z(), lp_->planning_box_max_boundary_.x(),
+      lp_->planning_box_max_boundary_.y(), lp_->planning_box_max_boundary_.z(),
+      lp_->mapping_box_shrink_voxels_, lp_->mapping_box_shrink_distance_,
+      lp_->mapping_box_min_boundary_.x(), lp_->mapping_box_min_boundary_.y(),
+      lp_->mapping_box_min_boundary_.z(), lp_->mapping_box_max_boundary_.x(),
+      lp_->mapping_box_max_boundary_.y(), lp_->mapping_box_max_boundary_.z());
   nh.param("lidar_perception/fov_up", lp_->fov_up, -0.1);
   nh.param("lidar_perception/fov_down", lp_->fov_down, -0.1);
   nh.param("lidar_perception/fov_horizontal", lp_->fov_horizontal, 360.0);
@@ -133,7 +172,7 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   // LiDAR's reliable minimum range to be rejected before map insertion.
   nh.param("lidar_perception/min_ray_length", lp_->min_ray_length_, 0.0);
   if (!std::isfinite(lp_->min_ray_length_) || lp_->min_ray_length_ < 0.0) {
-    ROS_FATAL("[LIOInterface] lidar_perception/min_ray_length must be a "
+    EPIC_SENSOR_FATAL("sensor.lidar", "lidar_perception/min_ray_length must be a "
               "non-negative finite distance.");
     ros::shutdown();
     exit(1);
@@ -141,7 +180,7 @@ void LIOInterface::init(ros::NodeHandle &nh) {
   requirePositiveFinite("lidar_perception/max_ray_length",
                         lp_->max_ray_length_);
   if (lp_->min_ray_length_ >= lp_->max_ray_length_) {
-    ROS_FATAL("[LIOInterface] lidar_perception/min_ray_length (%.3f m) must "
+    EPIC_SENSOR_FATAL("sensor.lidar", "lidar_perception/min_ray_length (%.3f m) must "
               "be less than max_ray_length (%.3f m).",
               lp_->min_ray_length_, lp_->max_ray_length_);
     ros::shutdown();
@@ -158,15 +197,11 @@ void LIOInterface::init(ros::NodeHandle &nh) {
        lp_->ray_clearing_radius_ <= 0.0 ||
        !std::isfinite(lp_->ray_endpoint_margin_) ||
        lp_->ray_endpoint_margin_ < 0.0)) {
-    ROS_FATAL("[LIOInterface] ray clearing requires a positive finite radius "
+    EPIC_SENSOR_FATAL("sensor.map", "ray clearing requires a positive finite radius "
               "and a non-negative finite endpoint margin.");
     ros::shutdown();
     exit(1);
   }
-  ROS_INFO("[LIOInterface] ray clearing: %s, radius=%.3f m, endpoint "
-           "margin=%.3f m",
-           lp_->ray_clearing_enabled_ ? "enabled" : "disabled",
-           lp_->ray_clearing_radius_, lp_->ray_endpoint_margin_);
   ld_->first_map_flag_ = true;
 
   // Initialize TF listener for frame transforms.
@@ -182,7 +217,7 @@ void LIOInterface::init(ros::NodeHandle &nh) {
     // The cloud is already registered in the odometry/map frame. Ignore the
     // PointCloud2 frame_id because some drivers publish a misleading value.
     needs_transform_ = false;
-    ROS_WARN("[LIOInterface] cloud_frame_mode=world: using %s as registered "
+    EPIC_SENSOR_WARN("sensor.lidar", "cloud_frame_mode=world: using %s as registered "
              "world/odom cloud and ignoring PointCloud2 frame_id",
              cloud_topic.c_str());
   } else if (frame_mode == "sensor") {
@@ -217,27 +252,24 @@ void LIOInterface::init(ros::NodeHandle &nh) {
           Eigen::Vector3f(mount_offset[0], mount_offset[1], mount_offset[2]);
     }
     needs_transform_ = true;
-    ROS_WARN("[LIOInterface] cloud_frame_mode=sensor: applying body->cloud mount "
+    EPIC_SENSOR_INFO("sensor.lidar", "cloud_frame_mode=sensor: applying body->cloud mount "
              "transform from lidar_pitch/lidar_yaw pitch=%.2fdeg yaw=%.2fdeg "
              "offset=[%.3f %.3f %.3f]",
              mount_pitch_deg, mount_yaw_deg,
              mount_offset.size() == 3 ? mount_offset[0] : 0.0,
              mount_offset.size() == 3 ? mount_offset[1] : 0.0,
              mount_offset.size() == 3 ? mount_offset[2] : 0.0);
-    ROS_INFO("[LIOInterface] sensor minimum-range filter: rejecting returns "
-             "at or below %.3f m",
-             lp_->min_ray_length_);
   } else if (frame_mode == "auto") {
-    ROS_WARN("[LIOInterface] cloud_frame_mode=auto: inferring cloud transform "
+    EPIC_SENSOR_WARN("sensor.lidar", "cloud_frame_mode=auto: inferring cloud transform "
              "from frame_id strings. Use explicit world/sensor mode for real flight.");
 
-    ROS_INFO("[LIOInterface] Waiting for first odometry message on %s...",
+    EPIC_SENSOR_DEBUG("sensor.lidar", "waiting for first odometry on %s",
              odom_topic.c_str());
     nav_msgs::Odometry::ConstPtr first_odom =
         ros::topic::waitForMessage<nav_msgs::Odometry>(odom_topic, nh,
                                                        ros::Duration(10.0));
 
-    ROS_INFO("[LIOInterface] Waiting for first pointcloud message on %s...",
+    EPIC_SENSOR_DEBUG("sensor.lidar", "waiting for first pointcloud on %s",
              cloud_topic.c_str());
     sensor_msgs::PointCloud2::ConstPtr first_cloud =
         ros::topic::waitForMessage<sensor_msgs::PointCloud2>(
@@ -248,22 +280,31 @@ void LIOInterface::init(ros::NodeHandle &nh) {
       std::string body_frame = first_odom->child_frame_id;
       std::string cloud_frame = first_cloud->header.frame_id;
 
-      ROS_INFO("[LIOInterface] Detected frames - Map: %s, Body: %s, Cloud: %s",
+      EPIC_SENSOR_INFO("sensor.lidar", "detected frames map=%s body=%s cloud=%s",
                map_frame.c_str(), body_frame.c_str(), cloud_frame.c_str());
 
       initializeTransform(map_frame, body_frame, cloud_frame);
     } else {
-      ROS_WARN("[LIOInterface] Failed to receive initial messages, transform "
+      EPIC_SENSOR_WARN("sensor.lidar", "failed to receive initial messages; transform "
                "initialization skipped");
       needs_transform_ = false;
     }
   } else {
-    ROS_FATAL("[LIOInterface] Invalid lidar_perception/cloud_frame_mode='%s'. "
+    EPIC_SENSOR_FATAL("sensor.lidar", "invalid lidar_perception/cloud_frame_mode='%s'. "
               "Expected one of: auto, world, sensor.",
               frame_mode.c_str());
     ros::shutdown();
     exit(1);
   }
+
+  EPIC_SENSOR_INFO(
+      "sensor.map",
+      "configured odom=%s cloud=%s frame_mode=%s range=[%.2f,%.2f]m "
+      "ray_clear=%s radius=%.2fm endpoint_margin=%.2fm",
+      odom_topic.c_str(), cloud_topic.c_str(), frame_mode.c_str(),
+      lp_->min_ray_length_, lp_->max_ray_length_,
+      lp_->ray_clearing_enabled_ ? "on" : "off",
+      lp_->ray_clearing_radius_, lp_->ray_endpoint_margin_);
 
   // update_trigger_puber_ =
   //     nh.advertise<std_msgs::Empty>("/lio_interface/map_updated", 1);

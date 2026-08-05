@@ -11,8 +11,10 @@
 #include <cmath>
 #include <epic_planner/expl_data.h>
 #include <epic_planner/fast_exploration_manager.h>
+#include <frontier_manager/global_log.h>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <lkh_tsp_solver/lkh_interface.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -21,6 +23,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <thread>
+#include <sstream>
 #include <unistd.h>
 #include <visualization_msgs/Marker.h>
 using namespace std;
@@ -91,6 +94,11 @@ void FastExplorationManager::initialize(
            ep_->topo_cost_search_timeout_, 1e-2);
   nh.param("global_planning/goal_search_timeout", ep_->goal_search_timeout_,
            0.1);
+  nh.param("logging/global_detail", ep_->logging_detail_, 1);
+  ep_->logging_detail_ = std::max(0, std::min(3, ep_->logging_detail_));
+  EPIC_GLOG_INFO(ep_->logging_detail_, 0, "global.cycle",
+                 "configured detail=%d (0=cycle 1=stage 2=cluster 3=candidate)",
+                 ep_->logging_detail_);
   Eigen::Vector3d origin, size;
   ofstream par_file(ep_->tsp_dir_ + "/single.par");
   par_file << "PROBLEM_FILE = " << ep_->tsp_dir_ << "/single.tsp\n";
@@ -114,8 +122,8 @@ void FastExplorationManager::goalCallback(
   if (!std::isfinite(n2) ||
       n2 <= planner_manager_->gcopter_config_->vectorNormEps *
                 planner_manager_->gcopter_config_->vectorNormEps) {
-    ROS_WARN_THROTTLE(10.0,
-                      "[FastExplorationManager] goal with invalid quaternion "
+    EPIC_LOG_WARN_THROTTLE(10.0, "global.goal",
+                      "goal has invalid quaternion "
                       "(|q|^2=%.3f) - ignoring yaw",
                       n2);
     return;
@@ -210,6 +218,7 @@ double FastExplorationManager::getPathCostWithoutTopo(TopoNode::Ptr &n1,
 
 int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
                                            const Eigen::Vector3d &vel) {
+  const uint64_t cycle_id = ++global_cycle_id_;
   bool bm_without_topo = false;
   auto estimiateVdirCost = [&](const TopoNode::Ptr &n1,
                                const Eigen::Vector3d &v1,
@@ -237,6 +246,10 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   vector<TopoNode::Ptr> viewpoints;
   frontier_manager_ptr_->generateTSPViewpoints(
       planner_manager_->topo_graph_->odom_node_->center_, viewpoints);
+  EPIC_GLOG_DEBUG(ep_->logging_detail_, 1, "global.viewpoint.selection",
+                  "cycle=%llu %s",
+                  static_cast<unsigned long long>(cycle_id),
+                  frontier_manager_ptr_->vp_stats_.str().c_str());
 
   // --- debug diagnostics: cluster / viewpoint counts ---
   // 여기 카운트는 "진짜 frontier 뷰포인트" 만 센다. 아래에서 얹는 EFP 는 frontier
@@ -282,6 +295,12 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
                       ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
                                                     : VizColor::RED,
                       -1);
+    EPIC_GLOG_WARN_THROTTLE(
+        1.0, "global.cycle",
+        "cycle=%llu result=NO_VIEWPOINTS clusters=%d reachable_clusters=%d %s",
+        static_cast<unsigned long long>(cycle_id), ed_->diag_num_clusters_,
+        ed_->diag_num_clusters_reachable_,
+        frontier_manager_ptr_->vp_stats_.str().c_str());
     return NO_FRONTIER;
   }
 
@@ -290,6 +309,10 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   planner_manager_->topo_graph_->insertNodes(vp_inserted, false);
   updateGoalNode();
   ros::Time t2 = ros::Time::now();
+  EPIC_GLOG_DEBUG(ep_->logging_detail_, 1, "global.connectivity.node",
+                  "cycle=%llu inserted_viewpoints=%zu efp=%d time=%.2fms",
+                  static_cast<unsigned long long>(cycle_id), vp_inserted.size(),
+                  efp ? 1 : 0, (t2 - t1).toSec() * 1000.0);
   // cout << "insert viewpoint to graph time: " << (t2 - t1).toSec() * 1000
   //      << " ms" << endl;
   
@@ -317,6 +340,13 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   } else {
     last_goal_reachable = false;
   }
+  EPIC_GLOG_DEBUG(
+      ep_->logging_detail_, 1, "global.evaluation.continuity",
+      "cycle=%llu previous_goal_reachable=%d cost=%.2f previous_cost=%.2f "
+      "decision=%s",
+      static_cast<unsigned long long>(cycle_id), last_goal_reachable ? 1 : 0,
+      dis2last_goal, last_frame_value,
+      last_goal_reachable ? "KEEP_AS_COST_ORIGIN" : "RESELECT_FROM_ODOM");
 
   ros::Time t_start_cvp_1 = ros::Time::now();
   omp_set_num_threads(4);
@@ -406,6 +436,14 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   // 래치가 "실제로 경로가 나온 frontier 뷰포인트" 기준을 유지하도록).
   ed_->diag_num_reachable_vp_ =
       (int)viewpoint_reachable.size() - (efp_reachable ? 1 : 0);
+  EPIC_GLOG_DEBUG(
+      ep_->logging_detail_, 1, "global.evaluation.travel_cost",
+      "cycle=%llu input=%zu reachable=%zu rejected=%zu efp_reachable=%d "
+      "queries_time=%.2fms",
+      static_cast<unsigned long long>(cycle_id), viewpoints.size(),
+      viewpoint_reachable.size(), viewpoints.size() - viewpoint_reachable.size(),
+      efp_reachable ? 1 : 0,
+      (ros::Time::now() - t_start_cvp_1).toSec() * 1000.0);
 
   if (viewpoint_reachable.empty()) {
     ed_->diag_result_ = "NO_REACHABLE_VP";
@@ -423,6 +461,12 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
                       ed_->global_tour_.size() >= 2 ? VizColor::MAGNA
                                                     : VizColor::RED,
                       -1);
+    EPIC_GLOG_WARN_THROTTLE(
+        1.0, "global.cycle",
+        "cycle=%llu result=NO_REACHABLE_VP viewpoints=%d clusters=%d "
+        "reachable_clusters=%d",
+        static_cast<unsigned long long>(cycle_id), ed_->diag_num_viewpoints_,
+        ed_->diag_num_clusters_, ed_->diag_num_clusters_reachable_);
     return NO_FRONTIER;
   }
 
@@ -453,6 +497,25 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
     updateGoalNode();
     vizTourWithEfpLeg(planner_manager_->graph_visualizer_, ed_->global_tour_,
                       VizColor::BLUE, ed_->efp_tour_index_);
+    const double total_ms = (ros::Time::now() - start).toSec() * 1000.0;
+    EPIC_GLOG_DEBUG(
+        ep_->logging_detail_, 1, "global.goal",
+        "cycle=%llu source=%s pos=(%.2f,%.2f,%.2f) yaw=%.1fdeg",
+        static_cast<unsigned long long>(cycle_id), only_efp ? "EFP" : "FRONTIER",
+        viewpoint_reachable.front()->center_.x(),
+        viewpoint_reachable.front()->center_.y(),
+        viewpoint_reachable.front()->center_.z(),
+        planner_manager_->local_data_.end_yaw_ * 180.0 / M_PI);
+    EPIC_GLOG_INFO_THROTTLE(
+        1.0, ep_->logging_detail_, 0, "global.cycle",
+        "cycle=%llu result=OK clusters=%d reachable_clusters=%d viewpoints=%d "
+        "path_reachable=1 tour_nodes=2 next_goal=(%.2f,%.2f,%.2f) "
+        "total=%.2fms",
+        static_cast<unsigned long long>(cycle_id), ed_->diag_num_clusters_,
+        ed_->diag_num_clusters_reachable_, ed_->diag_num_viewpoints_,
+        viewpoint_reachable.front()->center_.x(),
+        viewpoint_reachable.front()->center_.y(),
+        viewpoint_reachable.front()->center_.z(), total_ms);
     return SUCCEED;
   }
 
@@ -480,11 +543,13 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   for (int i = 1; i < dim; ++i) {
     mat(i, 0) = 2e3 - viewpoint_reachable_distance2[i - 1] * 0.2;
   }
+  int relaxed_edges = 0;
   for (int i = 0; i < dim; ++i) {
     for (int j = 1; j < dim; ++j) {
       for (int k = 1; k < dim; ++k) {
         if (mat(i, j) > mat(i, k) + mat(k, j)) {
           mat(i, j) = mat(i, k) + mat(k, j) + 1e-2;
+          relaxed_edges++;
         }
       }
     }
@@ -492,6 +557,34 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   vector<int> indices;
   indices.reserve(dim);
   ros::Time start_tsp = ros::Time::now();
+  if (ep_->logging_detail_ >= 1 &&
+      epicGlobalDebugEnabled("global.tsp.matrix")) {
+    int valid_edges = 0, invalid_edges = 0;
+    double min_cost = std::numeric_limits<double>::infinity();
+    double max_cost = 0.0, sum_cost = 0.0;
+    for (int i = 0; i < dim; ++i) {
+      for (int j = 0; j < dim; ++j) {
+        if (i == j)
+          continue;
+        if (std::isfinite(mat(i, j)) && mat(i, j) < 2e3) {
+          valid_edges++;
+          min_cost = std::min(min_cost, mat(i, j));
+          max_cost = std::max(max_cost, mat(i, j));
+          sum_cost += mat(i, j);
+        } else {
+          invalid_edges++;
+        }
+      }
+    }
+    EPIC_GLOG_DEBUG(
+        ep_->logging_detail_, 1, "global.tsp.matrix",
+        "cycle=%llu dimension=%d valid_edges=%d invalid_edges=%d "
+        "cost[min=%.2f avg=%.2f max=%.2f] relaxed=%d time=%.2fms",
+        static_cast<unsigned long long>(cycle_id), dim, valid_edges,
+        invalid_edges, valid_edges ? min_cost : 0.0,
+        valid_edges ? sum_cost / valid_edges : 0.0, max_cost, relaxed_edges,
+        (start_tsp - t2).toSec() * 1000.0);
+  }
   // cout << "calculate tsp cost matrix cost " << (start_tsp - t2).toSec() * 1000
   //      << "ms" << endl;
   
@@ -500,6 +593,14 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   calculate_tsp_cost_pub_.publish(timing_msg);
   solveLHK(mat, indices);
   ros::Time end_tsp = ros::Time::now();
+  EPIC_GLOG_DEBUG(ep_->logging_detail_, 1, "global.tsp.solver",
+                  "cycle=%llu solver=LKH candidates=%zu result=%s indices=%zu "
+                  "time=%.2fms",
+                  static_cast<unsigned long long>(cycle_id),
+                  viewpoint_reachable.size(),
+                  indices.size() == static_cast<size_t>(dim) ? "OK"
+                                                              : "INVALID_SIZE",
+                  indices.size(), (end_tsp - start_tsp).toSec() * 1000.0);
   // cout << "lkh solver cost: " << (end_tsp - start_tsp).toSec() * 1000 << "ms"
   //      << endl;
   
@@ -521,6 +622,26 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
       ed_->global_tour_.emplace_back(viewpoint_reachable[i - 1]->center_);
     }
   }
+  if (ep_->logging_detail_ >= 2 &&
+      epicGlobalDebugEnabled("global.tsp.tour")) {
+    std::ostringstream order;
+    order << '[';
+    for (size_t i = 0; i < indices.size(); ++i) {
+      if (i)
+        order << ',';
+      if (indices[i] == 0)
+        order << "ODOM";
+      else if (efp && viewpoint_reachable[indices[i] - 1] == efp)
+        order << "EFP";
+      else
+        order << "vp" << (indices[i] - 1);
+    }
+    order << ']';
+    EPIC_GLOG_DEBUG(ep_->logging_detail_, 2, "global.tsp.tour",
+                    "cycle=%llu order=%s efp_index=%d",
+                    static_cast<unsigned long long>(cycle_id),
+                    order.str().c_str(), ed_->efp_tour_index_);
+  }
   if (!last_goal_reachable)
     last_frame_value = viewpoint_reachable_distance[indices[1]];
 
@@ -539,6 +660,27 @@ int FastExplorationManager::planGlobalPath(const Eigen::Vector3d &pos,
   updateGoalNode();
   ed_->diag_result_ = "OK";
   ed_->diag_reason_ = "OK";
+  double tour_length = 0.0;
+  for (size_t i = 1; i < ed_->global_tour_.size(); ++i)
+    tour_length += (ed_->global_tour_[i] - ed_->global_tour_[i - 1]).norm();
+  const auto &next_goal = ed_->next_goal_node_->center_;
+  const double total_ms = (ros::Time::now() - start).toSec() * 1000.0;
+  EPIC_GLOG_DEBUG(
+      ep_->logging_detail_, 1, "global.goal",
+      "cycle=%llu source=%s pos=(%.2f,%.2f,%.2f) yaw=%.1fdeg",
+      static_cast<unsigned long long>(cycle_id),
+      ed_->efp_tour_index_ == 1 ? "EFP" : "FRONTIER", next_goal.x(),
+      next_goal.y(), next_goal.z(),
+      planner_manager_->local_data_.end_yaw_ * 180.0 / M_PI);
+  EPIC_GLOG_INFO_THROTTLE(
+      1.0, ep_->logging_detail_, 0, "global.cycle",
+      "cycle=%llu result=OK clusters=%d reachable_clusters=%d viewpoints=%d "
+      "path_reachable=%d tour_nodes=%zu tour_length=%.2fm "
+      "next_goal=(%.2f,%.2f,%.2f) total=%.2fms",
+      static_cast<unsigned long long>(cycle_id), ed_->diag_num_clusters_,
+      ed_->diag_num_clusters_reachable_, ed_->diag_num_viewpoints_,
+      ed_->diag_num_reachable_vp_, ed_->global_tour_.size(), tour_length,
+      next_goal.x(), next_goal.y(), next_goal.z(), total_ms);
   return SUCCEED;
 }
 
@@ -640,14 +782,16 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
 
   // FALLBACK: If goal is not reachable, navigate to closest frontier instead
   if (num_connected == 0) {
-    ROS_WARN_THROTTLE(2.0, "[Goal Planning] Goal not reachable! Fallback: navigate to closest frontier");
+    EPIC_LOG_WARN_THROTTLE(2.0, "global.goal",
+                           "goal unreachable; falling back to closest frontier");
 
     // Find closest frontier to goal (before removing viewpoints!)
     if (viewpoints.empty()) {
       ed_->diag_result_ = "RTH_NO_FRONTIER";
       ed_->diag_reason_ = "goal unreachable (0 verified connections) and no frontier "
                           "viewpoints for fallback " + frontier_manager_ptr_->vp_stats_.str();
-      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] No frontiers available for fallback!");
+      EPIC_LOG_ERROR_THROTTLE(2.0, "global.goal",
+                              "goal unreachable and no frontier fallback exists");
       return NO_FRONTIER;
     }
     ed_->diag_result_ = "RTH_FALLBACK_FRONTIER";
@@ -668,7 +812,7 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
              closest_frontier->center_.x(), closest_frontier->center_.y(),
              closest_frontier->center_.z(), min_dist);
     ed_->diag_reason_ = fb;
-    ROS_WARN_THROTTLE(2.0, "[Goal Planning] %s", fb);
+    EPIC_LOG_WARN_THROTTLE(2.0, "global.goal", "%s", fb);
 
     // Now plan a path to the closest frontier instead of the goal
     // Use the closest frontier as the new goal
@@ -709,7 +853,8 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
     if (num_connected == 0) {
       ed_->diag_result_ = "RTH_FAIL";
       ed_->diag_reason_ = "goal unreachable and even closest frontier unreachable";
-      ROS_ERROR_THROTTLE(2.0, "[Goal Planning] Even closest frontier is unreachable!");
+      EPIC_LOG_ERROR_THROTTLE(2.0, "global.goal",
+                              "closest frontier fallback is also unreachable");
       // Cleanup
       if (!viewpoints.empty()) {
         planner_manager_->topo_graph_->removeNodes(viewpoints);
@@ -735,7 +880,8 @@ int FastExplorationManager::planGoalPath(const Eigen::Vector3d &goal_pos, double
     ed_->diag_result_ = "RTH_ASTAR_FAIL";
     ed_->diag_reason_ = "A* on topo graph failed (goal connected to " +
                         std::to_string(num_connected) + " nodes)";
-    ROS_WARN_THROTTLE(2.0, "[Goal Planning] A* search failed on topology graph!");
+    EPIC_LOG_WARN_THROTTLE(2.0, "global.goal",
+                           "topology A* search failed");
 
     // Cleanup: remove goal node connections
     for (auto& nbr : connection_candidates) {
@@ -876,15 +1022,11 @@ void FastExplorationManager::simplifyGlobalTour() {
   ed_->global_tour_ = simplified_tour;
 
   ros::Time t_end = ros::Time::now();
-  ROS_INFO("\033[33m[Path Simplification] Reduced path from %d to %lu nodes, %d collision checks, %.2f ms\033[0m",
+  EPIC_LOG_DEBUG(ep_->logging_detail_, 2, "global.connectivity",
+           "path simplification nodes=%d->%zu collision_checks=%d time=%.2fms",
            original_size, simplified_tour.size(), collision_checks,
            (t_end - t_start).toSec() * 1000.0);
 
-  // Print segment lengths for debugging
-  for (size_t i = 1; i < simplified_tour.size(); ++i) {
-    double seg_length = (simplified_tour[i] - simplified_tour[i-1]).norm();
-    ROS_INFO("  Segment %lu: %.2f m", i, seg_length);
-  }
 }
 
 void FastExplorationManager::solveLHK(Eigen::MatrixXd &cost_mat,

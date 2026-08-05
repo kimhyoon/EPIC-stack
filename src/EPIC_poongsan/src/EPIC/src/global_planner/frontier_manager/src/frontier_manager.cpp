@@ -7,6 +7,7 @@
  * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
  */
 #include <frontier_manager/frontier_manager.h>
+#include <frontier_manager/global_log.h>
 #include <opencv2/opencv.hpp>
 #include <pcl/filters/voxel_grid.h>
 #include <std_msgs/Int32.h>
@@ -20,6 +21,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   nh_ = nh;
   graph_ = graph;
   lidar_map_interface_ = lio_interface;
+  nh.param("logging/global_detail", logging_detail_, 1);
+  logging_detail_ = std::max(0, std::min(3, logging_detail_));
   nh.getParam("FrontierManager/cell_size", frtp_.cell_size_);
   if (!std::isfinite(frtp_.cell_size_) ||
       frtp_.cell_size_ <= lidar_map_interface_->lp_->vector_norm_eps_) {
@@ -43,7 +46,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
            frtp_.good_observation_force_trust_length_);
   nh.param("FrontierManager/viewpoint_min_visible_cells",
            frtp_.viewpoint_min_visible_cells_, 3);
-  ROS_INFO("[FrontierManager] trust lengths: mapping(force)=%.2fm "
+  EPIC_GLOG_DEBUG(logging_detail_, 1, "global.frontier.config",
+           "trust lengths: mapping(force)=%.2fm "
            "viewpoint(FRONTIER_DIR)=%.2fm  min_visible_cells=%d",
            frtp_.good_observation_force_trust_length_,
            frtp_.viewpoint_dir_trust_length_,
@@ -116,7 +120,8 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   vpp_.vp_reached_yaw_tol_ = vp_reached_yaw_deg * static_cast<float>(M_PI) / 180.0f;
   nh.param("ViewpointManager/vp_reached_clear_radius",
            vpp_.vp_reached_clear_radius_, 0.0f);
-  ROS_INFO("[FrontierManager] vp-reached clear: %s  pos_tol=%.2fm yaw_tol=%.1fdeg "
+  EPIC_GLOG_DEBUG(logging_detail_, 1, "global.frontier.config",
+           "vp-reached clear: %s pos_tol=%.2fm yaw_tol=%.1fdeg "
            "radius_sweep=%.2fm(%s)",
            vpp_.vp_reached_clear_enable_ ? "on" : "off",
            vpp_.vp_reached_pos_tol_, vp_reached_yaw_deg,
@@ -143,15 +148,16 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   vpp_.fov_up_ = vpp_.fov_up_ * M_PI / 180.0;
   vpp_.fov_down_ = vpp_.fov_down_ * M_PI / 180.0;
   vpp_.fov_h_half_ = fov_vp_horizontal / 2.0f * M_PI / 180.0;
-  ROS_INFO("[FrontierManager] viewpoint FOV: up %.1f deg, down %.1f deg, "
+  EPIC_GLOG_DEBUG(logging_detail_, 1, "global.frontier.config",
+           "viewpoint FOV: up %.1f deg, down %.1f deg, "
            "horizontal %.1f deg, lidar mount pitch %.1f / yaw %.1f deg",
            vpp_.fov_up_ * 180.0 / M_PI, vpp_.fov_down_ * 180.0 / M_PI,
            fov_vp_horizontal, vpp_.lidar_pitch_, vpp_.lidar_yaw_);
   checkPerceptionConfig(nh);
   frtp_.map_min_ =
-      lidar_map_interface_->lp_->global_map_min_boundary_.cast<float>();
+      lidar_map_interface_->lp_->mapping_box_min_boundary_.cast<float>();
   frtp_.map_max_ =
-      lidar_map_interface_->lp_->global_map_max_boundary_.cast<float>();
+      lidar_map_interface_->lp_->mapping_box_max_boundary_.cast<float>();
   frtp_.cell_max_cnt_ =
       ((frtp_.map_max_ - frtp_.map_min_).array() / frtp_.cell_size_)
           .cast<int>()
@@ -300,7 +306,8 @@ void FrontierManager::checkPerceptionConfig(ros::NodeHandle &nh) {
     warns++;
   }
 
-  ROS_INFO("[perception-config] checked lidar_perception/*: %d warning(s)", warns);
+  EPIC_GLOG_DEBUG(logging_detail_, 1, "global.frontier.config",
+                  "checked lidar_perception/*: %d warning(s)", warns);
 }
 
 void FrontierManager::pos2idx(const PointType &pt, Eigen::Vector3i &idx) {
@@ -397,7 +404,7 @@ void FrontierManager::get_cells_2_update(
   Eigen::Vector3f lidar_position =
       lidar_map_interface_->ld_->lidar_pose_.cast<float>();
   for (auto &pt : points) {
-    if (!lidar_map_interface_->IsInBox(pt))
+    if (!lidar_map_interface_->IsInMappingBox(pt))
       continue;
     if ((pt.getVector3fMap() -
          lidar_map_interface_->ld_->lidar_pose_.cast<float>())
@@ -1186,6 +1193,37 @@ void FrontierManager::updateFrontierClusters(
 
   cluster_frts(frt_new, cluster_updated, cluster_removed);
 
+  const double update_ms = (ros::Time::now() - t1).toSec() * 1000.0;
+  EPIC_GLOG_DEBUG(
+      logging_detail_, 1, "global.frontier.update",
+      "cells=%zu classified[dense=%d force_trust=%d good=%d far=%zu "
+      "fov_or_gap=%zu] frontier[new=%zu retained=%d] "
+      "clusters[total=%zu updated=%zu removed=%zu] time=%.2fms",
+      cells_2_update.size(), dense_count, force_trust_count, good_count,
+      bad_dis_set.size(), bad_dir_set.size(), frt_new.size(), old_frt_count,
+      cluster_list_.size(), cluster_updated.size(), cluster_removed.size(),
+      update_ms);
+
+  if (logging_detail_ >= 2 &&
+      epicGlobalDebugEnabled("global.frontier.cluster")) {
+    for (const auto &cluster : cluster_updated) {
+      if (!cluster)
+        continue;
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 2, "global.frontier.cluster",
+          "cluster=%d cells=%zu center=(%.2f,%.2f,%.2f) state=%s "
+          "reachable=%d dormant=%d",
+          cluster->id_, cluster->cells_.size(), cluster->center_.x(),
+          cluster->center_.y(), cluster->center_.z(),
+          clusterReasonStr(cluster->reason_), cluster->is_reachable_ ? 1 : 0,
+          cluster->is_dormant_ ? 1 : 0);
+    }
+    for (int id : cluster_removed) {
+      EPIC_GLOG_DEBUG(logging_detail_, 2, "global.frontier.cluster",
+                      "cluster=%d state=REMOVED", id);
+    }
+  }
+
   // ROS_INFO("[DEBUG updateFrontierClusters] After cluster_frts: cluster_list_=%lu, cluster_updated=%lu, cluster_removed=%lu",
   //          cluster_list_.size(), cluster_updated.size(), cluster_removed.size());
 
@@ -1386,11 +1424,11 @@ void FrontierManager::updateHalfSpaces(vector<ClusterInfo::Ptr> &clusters) {
 }
 
 inline bool FrontierManager::isInBox(const PointType &pt) {
-  return lidar_map_interface_->IsInBox(pt);
+  return lidar_map_interface_->IsInPlanningBox(pt);
 }
 
 inline bool FrontierManager::isInBox(const Eigen::Vector3f &pt) {
-  return lidar_map_interface_->IsInBox(pt);
+  return lidar_map_interface_->IsInPlanningBox(pt);
 }
 
 // [feature: box-margin] 6면 프로브: pt 에서 각 축 ±margin*cell_size 지점 중
@@ -1402,7 +1440,7 @@ bool FrontierManager::is_near_box_boundary(const PointType &pt) {
     for (int sgn = -1; sgn <= 1; sgn += 2) {
       Eigen::Vector3f probe = c;
       probe(axis) += sgn * m;
-      if (!lidar_map_interface_->IsInBox(probe))
+      if (!lidar_map_interface_->IsInMappingBox(probe))
         return true;
     }
   }
@@ -1472,7 +1510,7 @@ void FrontierManager::selectBestViewpoint(ClusterInfo::Ptr &cluster) {
         CELL_STATE state = get_state(idx);
         PointType pt;
         idx2pos(idx, pt);
-        if (!lidar_map_interface_->IsInBox(pt) || state == DENSE ||
+        if (!lidar_map_interface_->IsInMappingBox(pt) || state == DENSE ||
             state == SPARSE) {
           visib = false;
           break;
@@ -1761,6 +1799,12 @@ void FrontierManager::removeUnreachableViewpoints(
     if (nodes2insert[i]->neighbors_.empty()) {
       vp_cluster_kept[i] = false;
       vp_stats_.reach_noedge++;
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 3, "global.connectivity.edge",
+          "cluster=%d vp_cluster=%d pos=(%.2f,%.2f,%.2f) result=NO_EDGE",
+          clusters[nodeidx2clusteridx[i]]->id_, nodeidx2vpclusteridx[i],
+          nodes2insert[i]->center_.x(), nodes2insert[i]->center_.y(),
+          nodes2insert[i]->center_.z());
       continue;
     }
     vector<TopoNode::Ptr> topo_path;
@@ -1786,11 +1830,23 @@ void FrontierManager::removeUnreachableViewpoints(
         vp_stats_.reach_timeout++;
       else
         vp_stats_.reach_nopath++;
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 3, "global.connectivity.search",
+          "cluster=%d vp_cluster=%d result=%s budget=%.3fms",
+          clusters[nodeidx2clusteridx[i]]->id_, nodeidx2vpclusteridx[i],
+          search_result == ParallelBubbleAstar::TIME_OUT ? "TIMEOUT"
+                                                        : "NO_PATH",
+          vpp_.reachability_search_timeout_ * 1000.0);
     } else {
       vp_stats_.reach_ok++;
       clusters[nodeidx2clusteridx[i]]
           ->vp_clusters_[nodeidx2vpclusteridx[i]]
           .distance_ = graph_->getPathLength(topo_path);
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 3, "global.connectivity.search",
+          "cluster=%d vp_cluster=%d result=OK path_nodes=%zu length=%.2fm",
+          clusters[nodeidx2clusteridx[i]]->id_, nodeidx2vpclusteridx[i],
+          topo_path.size(), graph_->getPathLength(topo_path));
     }
   }
   graph_->removeNodes(nodes2insert);
@@ -1841,11 +1897,6 @@ void FrontierManager::removeUnreachableViewpoints(
 
 void FrontierManager::printMemoryCost() {
   int label_map_size = frtd_.label_map_.size();
-  int frt_map_size = frtd_.frt_map_.size();
-  cout << "label_map_size: "
-       << "(" << to_string(frtp_.idx_byte_size_) << " + 2) * " << label_map_size
-       << " = " << (float(label_map_size * (frtp_.idx_byte_size_ + 2)) / 1024.0)
-       << "KB" << endl;
   static ros::Publisher mem_pub =
       nh_.advertise<std_msgs::Float32>("/mem_cost", 1);
   static ros::Publisher mem_pub_2 =
@@ -1863,10 +1914,11 @@ void FrontierManager::printMemoryCost() {
                       frtd_.label_map_.bucket_count() * sizeof(void *)) /
                 1024.0);
 
-  cout << "frt_map_size2 = " << msg_2.data << endl;
-  cout << "frt_map_size3 = " << msg_3.data << endl;
   mem_pub_2.publish(msg_2);
   mem_pub_3.publish(msg_3);
+  EPIC_LOG_DEBUG(logging_detail_, 2, "global.frontier.memory",
+                 "labels=%d compact=%.2fKiB estimate=%.2f/%.2fKiB",
+                 label_map_size, msg.data, msg_2.data, msg_3.data);
 }
 inline void
 FrontierManager::Sphere_PosToIndex(const Eigen::Vector3f &lidar_center,

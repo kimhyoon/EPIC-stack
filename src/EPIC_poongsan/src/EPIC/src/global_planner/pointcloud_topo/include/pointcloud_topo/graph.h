@@ -259,11 +259,11 @@ public:
   double getPathLength(const vector<TopoNode::Ptr> &topo_path);
 
   void inline posToIndex(const Eigen::Vector3f &pt, Eigen::Vector3i &idx) {
-    idx = ((pt - lidar_map_interface_->lp_->global_box_min_boundary_) * 1000).array().floor().cast<int>();
+    idx = ((pt - lidar_map_interface_->lp_->planning_box_min_boundary_) * 1000).array().floor().cast<int>();
   }
 
   void inline indexToPos(const Eigen::Vector3i &idx, Eigen::Vector3f &pt) {
-    pt = (idx.cast<float>() + Eigen::Vector3f(0.5, 0.5, 0.5)) / 1000.0f + lidar_map_interface_->lp_->global_box_min_boundary_;
+    pt = (idx.cast<float>() + Eigen::Vector3f(0.5, 0.5, 0.5)) / 1000.0f + lidar_map_interface_->lp_->planning_box_min_boundary_;
   }
 
   void overlap(vector<TopoNode::Ptr> &set1, vector<TopoNode::Ptr> &set2, vector<TopoNode::Ptr> &overlap);

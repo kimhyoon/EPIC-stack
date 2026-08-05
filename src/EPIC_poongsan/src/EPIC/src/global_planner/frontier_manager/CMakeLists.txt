@@ -9,6 +9,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall")
 find_package(OpenCV REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
     roscpp
+    rosconsole
     std_msgs
     cv_bridge
     message_filters
@@ -21,7 +22,7 @@ find_package(PCL REQUIRED COMPONENTS segmentation)
 catkin_package(
     INCLUDE_DIRS include
     LIBRARIES frontier_manager
-    CATKIN_DEPENDS roscpp std_msgs lidar_map pointcloud_topo
+    CATKIN_DEPENDS roscpp rosconsole std_msgs lidar_map pointcloud_topo
 )
 include_directories(BEFORE SYSTEM
     ${OpenCV_INCLUDE_DIRS}
@@ -40,6 +41,7 @@ add_library(frontier_manager
     src/global_planning.cpp
     src/raycast.cpp
     src/frontier_viszer.cpp
+    src/structured_console.cpp
 )
 target_link_libraries(frontier_manager PUBLIC
     ${catkin_LIBRARIES}

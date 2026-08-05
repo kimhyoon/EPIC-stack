@@ -24,6 +24,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <plan_manage/planner_manager.h>
 #include <frontier_manager/frontier_manager.h>
+#include <frontier_manager/global_log.h>
 #include <std_msgs/Int32.h>
 #include <thread>
 #include <visualization_msgs/Marker.h>
@@ -143,23 +144,20 @@ void truncateGuidePath(std::vector<Eigen::Vector3d> &guidePath,
   guidePath.swap(truncated);
 }
 
-template <typename TrajectoryType>
-bool findVirtualCeilingViolation(const TrajectoryType &trajectory,
-                                 const double duration,
-                                 const double ceilingZ,
-                                 double &violationTime) {
+template <typename TrajectoryType, typename InsidePredicate>
+bool findPlanningBoxViolation(const TrajectoryType &trajectory,
+                              const double duration,
+                              const InsidePredicate &insidePlanningBox,
+                              double &violationTime) {
   constexpr double kSampleStep = 0.02;
-  constexpr double kBoundaryTolerance = 1.0e-6;
   violationTime = 0.0;
-  if (!std::isfinite(duration) || duration < 0.0 ||
-      !std::isfinite(ceilingZ)) {
+  if (!std::isfinite(duration) || duration < 0.0) {
     return true;
   }
 
   for (double time = 0.0; time < duration; time += kSampleStep) {
     const Eigen::Vector3d position = trajectory.getPos(time);
-    if (!position.allFinite() ||
-        position.z() > ceilingZ + kBoundaryTolerance) {
+    if (!position.allFinite() || !insidePlanningBox(position)) {
       violationTime = time;
       return true;
     }
@@ -167,8 +165,195 @@ bool findVirtualCeilingViolation(const TrajectoryType &trajectory,
 
   const Eigen::Vector3d endPosition = trajectory.getPos(duration);
   violationTime = duration;
-  return !endPosition.allFinite() ||
-         endPosition.z() > ceilingZ + kBoundaryTolerance;
+  return !endPosition.allFinite() || !insidePlanningBox(endPosition);
+}
+
+bool isYawTrajectoryTransportSafe(const Trajectory<5> &trajectory,
+                                  const double minDuration) {
+  if (trajectory.getPieceNum() <= 0)
+    return false;
+
+  double totalDuration = 0.0;
+  constexpr double kFloatTransportLimit =
+      static_cast<double>(std::numeric_limits<float>::max());
+  for (const auto &piece : trajectory.pieces) {
+    const double duration = piece.getDuration();
+    const auto &coefficients = piece.getCoeffMat();
+    if (!std::isfinite(duration) || duration < minDuration ||
+        !coefficients.allFinite() ||
+        coefficients.cwiseAbs().maxCoeff() > kFloatTransportLimit) {
+      return false;
+    }
+
+    // PolyTraj transports coefficients as float32 and traj_server evaluates
+    // them in double. Check the entire piece at representative points before
+    // accepting it; checking only total duration allowed a bad yaw polynomial
+    // to reach execution while still claiming the fallback was finite.
+    for (const double fraction : {0.0, 0.25, 0.5, 0.75, 1.0}) {
+      const double time = duration * fraction;
+      if (!piece.getPos(time).allFinite() ||
+          !piece.getVel(time).allFinite() ||
+          !piece.getAcc(time).allFinite()) {
+        return false;
+      }
+    }
+    totalDuration += duration;
+  }
+  return std::isfinite(totalDuration) && totalDuration >= minDuration;
+}
+
+bool buildDeterministicYawFallback(const Eigen::Vector3d &initialYawState,
+                                   double &endYaw,
+                                   const double preferredDuration,
+                                   const double minDuration,
+                                   const double maxYawRate,
+                                   Trajectory<5> &trajectory) {
+  if (!initialYawState.allFinite() || !std::isfinite(endYaw) ||
+      !std::isfinite(preferredDuration) || !std::isfinite(minDuration) ||
+      minDuration <= 0.0 || !std::isfinite(maxYawRate) ||
+      maxYawRate <= 0.0) {
+    return false;
+  }
+
+  const double yaw0 = initialYawState.x();
+  const double yawDelta = std::remainder(endYaw - yaw0, 2.0 * M_PI);
+  const double yaw1 = yaw0 + yawDelta;
+  // A zero-derivative quintic has peak rate 1.875*|delta|/T. Preserve the
+  // current finite yaw rate at the boundary, while traj_server remains the
+  // final rate/acceleration safety limiter.
+  const double duration = std::max(
+      {preferredDuration, minDuration,
+       1.875 * std::abs(yawDelta) / maxYawRate});
+  if (!std::isfinite(duration) || duration <= 0.0)
+    return false;
+
+  const double v0 =
+      std::max(-maxYawRate, std::min(initialYawState.y(), maxYawRate));
+  const double a0 = 0.0;
+  const double t2 = duration * duration;
+  const double t3 = t2 * duration;
+  const double t4 = t3 * duration;
+  const double t5 = t4 * duration;
+  const double displacement =
+      yaw1 - (yaw0 + v0 * duration + 0.5 * a0 * t2);
+  const double velocityDelta = -(v0 + a0 * duration);
+  const double accelerationDelta = -a0;
+
+  const double c3 = 10.0 * displacement / t3 -
+                    4.0 * velocityDelta / t2 +
+                    0.5 * accelerationDelta / duration;
+  const double c4 = -15.0 * displacement / t4 +
+                    7.0 * velocityDelta / t3 -
+                    accelerationDelta / t2;
+  const double c5 = 6.0 * displacement / t5 -
+                    3.0 * velocityDelta / t4 +
+                    0.5 * accelerationDelta / t3;
+
+  Piece<5>::CoefficientMat coefficients =
+      Piece<5>::CoefficientMat::Zero();
+  coefficients(0, 0) = c5;
+  coefficients(0, 1) = c4;
+  coefficients(0, 2) = c3;
+  coefficients(0, 3) = 0.5 * a0;
+  coefficients(0, 4) = v0;
+  coefficients(0, 5) = yaw0;
+  trajectory = Trajectory<5>(
+      std::vector<double>{duration},
+      std::vector<Piece<5>::CoefficientMat>{coefficients});
+  endYaw = yaw1;
+  return isYawTrajectoryTransportSafe(trajectory, minDuration);
+}
+
+bool buildFixedWaypointYawTrajectory(
+    const Eigen::Matrix3d &initialYawState,
+    const Eigen::Matrix3d &finalYawState,
+    const Eigen::Matrix3Xd &waypoints,
+    Eigen::VectorXd segmentTimes,
+    const double minDuration,
+    const double linearSolvePivotEps,
+    const double maxYawRate,
+    const double maxYawAcc,
+    Trajectory<5> &trajectory,
+    double &durationScale,
+    double &peakYawRate,
+    double &peakYawAcc,
+    std::string &failureStage,
+    int &solveIterations) {
+  failureStage.clear();
+  solveIterations = 0;
+  const int pieceCount = segmentTimes.size();
+  if (pieceCount <= 0 || waypoints.cols() != pieceCount - 1 ||
+      !initialYawState.allFinite() || !finalYawState.allFinite() ||
+      !waypoints.allFinite() || !segmentTimes.allFinite() ||
+      !std::isfinite(minDuration) || minDuration <= 0.0 ||
+      !std::isfinite(linearSolvePivotEps) || linearSolvePivotEps < 0.0 ||
+      !std::isfinite(maxYawRate) || maxYawRate <= 0.0 ||
+      !std::isfinite(maxYawAcc) || maxYawAcc <= 0.0) {
+    failureStage = "INVALID_INPUT";
+    return false;
+  }
+
+  segmentTimes = segmentTimes.unaryExpr([minDuration](const double time) {
+    return std::max(time, minDuration);
+  });
+  durationScale = 1.0;
+  peakYawRate = std::numeric_limits<double>::infinity();
+  peakYawAcc = std::numeric_limits<double>::infinity();
+
+  minco::MINCO_S3NU yawMinco;
+  yawMinco.setConditions(initialYawState, finalYawState, pieceCount);
+  // The final iteration must be able to validate the duration scale computed
+  // by the preceding iteration. Eight solve-and-scale passes used to exit
+  // immediately after applying the eighth scale without ever solving it; the
+  // common 3.55 vs 3.50 rad/s^2 case therefore fell back unnecessarily.
+  constexpr int kMaxDurationScaleIterations = 12;
+  constexpr double kLimitTolerance = 1.001;
+  constexpr double kScaleMargin = 1.02;
+  for (int iteration = 0; iteration < kMaxDurationScaleIterations;
+       ++iteration) {
+    solveIterations = iteration + 1;
+    if (!yawMinco.setParameters(waypoints, segmentTimes,
+                                linearSolvePivotEps)) {
+      failureStage = "LINEAR_SOLVE";
+      return false;
+    }
+    yawMinco.getTrajectory(trajectory);
+    if (!isYawTrajectoryTransportSafe(trajectory, minDuration)) {
+      failureStage = "TRANSPORT_VALIDATION";
+      return false;
+    }
+
+    peakYawRate = trajectory.getMaxVelRate();
+    peakYawAcc = trajectory.getMaxAccRate();
+    if (!std::isfinite(peakYawRate) || !std::isfinite(peakYawAcc)) {
+      failureStage = "NONFINITE_LIMIT";
+      return false;
+    }
+    if (peakYawRate <= maxYawRate * kLimitTolerance &&
+        peakYawAcc <= maxYawAcc * kLimitTolerance) {
+      failureStage = "OK";
+      return true;
+    }
+
+    // Uniformly stretch the entire timing vector. Waypoint locations and
+    // their order remain fixed; only total yaw duration is allowed to grow.
+    const double requiredScale =
+        std::max(peakYawRate / maxYawRate,
+                 std::sqrt(peakYawAcc / maxYawAcc));
+    if (!std::isfinite(requiredScale) || requiredScale <= 1.0) {
+      failureStage = "INVALID_SCALE";
+      return false;
+    }
+    const double iterationScale = requiredScale * kScaleMargin;
+    segmentTimes *= iterationScale;
+    durationScale *= iterationScale;
+    if (!segmentTimes.allFinite() || !std::isfinite(durationScale)) {
+      failureStage = "NONFINITE_DURATION";
+      return false;
+    }
+  }
+  failureStage = "LIMIT_ITERATIONS_EXHAUSTED";
+  return false;
 }
 
 } // namespace
@@ -285,6 +470,23 @@ void FastPlannerManager::initPlanModules(
     TopoGraph::Ptr &graph) {
 
   local_data_.traj_id_ = 0;
+  nh.param("logging/local_detail", logging_detail_, 1);
+  logging_detail_ = std::max(0, std::min(3, logging_detail_));
+  nh.param<std::string>("local_planning/yaw/mode", yaw_planner_mode_,
+                        "lbfgs");
+  if (yaw_planner_mode_ != "lbfgs" &&
+      yaw_planner_mode_ != "fixed_waypoint") {
+    ROS_FATAL("[YawConfig] local_planning/yaw/mode must be either "
+              "'lbfgs' or 'fixed_waypoint' (got '%s')",
+              yaw_planner_mode_.c_str());
+    throw std::runtime_error("invalid local_planning/yaw/mode");
+  }
+  if (!nh.getParam("trajectory_execution/yaw_max_acc", yaw_max_acc_) ||
+      !std::isfinite(yaw_max_acc_) || yaw_max_acc_ <= 0.0) {
+    ROS_FATAL("[YawConfig] trajectory_execution/yaw_max_acc must be "
+              "positive and finite");
+    throw std::runtime_error("invalid trajectory_execution/yaw_max_acc");
+  }
 
   lidar_map_interface_ = graph->lidar_map_interface_;
   nh.getParam("max_traj_len", max_traj_len_);
@@ -308,7 +510,7 @@ void FastPlannerManager::initPlanModules(
            fov_face_tolerance_cells_, 1.5);
   if (!std::isfinite(fov_face_tolerance_cells_) ||
       fov_face_tolerance_cells_ <= 0.0) {
-    ROS_WARN("[PlannerManager] local_planning/fov_face_tolerance_cells=%.3f is "
+    EPIC_LOG_WARN("local.corridor", "local_planning/fov_face_tolerance_cells=%.3f is "
              "not a positive finite number; falling back to 1.5",
              fov_face_tolerance_cells_);
     fov_face_tolerance_cells_ = 1.5;
@@ -316,7 +518,7 @@ void FastPlannerManager::initPlanModules(
   nh.param("local_planning/fov_face_neighbor_radius",
            fov_face_neighbor_radius_, 1);
   if (fov_face_neighbor_radius_ < 1) {
-    ROS_WARN("[PlannerManager] local_planning/fov_face_neighbor_radius=%d is "
+    EPIC_LOG_WARN("local.corridor", "local_planning/fov_face_neighbor_radius=%d is "
              "below 1 (the probe would see nothing); falling back to 1",
              fov_face_neighbor_radius_);
     fov_face_neighbor_radius_ = 1;
@@ -335,6 +537,11 @@ void FastPlannerManager::initPlanModules(
   gcopter_viz_->init(nh);
   gcopter_config_.reset(new GcopterConfig);
   gcopter_config_->init(nh);
+  EPIC_LOG_INFO(logging_detail_, 0, "local.minco",
+                "yaw planner mode=%s rate_limit=%.2frad/s "
+                "acc_limit=%.2frad/s^2",
+                yaw_planner_mode_.c_str(), gcopter_config_->yaw_max_vel,
+                yaw_max_acc_);
 
   graph_visualizer_.reset(new GraphVisualizer);
   graph_visualizer_->init(nh);
@@ -374,7 +581,8 @@ void FastPlannerManager::initPlanModules(
         "/debug/active_fov_faces", 10);
     debug_traj_clearance_pub_ = nh.advertise<std_msgs::Float64MultiArray>(
         "/debug/trajectory_clearance", 100);
-    ROS_WARN("[PlannerDebug] internal planner evidence publishers enabled");
+    EPIC_LOG_DEBUG(logging_detail_, 1, "local.debug",
+                   "internal planner evidence publishers enabled");
   }
 }
 
@@ -395,8 +603,8 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
       !std::isfinite(angular_velocity.z) || !std::isfinite(n2) ||
       n2 <= gcopter_config_->vectorNormEps *
                 gcopter_config_->vectorNormEps) {
-    ROS_WARN_THROTTLE(
-        1.0, "[NumericalGuard] invalid odometry state; keeping last state");
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "sensor.lidar", "invalid odometry state; keeping last state");
     return;
   }
 
@@ -410,9 +618,9 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
   if (!std::isfinite(roll) || !std::isfinite(pitch) ||
       !std::isfinite(yaw) || !std::isfinite(cos_pitch) ||
       std::abs(cos_pitch) <= gcopter_config_->vectorNormEps) {
-    ROS_WARN_THROTTLE(
-        1.0,
-        "[NumericalGuard] odometry attitude is near the Euler singularity; "
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "sensor.lidar",
+        "odometry attitude is near the Euler singularity; "
         "keeping last state");
     return;
   }
@@ -426,9 +634,9 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
   Eigen::Vector3d planner_velocity(velocity_parent.x(), velocity_parent.y(),
                                   velocity_parent.z());
   if (!planner_velocity.allFinite()) {
-    ROS_WARN_THROTTLE(
-        1.0,
-        "[NumericalGuard] odometry velocity transform is invalid; keeping "
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "sensor.lidar",
+        "odometry velocity transform is invalid; keeping "
         "last state");
     return;
   }
@@ -440,9 +648,9 @@ void FastPlannerManager::posCallback(const nav_msgs::OdometryConstPtr &msg) {
        std::cos(roll) * angular_velocity.z) /
       cos_pitch;
   if (!std::isfinite(yaw_rate)) {
-    ROS_WARN_THROTTLE(
-        1.0,
-        "[NumericalGuard] converted odometry yaw rate is invalid; keeping "
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "sensor.lidar",
+        "converted odometry yaw rate is invalid; keeping "
         "last state");
     return;
   }
@@ -467,8 +675,8 @@ void FastPlannerManager::goalCallback(
   if (!std::isfinite(n2) ||
       n2 <= gcopter_config_->vectorNormEps *
                 gcopter_config_->vectorNormEps) {
-    ROS_WARN_THROTTLE(10.0,
-                      "[FastPlannerManager] goal with invalid quaternion "
+    EPIC_LOG_WARN_THROTTLE(10.0, "local.cycle",
+                      "goal has invalid quaternion "
                       "- ignoring yaw");
     return;
   }
@@ -528,9 +736,6 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   // on every path because a collision-free return previously left the caller
   // comparing an indeterminate stack value.
   collision_time = std::max(0.0, std::min(curr_time, duration));
-  const double virtual_ceiling_z =
-      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
-      gcopter_config_->corridorObstacleVoxelSize;
   Vector3d last_sphere_cen_;
   if (curr_time > duration) {
     collision_time = duration;
@@ -541,7 +746,13 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
 
   last_sphere_cen_ = traj.getPos(curr_time);
   if (!last_sphere_cen_.allFinite() ||
-      last_sphere_cen_.z() > virtual_ceiling_z + 1.0e-6) {
+      !lidar_map_interface_->IsInPlanningBox(last_sphere_cen_.cast<float>())) {
+    EPIC_LOG_INFO_THROTTLE(
+        1.0, logging_detail_, 2, "local.collision",
+        "trajectory check failed reason=%s t=%.3fs pos=(%.2f,%.2f,%.2f)",
+        last_sphere_cen_.allFinite() ? "PLANNING_BOX" : "NONFINITE_SAMPLE",
+        collision_time, last_sphere_cen_.x(), last_sphere_cen_.y(),
+        last_sphere_cen_.z());
     publishDebugTrajectoryClearance(
         false, collision_time, -1.0, last_sphere_cen_);
     return false;
@@ -561,8 +772,13 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
   while (curr_time < duration) {
     Vector3d curr_pos = traj.getPos(curr_time);
     if (!curr_pos.allFinite() ||
-        curr_pos.z() > virtual_ceiling_z + 1.0e-6) {
+        !lidar_map_interface_->IsInPlanningBox(curr_pos.cast<float>())) {
       collision_time = curr_time;
+      EPIC_LOG_INFO_THROTTLE(
+          1.0, logging_detail_, 2, "local.collision",
+          "trajectory check failed reason=%s t=%.3fs pos=(%.2f,%.2f,%.2f)",
+          curr_pos.allFinite() ? "PLANNING_BOX" : "NONFINITE_SAMPLE",
+          collision_time, curr_pos.x(), curr_pos.y(), curr_pos.z());
       publishDebugTrajectoryClearance(
           false, collision_time, min_distance, curr_pos);
       return false;
@@ -588,6 +804,12 @@ bool FastPlannerManager::checkTrajCollision(double &collision_time) {
     }
     if (dis2occ < gcopter_config_->dilateRadiusHard) {
       collision_time = curr_time;
+      EPIC_LOG_INFO_THROTTLE(
+          1.0, logging_detail_, 2, "local.collision",
+          "trajectory check failed reason=HARD_CLEARANCE t=%.3fs "
+          "pos=(%.2f,%.2f,%.2f) clearance=%.3fm hard=%.3fm",
+          collision_time, curr_pos.x(), curr_pos.y(), curr_pos.z(), dis2occ,
+          gcopter_config_->dilateRadiusHard);
       publishDebugTrajectoryClearance(
           false, collision_time, min_distance, min_distance_position);
       return false;
@@ -634,9 +856,9 @@ bool FastPlannerManager::checkCautionEscapeSafety(
       !std::isfinite(escape.escape_soft_entry_time_) ||
       escape.escape_soft_entry_time_ < 0.0 ||
       escape.escape_soft_entry_time_ > escape.duration_ ||
-      !std::isfinite(escape.escape_virtual_ceiling_z_) ||
-      !std::isfinite(escape.escape_hard_ceiling_z_) ||
-      escape.escape_hard_ceiling_z_ < escape.escape_virtual_ceiling_z_ ||
+      !std::isfinite(escape.escape_planning_max_z_) ||
+      !std::isfinite(escape.escape_recovery_max_z_) ||
+      escape.escape_recovery_max_z_ < escape.escape_planning_max_z_ ||
       escape.escape_raw_polytope_.rows() <= 0 ||
       escape.escape_safe_polytope_.rows() <= 0 ||
       !escape.escape_raw_polytope_.allFinite() ||
@@ -652,7 +874,7 @@ bool FastPlannerManager::checkCautionEscapeSafety(
       std::min(std::max(0.0, elapsed), escape.duration_);
   if (!actual_position.allFinite() ||
       actual_position.z() >
-          escape.escape_hard_ceiling_z_ + kBoundaryTolerance)
+          escape.escape_recovery_max_z_ + kBoundaryTolerance)
     return fail("actual odometry violates hard escape ceiling", start_time);
   const Eigen::Vector4d actual_h(actual_position.x(), actual_position.y(),
                                  actual_position.z(), 1.0);
@@ -672,12 +894,12 @@ bool FastPlannerManager::checkCautionEscapeSafety(
     return fail("invalid actual obstacle clearance", start_time);
   // Do not let trajectory expiry bypass the terminal safety conditions.  The
   // current-point exceptions exist only while actively moving out: once the
-  // escape has ended, actual odometry must be inside both the virtual ceiling
+  // escape has ended, actual odometry must be inside both the planning height
   // and the configured soft obstacle margin.
   if (execution_complete) {
     if (actual_position.z() >
-        escape.escape_virtual_ceiling_z_ + kBoundaryTolerance)
-      return fail("completed escape remains above virtual ceiling", start_time);
+        escape.escape_planning_max_z_ + kBoundaryTolerance)
+      return fail("completed escape remains above planning_box", start_time);
     if (actual_clearance + kClearanceTolerance <
         gcopter_config_->dilateRadiusSoft)
       return fail("completed escape remains inside soft clearance", start_time);
@@ -689,32 +911,31 @@ bool FastPlannerManager::checkCautionEscapeSafety(
   bool reached_soft =
       actual_clearance + kClearanceTolerance >=
       gcopter_config_->dilateRadiusSoft;
-  // Tracking can put the vehicle just outside the virtual safety ceiling even
+  // Tracking can put the vehicle just outside the planning-box ceiling even
   // though the published trajectory stayed below it.  That current state is
   // unavoidable; permit only a monotonically descending egress until the
-  // virtual ceiling is re-entered, then make the ceiling strict again.  The
-  // map/flight-volume ceiling remains a hard limit throughout.
+  // planning box is re-entered, then make its ceiling strict again.
   double ceiling_floor = actual_position.z();
-  bool reached_virtual_ceiling =
+  bool reached_planning_height =
       actual_position.z() <=
-      escape.escape_virtual_ceiling_z_ + kBoundaryTolerance;
+      escape.escape_planning_max_z_ + kBoundaryTolerance;
   for (double sample_time = start_time;; sample_time += kSampleStep) {
     const double t = std::min(sample_time, escape.duration_);
     const Eigen::Vector3d position = escape.minco_traj_.getPos(t);
     if (!position.allFinite() ||
-        position.z() > escape.escape_hard_ceiling_z_ + kBoundaryTolerance)
+        position.z() > escape.escape_recovery_max_z_ + kBoundaryTolerance)
       return fail("updated map check: invalid/hard-over-ceiling sample", t);
-    if (!reached_virtual_ceiling) {
+    if (!reached_planning_height) {
       if (position.z() > ceiling_floor + kBoundaryTolerance)
         return fail("updated map check: escape climbs above current ceiling violation",
                     t);
       ceiling_floor = std::min(ceiling_floor, position.z());
-      reached_virtual_ceiling =
+      reached_planning_height =
           position.z() <=
-          escape.escape_virtual_ceiling_z_ + kBoundaryTolerance;
+          escape.escape_planning_max_z_ + kBoundaryTolerance;
     } else if (position.z() >
-               escape.escape_virtual_ceiling_z_ + kBoundaryTolerance) {
-      return fail("updated map check: escape leaves virtual ceiling", t);
+               escape.escape_planning_max_z_ + kBoundaryTolerance) {
+      return fail("updated map check: escape leaves planning_box", t);
     }
     const Eigen::Vector4d position_h(position.x(), position.y(), position.z(),
                                      1.0);
@@ -751,8 +972,8 @@ bool FastPlannerManager::checkCautionEscapeSafety(
   }
   if (!reached_soft)
     return fail("updated map leaves no soft-clearance escape", escape.duration_);
-  if (!reached_virtual_ceiling)
-    return fail("updated trajectory never re-enters virtual ceiling",
+  if (!reached_planning_height)
+    return fail("updated trajectory never re-enters planning_box",
                 escape.duration_);
 
   violation_time = escape.duration_;
@@ -771,7 +992,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                      return point.allFinite();
                    })) {
     last_plan_fail_reason_ = "guide path has fewer than two finite points";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.corridor", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
@@ -787,7 +1008,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     if (!latest_odom_state_available_) {
       last_plan_fail_reason_ =
           "latest odometry state unavailable for replan initialization";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.corridor", "%s",
                         last_plan_fail_reason_.c_str());
       return false;
     }
@@ -799,9 +1020,9 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   if (!std::isfinite(map_odom_disagreement) || map_odom_disagreement > 0.5) {
     last_plan_fail_reason_ =
         "cloud/map odometry is stale relative to current odometry";
-    ROS_ERROR_THROTTLE(
-        1.0,
-        "[local-plan] %s: map=(%.3f,%.3f,%.3f) odom=(%.3f,%.3f,%.3f) "
+    EPIC_LOG_ERROR_THROTTLE(
+        1.0, "local.collision",
+        "%s: map=(%.3f,%.3f,%.3f) odom=(%.3f,%.3f,%.3f) "
         "error=%.3f m",
         last_plan_fail_reason_.c_str(), local_data_.curr_pos_.x(),
         local_data_.curr_pos_.y(), local_data_.curr_pos_.z(),
@@ -810,21 +1031,23 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     return false;
   }
 
-  // Reserve one obstacle-voxel layer at the top of the exploration box as an
-  // exact vehicle-center ceiling. Keeping this independent of obstacle
-  // dilation avoids applying the real-obstacle margin twice.
-  const double virtual_ceiling_z =
-      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
-      gcopter_config_->corridorObstacleVoxelSize;
-  if (!std::isfinite(virtual_ceiling_z) ||
-      virtual_ceiling_z <=
-          lidar_map_interface_->lp_->global_box_min_boundary_.z() ||
+  const auto &planning_min =
+      lidar_map_interface_->lp_->planning_box_min_boundary_;
+  const auto &planning_max =
+      lidar_map_interface_->lp_->planning_box_max_boundary_;
+  if (!planning_min.allFinite() || !planning_max.allFinite() ||
+      (planning_min.array() >= planning_max.array()).any() ||
       !iniState.col(0).allFinite() ||
-      iniState(2, 0) > virtual_ceiling_z + 1.0e-6) {
-    last_plan_fail_reason_ = "invalid or already violated virtual ceiling";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s (ceiling=%.3f, z=%.3f)",
-                      last_plan_fail_reason_.c_str(), virtual_ceiling_z,
-                      iniState(2, 0));
+      !lidar_map_interface_->IsInPlanningBox(
+          iniState.col(0).cast<float>())) {
+    last_plan_fail_reason_ = "invalid or already outside planning_box";
+    EPIC_LOG_WARN_THROTTLE(
+        2.0, "local.collision",
+        "%s pos=(%.3f,%.3f,%.3f) bounds=[(%.2f,%.2f,%.2f),"
+        "(%.2f,%.2f,%.2f)]",
+        last_plan_fail_reason_.c_str(), iniState(0, 0), iniState(1, 0),
+        iniState(2, 0), planning_min.x(), planning_min.y(), planning_min.z(),
+        planning_max.x(), planning_max.y(), planning_max.z());
     return false;
   }
 
@@ -854,6 +1077,18 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     path_shorten.emplace_back(path[i].cast<double>());
   }
 
+  // Use the exact same atomic odometry snapshot for the guide, P0 and MINCO
+  // boundary state. The topology path starts at the odom graph node, which is
+  // close to but not guaranteed to equal the current pose. Keeping that stale
+  // first point made guide progress and physical target distance disagree.
+  const double guide_start_error =
+      (path_shorten.front() - iniState.col(0)).norm();
+  path_shorten.front() = iniState.col(0);
+  EPIC_LOG_INFO_THROTTLE(
+      1.0, logging_detail_, 2, "local.corridor",
+      "guide start anchored to odometry input_error=%.3fm points=%zu",
+      guide_start_error, path_shorten.size());
+
   // Keep both endpoints while removing interior guide points that would create
   // near-zero MINCO segments. The terminal point is preserved exactly.
   vector<Eigen::Vector3d> filtered_path;
@@ -877,55 +1112,20 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
               path_shorten.size(), filtered_path.size());
   }
   path_shorten.swap(filtered_path);
-  if (path_shorten.front().z() > virtual_ceiling_z + 1.0e-6) {
-    last_plan_fail_reason_ = "guide path starts above virtual ceiling";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                      last_plan_fail_reason_.c_str());
-    return false;
-  }
-
-  // The topology path may contain a node above the virtual ceiling. Preserve
-  // its XY direction but stop the local Seed at the first line/ceiling
-  // intersection. Never project the remaining high path downward because that
-  // could create a new segment through an obstacle.
-  for (size_t index = 1; index < path_shorten.size(); ++index) {
-    if (path_shorten[index].z() <= virtual_ceiling_z + 1.0e-6)
-      continue;
-
-    const Eigen::Vector3d segment =
-        path_shorten[index] - path_shorten[index - 1];
-    if (!segment.allFinite() || segment.z() <= 1.0e-9) {
-      last_plan_fail_reason_ =
-          "guide path crosses virtual ceiling without a valid intersection";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                        last_plan_fail_reason_.c_str());
+  for (const Eigen::Vector3d &guide_point : path_shorten) {
+    if (!guide_point.allFinite() ||
+        !lidar_map_interface_->IsInPlanningBox(guide_point.cast<float>())) {
+      last_plan_fail_reason_ = "guide path leaves planning_box";
+      EPIC_LOG_WARN_THROTTLE(
+          2.0, "local.corridor", "%s point=(%.3f,%.3f,%.3f)",
+          last_plan_fail_reason_.c_str(), guide_point.x(), guide_point.y(),
+          guide_point.z());
       return false;
     }
-
-    const double fraction =
-        (virtual_ceiling_z - path_shorten[index - 1].z()) / segment.z();
-    if (!std::isfinite(fraction) || fraction < 0.0 || fraction > 1.0) {
-      last_plan_fail_reason_ =
-          "guide path has an invalid virtual-ceiling intersection";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                        last_plan_fail_reason_.c_str());
-      return false;
-    }
-
-    const Eigen::Vector3d ceiling_endpoint =
-        path_shorten[index - 1] + fraction * segment;
-    path_shorten.resize(index);
-    if ((ceiling_endpoint - path_shorten.back()).norm() >=
-        gcopter_config_->minPathSegmentLength) {
-      path_shorten.push_back(ceiling_endpoint);
-    }
-    use_shorten_path = true;
-    break;
   }
   if (path_shorten.size() < 2) {
-    last_plan_fail_reason_ =
-        "virtual ceiling leaves fewer than two Seed points";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    last_plan_fail_reason_ = "planning guide has fewer than two Seed points";
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.corridor", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
@@ -1001,12 +1201,17 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     publishObservedBoundaryDebug(observed_boundary);
   }
 
-  Eigen::MatrixX4d corridor_halfspaces(observed_halfspaces.rows() + 1, 4);
+  Eigen::MatrixX4d corridor_halfspaces(observed_halfspaces.rows() + 6, 4);
   if (observed_halfspaces.rows() > 0)
     corridor_halfspaces.topRows(observed_halfspaces.rows()) =
         observed_halfspaces;
-  corridor_halfspaces.row(observed_halfspaces.rows()) <<
-      0.0, 0.0, 1.0, -virtual_ceiling_z;
+  const int box_row = observed_halfspaces.rows();
+  corridor_halfspaces.row(box_row + 0) << 1.0, 0.0, 0.0, -planning_max.x();
+  corridor_halfspaces.row(box_row + 1) << -1.0, 0.0, 0.0, planning_min.x();
+  corridor_halfspaces.row(box_row + 2) << 0.0, 1.0, 0.0, -planning_max.y();
+  corridor_halfspaces.row(box_row + 3) << 0.0, -1.0, 0.0, planning_min.y();
+  corridor_halfspaces.row(box_row + 4) << 0.0, 0.0, 1.0, -planning_max.z();
+  corridor_halfspaces.row(box_row + 5) << 0.0, 0.0, -1.0, planning_min.z();
 
   sfc_gen::convexCover(
       gcopter_viz_, path_shorten, surf_points, min_bd.cast<double>(),
@@ -1042,14 +1247,21 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     const Eigen::Vector3d by(-s, c, 0.0); // body +y (left)
     const double hx = 0.5 * p0_len_x_, hy = 0.5 * p0_len_y_;
     const double up = p0_up_, down = p0_down_;
-    Eigen::MatrixX4d P0(6, 4); // rows (nx,ny,nz,d); constraint n.x + d <= 0
+    Eigen::MatrixX4d P0(12, 4); // rows (nx,ny,nz,d); constraint n.x + d <= 0
     P0.row(0) << bx.x(), bx.y(), 0.0, -(bx.dot(p) + hx);    // front
     P0.row(1) << -bx.x(), -bx.y(), 0.0, -(-bx.dot(p) + hx); // back
     P0.row(2) << by.x(), by.y(), 0.0, -(by.dot(p) + hy);    // left
     P0.row(3) << -by.x(), -by.y(), 0.0, -(-by.dot(p) + hy); // right
     P0.row(4) << 0.0, 0.0, 1.0,
-        -std::min(p.z() + up, virtual_ceiling_z);             // up
-    P0.row(5) << 0.0, 0.0, -1.0, (p.z() - down);            // down
+        -std::min(p.z() + up, static_cast<double>(planning_max.z()));
+    P0.row(5) << 0.0, 0.0, -1.0,
+        std::max(p.z() - down, static_cast<double>(planning_min.z()));
+    P0.row(6) << 1.0, 0.0, 0.0, -planning_max.x();
+    P0.row(7) << -1.0, 0.0, 0.0, planning_min.x();
+    P0.row(8) << 0.0, 1.0, 0.0, -planning_max.y();
+    P0.row(9) << 0.0, -1.0, 0.0, planning_min.y();
+    P0.row(10) << 0.0, 0.0, 1.0, -planning_max.z();
+    P0.row(11) << 0.0, 0.0, -1.0, planning_min.z();
     hPolys.insert(hPolys.begin(), P0);
   }
 
@@ -1085,7 +1297,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     // 읽어가므로 콘솔은 스로틀만 남긴다 (예전엔 이 ROS_ERROR가 초당 수십 번 스팸).
     last_plan_fail_reason_ = "odometry start not in corridor; corridor pieces=" +
                              std::to_string(hPolys.size());
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.corridor", "%s", last_plan_fail_reason_.c_str());
     double safe_until = 0.0;
     const double elapsed_raw =
         (ros::Time::now() - local_data_.start_time_).toSec();
@@ -1116,7 +1328,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
 
   if (hPolys.size() < 2) {
     last_plan_fail_reason_ = "corridor pieces < 2 (free-space too tight around path)";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.corridor", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   size_t lastConnected = 0;
@@ -1177,6 +1389,21 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     }
     const bool below_min_progress =
         fallback.progress < gcopter_config_->corridorFallbackMinProgress;
+
+    // Detail-2 evidence for corridor truncation. The normal WARN tells the
+    // operator only that a fallback was selected; this separates a broken
+    // polytope chain from a goal that lies outside the final connected piece,
+    // and shows whether an observed-FOV face participated in this cycle.
+    EPIC_LOG_INFO_THROTTLE(
+        1.0, logging_detail_, 2, "local.corridor",
+        "fallback reason=%s obstacles=%zu guide_pts=%zu fov_faces=%ld "
+        "corridor=%zu connected=%zu fallback_piece=%zu progress=%.3fm "
+        "target_step=%.3fm margin=%.2fm",
+        !chainFullyConnected ? "CHAIN_GAP" : "GOAL_OUTSIDE_LAST",
+        surf_points.size(), path_shorten.size(), observed_halfspaces.rows(),
+        hPolys.size(), lastConnected + 1, fallbackIndex + 1,
+        fallback.progress, (fallback.point - iniState.col(0)).norm(),
+        usedMargin);
 
     // Direction we WANTED to travel, taken from the guide path BEFORE
     // truncation. truncateGuidePath keeps [0 .. segment_index] plus the target,
@@ -1273,9 +1500,9 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                               local_data_.minco_yaw_traj_,
                               trajectory_start_time,
                               gcopter_config_->maxVelMag);
-      ROS_WARN_THROTTLE(
-          1.0,
-          "[local-plan] corridor admits no progress -- rotate in place: "
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "local.corridor",
+          "corridor admits no progress; rotate in place: "
           "yaw %.1f -> %.1f deg over %.2f s (peak %.2f rad/s, limit %.2f)",
           yaw0 * 180.0 / M_PI, local_data_.end_yaw_ * 180.0 / M_PI, hold_T,
           1.875 * std::abs(yaw_delta) / hold_T, yaw_rate_limit);
@@ -1305,9 +1532,9 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     finState << fallback.point, Eigen::Vector3d::Zero(),
         Eigen::Vector3d::Zero();
     if (degenerate_hold || below_min_progress) {
-      ROS_WARN_THROTTLE(
-          1.0,
-          "[local-plan] degraded corridor fallback: %.3f m progress "
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "local.corridor",
+          "degraded fallback: %.3f m progress "
           "(< %.3f m minimum%s), piece %zu/%zu, margin %.2f m, end_yaw %.1f deg "
           "-- holding/creeping and rotating toward the goal",
           fallback.progress, gcopter_config_->corridorFallbackMinProgress,
@@ -1315,8 +1542,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
           originalCorridorCount, usedMargin,
           local_data_.end_yaw_ * 180.0 / M_PI);
     } else {
-      ROS_WARN_THROTTLE(
-          1.0,
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "local.corridor",
           "corridor fallback target selected at %.2f m guide progress "
           "(connected pieces %zu/%zu)",
           fallback.progress, fallbackIndex + 1, originalCorridorCount);
@@ -1357,7 +1584,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
           gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = std::string("gcopter setup failed: ") +
                              gcopter.lastSetupError();
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s",
+                           last_plan_fail_reason_.c_str());
     return false;
   }
   auto local_data_backup = local_data_;
@@ -1370,7 +1598,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                        gcopter_config_->relCostTol);
   if (!std::isfinite(position_cost)) {
     last_plan_fail_reason_ = "minco optimize failed";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s",
+                           last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   } else {
@@ -1378,12 +1607,20 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     if (!std::isfinite(local_data_.duration_) ||
         local_data_.duration_ < gcopter_config_->minSegmentTime) {
       last_plan_fail_reason_ = "minco produced invalid trajectory duration";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
-                        last_plan_fail_reason_.c_str());
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s",
+                             last_plan_fail_reason_.c_str());
       local_data_ = local_data_backup;
       return false;
     }
   }
+  // Collision-check the NEW trajectory on its own clock. minco_traj_ and
+  // duration_ above already belong to the new plan, while start_time_ still
+  // belonged to the previous command until the success bookkeeping at the end
+  // of this function. Mixing those epochs could skip the beginning of a new
+  // trajectory (or consider it already complete), admit an unsafe plan, and
+  // only discover it later in EXEC_TRAJ. The backup restores the old epoch on
+  // every failure path below.
+  local_data_.start_time_ = trajectory_start_time;
   ros::Time traj_gen_end = ros::Time::now();
   double traj_gen_time = (traj_gen_end - traj_gen_start).toSec() * 1000.0;
   gcopter_viz_->publishTrajectoryGenerationCost(traj_gen_time);
@@ -1396,28 +1633,31 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   gcopter_viz_->publishLbfgsOptimizationCost(lbfgs_time);
   
   double time = 10.0;
-  double ceiling_violation_time = 0.0;
-  if (findVirtualCeilingViolation(local_data_.minco_traj_,
-                                  local_data_.duration_,
-                                  virtual_ceiling_z,
-                                  ceiling_violation_time)) {
-    last_plan_fail_reason_ =
-        "post-check: trajectory exceeds virtual ceiling";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f (ceiling=%.3f)",
-                      last_plan_fail_reason_.c_str(),
-                      ceiling_violation_time, virtual_ceiling_z);
+  double planning_box_violation_time = 0.0;
+  const auto inside_planning_box = [this](const Eigen::Vector3d &position) {
+    return lidar_map_interface_->IsInPlanningBox(position.cast<float>());
+  };
+  if (findPlanningBoxViolation(local_data_.minco_traj_,
+                               local_data_.duration_, inside_planning_box,
+                               planning_box_violation_time)) {
+    last_plan_fail_reason_ = "post-check: trajectory leaves planning_box";
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
+                           last_plan_fail_reason_.c_str(),
+                           planning_box_violation_time);
     local_data_ = local_data_backup;
     return false;
   }
   if (!checkTrajCollision(time) && time < 1.0) {
     last_plan_fail_reason_ = "post-check: new traj collides within 1s";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
+                           last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
   if (!checkTrajVelocity()) {
     last_plan_fail_reason_ = "post-check: velocity limit exceeded";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
+                           last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
@@ -1425,7 +1665,8 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
     if (!YawTrajOpt(initialYawState, local_data_.end_yaw_,
                     use_shorten_path)) {
       last_plan_fail_reason_ = "yaw traj opt failed";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s",
+                             last_plan_fail_reason_.c_str());
       local_data_ = local_data_backup;
       return false;
     }
@@ -1440,9 +1681,9 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
                  initialYawState.y()),
         std::abs(local_data_.minco_yaw_traj_.getAcc(0.0).x() -
                  initialYawState.z()));
-    ROS_INFO_THROTTLE(
-        1.0,
-        "[ReplanInitialState] source=odometry PVA_err=[%.3e %.3e %.3e] "
+    EPIC_LOG_DEBUG(
+        logging_detail_, 2, "local.minco",
+        "initial_state source=odometry PVA_err=[%.3e %.3e %.3e] "
         "Yaw_err=[%.3e %.3e %.3e]",
         positionBoundaryError.x(), positionBoundaryError.y(),
         positionBoundaryError.z(), yawBoundaryError.x(),
@@ -1455,7 +1696,7 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   } else {
     local_data_ = local_data_backup;
     last_plan_fail_reason_ = "optimized traj empty";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   ros::Time optimize_end_stamp = ros::Time::now();
@@ -1681,8 +1922,8 @@ void FastPlannerManager::clipCorridorToObservedBoundary(
 
 void FastPlannerManager::angleLimite(double &angle) {
   if (!std::isfinite(angle)) {
-    ROS_WARN_THROTTLE(1.0,
-                      "[NumericalGuard] non-finite yaw delta replaced by zero");
+    EPIC_LOG_WARN_THROTTLE(1.0, "local.minco",
+                           "non-finite yaw delta replaced by zero");
     angle = 0.0;
     return;
   }
@@ -1699,13 +1940,15 @@ bool FastPlannerManager::YawTrajOpt(
   Eigen::VectorXd opt_times_Yaw;
   double yaw_sp(initial_yaw_state.x()), yaw_sv(initial_yaw_state.y()),
       yaw_sa(initial_yaw_state.z()), yaw_ep(end_yaw);
+  const bool use_fixed_waypoint_yaw =
+      yaw_planner_mode_ == "fixed_waypoint";
 
   // Keep the inherited yaw unwrapped. Wrapping this absolute start angle would
   // reintroduce a +/-pi discontinuity even though all following deltas already
   // use the shortest angular distance.
   if (!initial_yaw_state.allFinite()) {
-    ROS_WARN_THROTTLE(
-        1.0, "[ReplanContinuity] invalid initial yaw state");
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "local.minco", "invalid initial yaw state");
     return false;
   }
   static double yaw_dur = 0.3;
@@ -1752,6 +1995,9 @@ bool FastPlannerManager::YawTrajOpt(
   std::mt19937 gen(rd()); // 使用Mersenne Twister作为随机数引擎
 
   std::normal_distribution<double> dist(0, 2e-3);
+  double filtered_yaw_rate =
+      std::max(-gcopter_config_->yaw_max_vel,
+               std::min(yaw_sv, gcopter_config_->yaw_max_vel));
   for (int i = 0; i < look_fwd_wp.size(); i++) {
     if (i == 0) {
       wp.push_back(look_fwd_wp[i]);
@@ -1763,38 +2009,72 @@ bool FastPlannerManager::YawTrajOpt(
     double time2end_yaw = abs(diff2end_yaw) / gcopter_config_->yaw_max_vel;
     double time_last = local_data_.duration_ - i * yaw_dur;
     double next_yaw;
+    const double waypoint_noise =
+        use_fixed_waypoint_yaw ? 0.0 : dist(gen);
     if (time_last <= time2end_yaw)
-      next_yaw = local_data_.end_yaw_ + dist(gen);
+      next_yaw = local_data_.end_yaw_ + waypoint_noise;
     else
-      next_yaw = look_fwd_wp[i] + dist(gen);
+      next_yaw = look_fwd_wp[i] + waypoint_noise;
 
     double delta_yaw = next_yaw - last_yaw;
     angleLimite(delta_yaw);
-    if (delta_yaw < 0 && delta_yaw < -delta_yaw_max) {
+    if (use_fixed_waypoint_yaw) {
+      // Rate limiting the waypoint angle alone permits an instantaneous
+      // waypoint-rate jump of up to yaw_max_vel every 0.3 s. Exact MINCO then
+      // needs a 2--6x duration scale merely to absorb that artificial
+      // acceleration, which also makes synchronized position motion appear to
+      // stop at every replan. Generate a physically reachable discrete yaw
+      // profile first: rate follows the desired heading subject to both rate
+      // and acceleration limits, and angle is trapezoidally integrated.
+      const double remaining_time =
+          local_data_.duration_ - static_cast<double>(i - 1) * yaw_dur;
+      const double waypoint_dt =
+          std::max(gcopter_config_->minSegmentTime,
+                   std::min(yaw_dur, remaining_time));
+      const double desired_rate =
+          std::max(-gcopter_config_->yaw_max_vel,
+                   std::min(delta_yaw / waypoint_dt,
+                            gcopter_config_->yaw_max_vel));
+      const double max_rate_change = yaw_max_acc_ * waypoint_dt;
+      const double next_rate =
+          filtered_yaw_rate +
+          std::max(-max_rate_change,
+                   std::min(desired_rate - filtered_yaw_rate,
+                            max_rate_change));
+      delta_yaw = 0.5 * (filtered_yaw_rate + next_rate) * waypoint_dt;
+      filtered_yaw_rate = next_rate;
+    } else if (delta_yaw < 0 && delta_yaw < -delta_yaw_max) {
       delta_yaw = -delta_yaw_max;
     } else if (delta_yaw > 0 && delta_yaw > delta_yaw_max) {
       delta_yaw = delta_yaw_max;
     }
     wp.push_back(wp.back() + delta_yaw);
   }
-  double delta2end = local_data_.end_yaw_ - wp.back();
-  angleLimite(delta2end);
-  local_data_.end_yaw_ = wp.back() + delta2end;
-  yaw_ep = local_data_.end_yaw_;
-  iniStateYaw << Eigen::Vector3d(yaw_sp, 0.0, 0.0),
-      Eigen::Vector3d(yaw_sv, 0.0, 0.0), Eigen::Vector3d(yaw_sa, 0.0, 0.0);
-  finStateYaw << Eigen::Vector3d(yaw_ep, 0.0, 0.0), Eigen::Vector3d::Zero(),
-      Eigen::Vector3d::Zero();
-
-  gcopter::GCOPTER_PolytopeSFC gcopter_yaw;
-  if (!gcopter_yaw.setup_yaw(gcopter_config_->yaw_rho_vis,
-                             gcopter_config_->integralIntervs,
-                             gcopter_config_->yawDiffEps,
-                             gcopter_config_->minSegmentTime,
-                             gcopter_config_->linearSolvePivotEps)) {
-    cout << "setup_yaw failed!" << endl;
-    return false;
+  if (use_fixed_waypoint_yaw) {
+    // Do not append an unreachable endpoint jump after constructing the
+    // rate/acceleration-limited profile. The next replan continues from live
+    // yaw and naturally closes the remaining path-heading error.
+    local_data_.end_yaw_ = wp.back();
+  } else {
+    double delta2end = local_data_.end_yaw_ - wp.back();
+    angleLimite(delta2end);
+    local_data_.end_yaw_ = wp.back() + delta2end;
   }
+  yaw_ep = local_data_.end_yaw_;
+  const double bounded_yaw_sv = use_fixed_waypoint_yaw
+      ? std::max(-gcopter_config_->yaw_max_vel,
+                 std::min(yaw_sv, gcopter_config_->yaw_max_vel))
+      : yaw_sv;
+  const double bounded_yaw_sa = use_fixed_waypoint_yaw
+      ? std::max(-yaw_max_acc_, std::min(yaw_sa, yaw_max_acc_))
+      : yaw_sa;
+  iniStateYaw << Eigen::Vector3d(yaw_sp, 0.0, 0.0),
+      Eigen::Vector3d(bounded_yaw_sv, 0.0, 0.0),
+      Eigen::Vector3d(bounded_yaw_sa, 0.0, 0.0);
+  const double final_yaw_rate =
+      use_fixed_waypoint_yaw ? filtered_yaw_rate : 0.0;
+  finStateYaw << Eigen::Vector3d(yaw_ep, 0.0, 0.0),
+      Eigen::Vector3d(final_yaw_rate, 0.0, 0.0), Eigen::Vector3d::Zero();
   int pieceNUM = wp.size() - 2;
   if (pieceNUM <= 1) {
     opt_times_Yaw.resize(2);
@@ -1840,21 +2120,78 @@ bool FastPlannerManager::YawTrajOpt(
   // cout << endl;
 
   local_data_.minco_yaw_traj_.clear();
-  bool used_initial_yaw_fallback = false;
-  const double yaw_cost =
-      gcopter_yaw.optimize_yaw(iniStateYaw, finStateYaw, pieceNUM, wpsYaw,
-                               opt_times_Yaw, local_data_.minco_yaw_traj_,
-                               &used_initial_yaw_fallback);
-  if (!std::isfinite(yaw_cost)) {
-    std::cout << "optimize yaw failed!" << std::endl;
-    return false;
+  bool yaw_trajectory_valid = false;
+  bool legacy_initial_fallback = false;
+  double duration_scale = 1.0;
+  double peak_yaw_rate = 0.0;
+  double peak_yaw_acc = 0.0;
+  std::string fixed_yaw_failure_stage = "NOT_RUN";
+  int fixed_yaw_solve_iterations = 0;
+  if (use_fixed_waypoint_yaw) {
+    yaw_trajectory_valid = buildFixedWaypointYawTrajectory(
+        iniStateYaw, finStateYaw, wpsYaw, opt_times_Yaw,
+        gcopter_config_->minSegmentTime,
+        gcopter_config_->linearSolvePivotEps,
+        gcopter_config_->yaw_max_vel, yaw_max_acc_,
+        local_data_.minco_yaw_traj_, duration_scale, peak_yaw_rate,
+        peak_yaw_acc, fixed_yaw_failure_stage,
+        fixed_yaw_solve_iterations);
+    EPIC_LOG_INFO_THROTTLE(
+        1.0, logging_detail_, 2, "local.minco",
+        "fixed yaw pieces=%d duration=%.2fs scale=%.3f "
+        "peak_rate=%.2frad/s peak_acc=%.2frad/s^2 iterations=%d",
+        local_data_.minco_yaw_traj_.getPieceNum(),
+        local_data_.minco_yaw_traj_.getTotalDuration(), duration_scale,
+        peak_yaw_rate, peak_yaw_acc, fixed_yaw_solve_iterations);
+  } else {
+    gcopter::GCOPTER_PolytopeSFC gcopter_yaw;
+    if (!gcopter_yaw.setup_yaw(gcopter_config_->yaw_rho_vis,
+                               gcopter_config_->integralIntervs,
+                               gcopter_config_->yawDiffEps,
+                               gcopter_config_->minSegmentTime,
+                               gcopter_config_->linearSolvePivotEps)) {
+      EPIC_LOG_ERROR("local.minco", "legacy yaw optimizer setup failed");
+      return false;
+    }
+    const double yaw_cost = gcopter_yaw.optimize_yaw(
+        iniStateYaw, finStateYaw, pieceNUM, wpsYaw, opt_times_Yaw,
+        local_data_.minco_yaw_traj_, &legacy_initial_fallback);
+    yaw_trajectory_valid =
+        std::isfinite(yaw_cost) &&
+        isYawTrajectoryTransportSafe(local_data_.minco_yaw_traj_,
+                                     gcopter_config_->minSegmentTime) &&
+        !legacy_initial_fallback;
   }
-  if (used_initial_yaw_fallback) {
-    ROS_WARN_THROTTLE(
-        2.0,
-        "[local-plan] yaw LBFGS line search failed; using finite initial yaw "
-        "trajectory (%d pieces, %.2f s)",
-        pieceNUM, opt_times_Yaw.sum());
+  if (!yaw_trajectory_valid) {
+    if (!buildDeterministicYawFallback(
+            initial_yaw_state, local_data_.end_yaw_, local_data_.duration_,
+            gcopter_config_->minSegmentTime,
+            gcopter_config_->yaw_max_vel,
+            local_data_.minco_yaw_traj_)) {
+      EPIC_LOG_ERROR_THROTTLE(
+          2.0, "local.minco",
+          "yaw optimization and deterministic fallback both failed");
+      return false;
+    }
+    if (use_fixed_waypoint_yaw) {
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "local.minco",
+          "fixed-waypoint yaw failed stage=%s iterations=%d pieces=%d "
+          "input_duration=%.2fs scale=%.3f peak_rate=%.2frad/s "
+          "peak_acc=%.2frad/s^2; using deterministic transport-safe yaw "
+          "trajectory (1 piece, %.2f s)",
+          fixed_yaw_failure_stage.c_str(), fixed_yaw_solve_iterations,
+          pieceNUM, opt_times_Yaw.sum(), duration_scale, peak_yaw_rate,
+          peak_yaw_acc, local_data_.minco_yaw_traj_.getTotalDuration());
+    } else {
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "local.minco",
+          "%s; using deterministic transport-safe yaw trajectory "
+          "(1 piece, %.2f s)",
+          legacy_initial_fallback ? "yaw LBFGS line search failed"
+                                  : "yaw trajectory validation failed",
+          local_data_.minco_yaw_traj_.getTotalDuration());
+    }
   }
   const double yaw_duration =
       local_data_.minco_yaw_traj_.getTotalDuration();
@@ -1863,7 +2200,7 @@ bool FastPlannerManager::YawTrajOpt(
     std::cout << "yaw trajectory duration invalid!" << std::endl;
     return false;
   }
-  
+
   ros::Time yaw_opt_end = ros::Time::now();
   double yaw_opt_time = (yaw_opt_end - yaw_opt_start).toSec() * 1000.0;
   gcopter_viz_->publishYawTrajectoryOptimizationCost(yaw_opt_time);
@@ -1876,23 +2213,21 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   // old escape bubble was capped only by map bounds (often several metres
   // above the exploration box), so its FIRI interior could command a climb out
   // of the legal flight volume.
-  const double virtual_ceiling_z =
-      lidar_map_interface_->lp_->global_box_max_boundary_.z() -
-      gcopter_config_->corridorObstacleVoxelSize;
-  const double hard_ceiling_z =
-      lidar_map_interface_->lp_->global_box_max_boundary_.z();
-  if (!std::isfinite(virtual_ceiling_z) ||
-      !std::isfinite(hard_ceiling_z) ||
-      hard_ceiling_z < virtual_ceiling_z ||
-      virtual_ceiling_z <=
-          lidar_map_interface_->lp_->global_box_min_boundary_.z() ||
+  const double planning_max_z =
+      lidar_map_interface_->lp_->planning_box_max_boundary_.z();
+  const double recovery_max_z = planning_max_z;
+  if (!std::isfinite(planning_max_z) ||
+      !std::isfinite(recovery_max_z) ||
+      recovery_max_z < planning_max_z ||
+      planning_max_z <=
+          lidar_map_interface_->lp_->planning_box_min_boundary_.z() ||
       !local_data_.curr_pos_.allFinite() ||
-      local_data_.curr_pos_.z() > hard_ceiling_z + 1.0e-6) {
+      local_data_.curr_pos_.z() > recovery_max_z + 1.0e-6) {
     last_plan_fail_reason_ =
         "escape: invalid or already violated hard ceiling";
-    ROS_WARN_THROTTLE(
-        2.0, "[local-plan] %s (virtual=%.3f, hard=%.3f, z=%.3f)",
-        last_plan_fail_reason_.c_str(), virtual_ceiling_z, hard_ceiling_z,
+    EPIC_LOG_WARN_THROTTLE(
+        2.0, "local.collision", "%s (virtual=%.3f, hard=%.3f, z=%.3f)",
+        last_plan_fail_reason_.c_str(), planning_max_z, recovery_max_z,
         local_data_.curr_pos_.z());
     return false;
   }
@@ -1935,7 +2270,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   }
   if (surf_points.empty()) {
     last_plan_fail_reason_ = "escape: no local obstacle samples for FIRI";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
@@ -1949,26 +2284,26 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   bd(0, 3) =
       -std::min(start_pos.x() + 2.0,
                 static_cast<double>(
-                    lidar_map_interface_->lp_->global_map_max_boundary_[0]));
+                    lidar_map_interface_->lp_->planning_box_max_boundary_[0]));
   bd(1, 3) = std::max(start_pos.x() - 2.0,
                       static_cast<double>(
-                          lidar_map_interface_->lp_->global_box_min_boundary_[0]));
+                          lidar_map_interface_->lp_->planning_box_min_boundary_[0]));
   bd(2, 3) =
       -std::min(start_pos.y() + 2.0,
                 static_cast<double>(
-                    lidar_map_interface_->lp_->global_map_max_boundary_[1]));
+                    lidar_map_interface_->lp_->planning_box_max_boundary_[1]));
   bd(3, 3) = std::max(start_pos.y() - 2.0,
                       static_cast<double>(
-                          lidar_map_interface_->lp_->global_box_min_boundary_[1]));
+                          lidar_map_interface_->lp_->planning_box_min_boundary_[1]));
   bd(4, 3) =
       -std::min(start_pos.z() + 1.0,
                 std::min(static_cast<double>(
                              lidar_map_interface_->lp_
-                                 ->global_map_max_boundary_[2]),
-                         std::max(virtual_ceiling_z, start_pos.z())));
+                                 ->planning_box_max_boundary_[2]),
+                         std::max(planning_max_z, start_pos.z())));
   bd(5, 3) = std::max(start_pos.z() - 1.0,
                       static_cast<double>(
-                          lidar_map_interface_->lp_->global_box_min_boundary_[2]));
+                          lidar_map_interface_->lp_->planning_box_min_boundary_[2]));
   Eigen::Map<const Eigen::Matrix<double, 3, -1, Eigen::ColMajor>> pc(
       surf_points[0].data(), 3, surf_points.size());
 
@@ -1981,14 +2316,14 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
                   gcopter_config_->firiMaxPlaneCount) ||
       hp.rows() <= 0) {
     last_plan_fail_reason_ = "escape: base FIRI failed";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
   Eigen::Vector3d inner;
   if (!geo_utils::findInterior(hp, inner)) {
     last_plan_fail_reason_ = "escape: base FIRI has no interior";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
@@ -2007,7 +2342,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   if (!clip_escape_to_observed_ || !frontier_manager_) {
     last_plan_fail_reason_ =
         "escape: strict observed-region clipping unavailable";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
                       last_plan_fail_reason_.c_str());
     return false;
   }
@@ -2037,8 +2372,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
           (active.row(row) * seed_h)(0) > kEps) {
         last_plan_fail_reason_ =
             "escape: start/seed outside observed boundary";
-        ROS_WARN_THROTTLE(2.0,
-                          "[local-plan] %s (face %d/%d)",
+        EPIC_LOG_WARN_THROTTLE(2.0, "local.collision",
+                          "%s (face %d/%d)",
                           last_plan_fail_reason_.c_str(), row + 1,
                           static_cast<int>(active.rows()));
         return false;
@@ -2070,8 +2405,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
       } else {
         last_plan_fail_reason_ =
             "escape: strict observed-region FIRI/interior failed";
-        ROS_WARN_THROTTLE(2.0,
-                          "[local-plan] %s (%d active face(s))",
+        EPIC_LOG_WARN_THROTTLE(2.0, "local.collision",
+                          "%s (%d active face(s))",
                           last_plan_fail_reason_.c_str(),
                           static_cast<int>(active.rows()));
         return false;
@@ -2080,7 +2415,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
     if ((hp * start_h).maxCoeff() > kEps) {
       last_plan_fail_reason_ =
           "escape: actual start outside strict escape polytope";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s",
                         last_plan_fail_reason_.c_str());
       return false;
     }
@@ -2111,7 +2446,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
                               iz * kTargetGridStep);
           const Eigen::Vector4d candidate_h(
               candidate.x(), candidate.y(), candidate.z(), 1.0);
-          if (candidate.z() > virtual_ceiling_z + 1.0e-6 ||
+          if (candidate.z() > planning_max_z + 1.0e-6 ||
               (escape_raw_hp * candidate_h).maxCoeff() > 1.0e-6 ||
               (escape_observed_halfspaces.rows() > 0 &&
                (escape_observed_halfspaces * candidate_h).maxCoeff() >
@@ -2172,7 +2507,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
       safe_target_clearance < 0.0) {
     last_plan_fail_reason_ =
         "escape: no observed non-worsening path to DilateRadiusSoft";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s (start clearance=%.3f)",
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s (start clearance=%.3f)",
                       last_plan_fail_reason_.c_str(), start_clearance);
     return false;
   }
@@ -2214,7 +2549,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   }
   if (start_idx == -1) {
     last_plan_fail_reason_ = "escape: start not in local free bubble";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   if (start_idx > 0) {
@@ -2226,7 +2561,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
 
   if (hPolys.size() < 2) {
     last_plan_fail_reason_ = "escape: corridor pieces < 2";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   gcopter_viz_->visualizePolytope(hPolys);
@@ -2256,7 +2591,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
           gcopter_config_->linearSolvePivotEps)) {
     last_plan_fail_reason_ = std::string("escape: gcopter setup failed: ") +
                              gcopter.lastSetupError();
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   auto local_data_backup = local_data_;
@@ -2266,7 +2601,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
                        gcopter_config_->relCostTol);
   if (!std::isfinite(escape_cost)) {
     last_plan_fail_reason_ = "escape: minco optimize failed";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s", last_plan_fail_reason_.c_str());
     local_data_ = local_data_backup;
     return false;
   }
@@ -2292,7 +2627,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   // Optimizer constraints are soft/numerical.  Before publishing a CAUTION
   // recovery, independently sample the finished trajectory against the exact
   // observed half-spaces, raw/safe FIRI phases, measured obstacle clearance,
-  // and the virtual ceiling.  Before the safe phase, the only exception is the
+  // and the planning box.  Before the safe phase, the only exception is the
   // clearance already present at t=0: clearance may never decrease.  Once the
   // soft margin is reached it may never be surrendered.
   constexpr double kEscapeSampleStep = 0.02;
@@ -2315,40 +2650,40 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
                              : std::numeric_limits<double>::quiet_NaN();
   double minimum_clearance = escape_start_clearance;
   double ceiling_floor = start_pos.z();
-  bool reached_virtual_ceiling =
-      start_pos.z() <= virtual_ceiling_z + kEscapeBoundaryTolerance;
+  bool reached_planning_height =
+      start_pos.z() <= planning_max_z + kEscapeBoundaryTolerance;
   for (double sample_time = 0.0;; sample_time += kEscapeSampleStep) {
     const double t = std::min(sample_time, escape_duration);
     const Eigen::Vector3d position = local_data_.minco_traj_.getPos(t);
     const Eigen::Vector4d position_h(position.x(), position.y(), position.z(),
                                      1.0);
     if (!position.allFinite() ||
-        position.z() > hard_ceiling_z + kEscapeBoundaryTolerance) {
+        position.z() > recovery_max_z + kEscapeBoundaryTolerance) {
       local_data_ = local_data_backup;
       last_plan_fail_reason_ =
           "escape: post-check exceeds hard ceiling";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                         last_plan_fail_reason_.c_str(), t);
       return false;
     }
-    if (!reached_virtual_ceiling) {
+    if (!reached_planning_height) {
       if (position.z() > ceiling_floor + kEscapeBoundaryTolerance) {
         local_data_ = local_data_backup;
         last_plan_fail_reason_ =
             "escape: post-check climbs during ceiling recovery";
-        ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+        EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                           last_plan_fail_reason_.c_str(), t);
         return false;
       }
       ceiling_floor = std::min(ceiling_floor, position.z());
-      reached_virtual_ceiling =
-          position.z() <= virtual_ceiling_z + kEscapeBoundaryTolerance;
+      reached_planning_height =
+          position.z() <= planning_max_z + kEscapeBoundaryTolerance;
     } else if (position.z() >
-               virtual_ceiling_z + kEscapeBoundaryTolerance) {
+               planning_max_z + kEscapeBoundaryTolerance) {
       local_data_ = local_data_backup;
       last_plan_fail_reason_ =
-          "escape: post-check leaves virtual ceiling";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+          "escape: post-check leaves planning_box";
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                         last_plan_fail_reason_.c_str(), t);
       return false;
     }
@@ -2356,7 +2691,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
         kEscapeBoundaryTolerance) {
       local_data_ = local_data_backup;
       last_plan_fail_reason_ = "escape: post-check leaves raw FIRI polytope";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                         last_plan_fail_reason_.c_str(), t);
       return false;
     }
@@ -2366,7 +2701,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
       local_data_ = local_data_backup;
       last_plan_fail_reason_ =
           "escape: post-check leaves observed region";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                         last_plan_fail_reason_.c_str(), t);
       return false;
     }
@@ -2382,8 +2717,8 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
         local_data_ = local_data_backup;
         last_plan_fail_reason_ =
             "escape: post-check worsens clearance before safe region";
-        ROS_WARN_THROTTLE(
-            2.0, "[local-plan] %s at t=%.3f (%.3f < %.3f)",
+        EPIC_LOG_WARN_THROTTLE(
+            2.0, "local.collision", "%s at t=%.3f (%.3f < %.3f)",
             last_plan_fail_reason_.c_str(), t, clearance, clearance_floor);
         return false;
       }
@@ -2398,7 +2733,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
       local_data_ = local_data_backup;
       last_plan_fail_reason_ =
           "escape: post-check loses soft clearance after reaching it";
-      ROS_WARN_THROTTLE(2.0, "[local-plan] %s at t=%.3f",
+      EPIC_LOG_WARN_THROTTLE(2.0, "local.collision", "%s at t=%.3f",
                         last_plan_fail_reason_.c_str(), t);
       return false;
     }
@@ -2411,10 +2746,10 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
         "escape: post-check never reaches DilateRadiusSoft";
     return false;
   }
-  if (!reached_virtual_ceiling) {
+  if (!reached_planning_height) {
     local_data_ = local_data_backup;
     last_plan_fail_reason_ =
-        "escape: post-check never re-enters virtual ceiling";
+        "escape: post-check never re-enters planning_box";
     return false;
   }
   if (local_data_.minco_traj_.getPieceNum() > 0) {
@@ -2432,7 +2767,7 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   } else {
     local_data_ = local_data_backup;
     last_plan_fail_reason_ = "escape: optimized traj empty";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", last_plan_fail_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.minco", "%s", last_plan_fail_reason_.c_str());
     return false;
   }
   local_data_.traj_id_ += 1;
@@ -2443,14 +2778,15 @@ bool FastPlannerManager::flyToSafeRegion(bool is_static) {
   local_data_.rotate_in_place_ = false;
   local_data_.caution_escape_ = true;
   local_data_.escape_soft_entry_time_ = escape_soft_entry_time;
-  local_data_.escape_virtual_ceiling_z_ = virtual_ceiling_z;
-  local_data_.escape_hard_ceiling_z_ = hard_ceiling_z;
+  local_data_.escape_planning_max_z_ = planning_max_z;
+  local_data_.escape_recovery_max_z_ = recovery_max_z;
   local_data_.escape_raw_polytope_ = escape_raw_hp;
   local_data_.escape_safe_polytope_ = escape_safe_hp;
   local_data_.escape_observed_halfspaces_ = escape_observed_halfspaces;
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = true;
-  ROS_INFO("[CAUTION] accepted escape: duration=%.2f s, soft-entry=%.2f s, "
+  EPIC_LOG_INFO(1, 1, "local.collision",
+           "CAUTION escape accepted duration=%.2fs soft_entry=%.2fs "
            "clearance %.3f -> %.3f (required %.3f, min %.3f)",
            escape_duration, escape_soft_entry_time, escape_start_clearance,
            safe_target_clearance, gcopter_config_->dilateRadiusSoft,

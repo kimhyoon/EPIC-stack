@@ -311,6 +311,11 @@ public:
   // Simulation-only planner evidence. The publishers remain disabled unless
   // planner_debug/enable is explicitly set by sim_bringup.
   bool planner_debug_enabled_ = false;
+  int logging_detail_ = 1; // local logging: 0 cycle .. 3 numerical detail
+  // Isolated yaw-planner switch. "lbfgs" preserves the legacy optimizer;
+  // "fixed_waypoint" solves the path-facing waypoints directly with MINCO.
+  std::string yaw_planner_mode_ = "lbfgs";
+  double yaw_max_acc_ = 3.5;
   uint64_t planner_debug_seq_ = 0;
   uint64_t current_debug_plan_seq_ = 0;
   ros::Publisher debug_obstacle_points_pub_;

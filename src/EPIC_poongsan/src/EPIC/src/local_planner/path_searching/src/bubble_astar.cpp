@@ -47,7 +47,7 @@ void BubbleAstar::init(ros::NodeHandle &nh,
               "greater than numerical/vector_norm_eps.");
     throw std::runtime_error("invalid bubble_astar/resolution_astar");
   }
-  origin_ = lidar_map->lp_->global_map_min_boundary_;
+  origin_ = lidar_map->lp_->planning_box_min_boundary_;
   this->inv_resolution_ = 1.0 / resolution_;
   bubble_node_pool_.resize(allocate_num_);
   path_node_pool_.resize(allocate_num_);
@@ -155,10 +155,7 @@ double BubbleAstar::pathLength(const vector<Eigen::Vector3f> &path) {
 
 bool BubbleAstar::safeCheck(GridNodePtr node) {
 
-  // if (!lidar_map_interface_->IsInMap(node->position.x, node->position.y,
-  // node->position.z))) {
-  //   return false;
-  // }
+  // Planning-box rejection happens while expanding candidate nodes.
   if (dead_set_map_.find(node->index) != dead_set_map_.end()) {
     return false;
   }
@@ -310,7 +307,7 @@ int BubbleAstar::search(const Vector3f &start_pt, const Vector3f &end_pt,
             continue; //
           loop_count++;
           nbr_pos = cur_pos + step;
-          if (!lidar_map_interface_->IsInMap(nbr_pos))
+          if (!lidar_map_interface_->IsInPlanningBox(nbr_pos))
             continue;
           GridNodePtr neighbor = path_node_pool_[use_node_num_];
           neighbor->position = PointType(nbr_pos.x(), nbr_pos.y(), nbr_pos.z());
@@ -516,11 +513,11 @@ void BubbleAstar::goal_refine(Eigen::Vector3f &goal, bool use_map_bd) {
   double safe_radius = 0.6;
   Eigen::Vector3f max_bd, min_bd;
   if (use_map_bd) {
-    max_bd = this->lidar_map_interface_->lp_->global_map_max_boundary_;
-    min_bd = this->lidar_map_interface_->lp_->global_map_min_boundary_;
+    max_bd = this->lidar_map_interface_->lp_->planning_box_max_boundary_;
+    min_bd = this->lidar_map_interface_->lp_->planning_box_min_boundary_;
   } else {
-    max_bd = this->lidar_map_interface_->lp_->global_box_max_boundary_;
-    min_bd = this->lidar_map_interface_->lp_->global_box_min_boundary_;
+    max_bd = this->lidar_map_interface_->lp_->planning_box_max_boundary_;
+    min_bd = this->lidar_map_interface_->lp_->planning_box_min_boundary_;
   }
   auto nearest_occ = [&](const Eigen::Vector3f &curr_goal) -> Eigen::Vector3f {
     PointVector np;

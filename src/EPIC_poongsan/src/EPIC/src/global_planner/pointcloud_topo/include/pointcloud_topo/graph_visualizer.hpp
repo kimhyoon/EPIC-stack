@@ -90,7 +90,7 @@ public:
     SetColor(color, alpha, scan_marker);
   }
 
-  void inline vizBox(Eigen::Vector3f &lb, Eigen::Vector3f &hb,
+  void inline vizBox(const Eigen::Vector3f &lb, const Eigen::Vector3f &hb,
                      Marker &box_marker) {
     box_marker.type = Marker::LINE_LIST;
     // box_marker.points.clear();
@@ -325,33 +325,18 @@ public:
           topo_graph->lidar_map_interface_->lp_->dead_area_max_boundary_vec_[i],
           dead_arad_marker);
     }
-    for (int i = 0; i < topo_graph->lidar_map_interface_->lp_->box_num_; i++) {
-      vizBox(topo_graph->lidar_map_interface_->lp_
-                 ->global_box_min_boundary_vec_[i],
-             topo_graph->lidar_map_interface_->lp_
-                 ->global_box_max_boundary_vec_[i],
-             boundary_marker);
-      box_idx_marker.pose.position.x = (topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_max_boundary_vec_[i]
-                                            .x() +
-                                        topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_min_boundary_vec_[i]
-                                            .x()) /
-                                       2.0;
-      box_idx_marker.pose.position.y = (topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_max_boundary_vec_[i]
-                                            .y() +
-                                        topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_min_boundary_vec_[i]
-                                            .y()) /
-                                       2.0;
-      box_idx_marker.pose.position.z = (topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_max_boundary_vec_[i]
-                                            .z() +
-                                        topo_graph->lidar_map_interface_->lp_
-                                            ->global_box_min_boundary_vec_[i]
-                                            .z()) /
-                                       2.0;
+    const auto &box_mins = topo_graph->lidar_map_interface_->lp_
+                               ->planning_box_min_boundary_vec_;
+    const auto &box_maxs = topo_graph->lidar_map_interface_->lp_
+                               ->planning_box_max_boundary_vec_;
+    const size_t box_count = std::min(box_mins.size(), box_maxs.size());
+    for (size_t i = 0; i < box_count; ++i) {
+      const Eigen::Vector3f box_min = box_mins[i];
+      const Eigen::Vector3f box_max = box_maxs[i];
+      vizBox(box_min, box_max, boundary_marker);
+      box_idx_marker.pose.position.x = (box_max.x() + box_min.x()) / 2.0;
+      box_idx_marker.pose.position.y = (box_max.y() + box_min.y()) / 2.0;
+      box_idx_marker.pose.position.z = (box_max.z() + box_min.z()) / 2.0;
       box_idx_marker.id = i;
       box_idx_marker.text = to_string(i);
       graph_marker_array.markers.push_back(box_idx_marker);

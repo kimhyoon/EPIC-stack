@@ -17,6 +17,7 @@ memory, thread mutual exclusion should be noted.
 #include <cmath>
 #include <pcl/filters/filter.h>
 #include <lidar_map/lidar_map.h>
+#include <lidar_map/structured_log.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/common/transforms.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -35,7 +36,7 @@ void LIOInterface::initializeTransform(const std::string& map_frame,
   // Check if transform is needed.
   if (cloud_frame_ == map_frame_) {
     needs_transform_ = false;
-    ROS_INFO("[LIOInterface] Cloud frame '%s' matches map frame '%s', no transform needed",
+    EPIC_SENSOR_INFO("sensor.lidar", "cloud frame=%s matches map frame=%s; transform disabled",
              cloud_frame_.c_str(), map_frame_.c_str());
     return;
   }
@@ -50,14 +51,12 @@ void LIOInterface::initializeTransform(const std::string& map_frame,
     T_body_to_cloud_ = transform_eigen.matrix().cast<float>();
 
     needs_transform_ = true;
-    ROS_INFO("[LIOInterface] Successfully looked up transform %s -> %s",
-             body_frame_.c_str(), cloud_frame_.c_str());
-    ROS_INFO("[LIOInterface] Transform will be applied: map(%s) -> body(%s) -> cloud(%s)",
+    EPIC_SENSOR_INFO("sensor.lidar", "transform ready map=%s body=%s cloud=%s",
              map_frame_.c_str(), body_frame_.c_str(), cloud_frame_.c_str());
   } catch (tf2::TransformException &ex) {
-    ROS_ERROR("[LIOInterface] Failed to lookup transform %s -> %s: %s",
+    EPIC_SENSOR_ERROR("sensor.lidar", "failed transform lookup %s -> %s: %s",
               body_frame_.c_str(), cloud_frame_.c_str(), ex.what());
-    ROS_ERROR("[LIOInterface] Proceeding without transform - pointcloud may be misaligned!");
+    EPIC_SENSOR_ERROR("sensor.lidar", "transform disabled; pointcloud may be misaligned");
     needs_transform_ = false;
   }
 }
@@ -227,8 +226,8 @@ bool LIOInterface::updateCloudMapOdometry(
       !q_map_body.coeffs().allFinite() ||
       q_map_body.squaredNorm() <=
           lp_->vector_norm_eps_ * lp_->vector_norm_eps_) {
-    ROS_WARN_THROTTLE(
-        1.0, "[NumericalGuard] ignoring cloud/odometry pair with invalid pose");
+    EPIC_SENSOR_WARN_THROTTLE(
+        1.0, "sensor.lidar", "ignoring synchronized cloud/odometry pair with invalid pose");
     return false;
   }
   q_map_body.normalize();
@@ -279,19 +278,19 @@ bool LIOInterface::updateCloudMapOdometry(
   cloud_input.width = static_cast<uint32_t>(cloud_input.points.size());
   cloud_input.height = 1;
   if (zero_point_count > 0) {
-    ROS_DEBUG_THROTTLE(5.0,
-                       "[LIOInterface] removed %zu zero-point placeholders",
+    EPIC_SENSOR_DEBUG_THROTTLE(5.0, "sensor.lidar",
+                       "removed %zu zero-point placeholders",
                        zero_point_count);
   }
   if (near_point_count > 0) {
-    ROS_DEBUG_THROTTLE(
-        5.0,
-        "[LIOInterface] rejected %zu sensor returns at/below %.3f m",
+    EPIC_SENSOR_DEBUG_THROTTLE(
+        5.0, "sensor.lidar",
+        "rejected %zu sensor returns at/below %.3f m",
         near_point_count, lp_->min_ray_length_);
   }
   if (cloud_input.empty()) {
-    ROS_WARN_THROTTLE(1.0,
-                      "[NumericalGuard] point cloud contains no finite points");
+    EPIC_SENSOR_WARN_THROTTLE(1.0, "sensor.lidar",
+                              "pointcloud contains no usable finite points");
     return false;
   }
 

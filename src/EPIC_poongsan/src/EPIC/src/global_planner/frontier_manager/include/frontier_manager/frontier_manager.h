@@ -149,6 +149,20 @@ enum VP_STATUS {
   VP_STATUS_COUNT
 };
 
+inline const char *vpStatusStr(uint8_t s) {
+  switch (s) {
+  case VP_VALID: return "VALID";
+  case VP_INVALID_CLEARANCE: return "CLEARANCE";
+  case VP_INVALID_OUT_OF_BOX: return "OUT_OF_BOX";
+  case VP_INVALID_NO_REGION: return "NO_REGION";
+  case VP_INVALID_ISOLATED: return "ISOLATED";
+  case VP_INVALID_UNREACHABLE: return "UNREACHABLE";
+  case VP_INVALID_PRUNED: return "PRUNED";
+  case VP_INVALID_NO_VIS: return "NO_VISIBILITY";
+  default: return "?";
+  }
+}
+
 struct VpCandidate {
   Eigen::Vector3f pos_;
   float yaw_ = 0.0f;   // VP_VALID 일 때만 의미 있음
@@ -369,6 +383,7 @@ private:
   FrontierParam frtp_;
   FrontierData frtd_;
   ViewpointParam vpp_;
+  int logging_detail_ = 1;
   unordered_set<int> force_recluster_;
   LIOInterface::Ptr
       lidar_map_interface_; // TODO: 改成

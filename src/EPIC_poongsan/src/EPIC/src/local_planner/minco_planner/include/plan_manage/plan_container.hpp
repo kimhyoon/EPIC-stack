@@ -55,8 +55,8 @@ struct LocalTrajData {
   // FIRI separation planes are not physical obstacle surfaces).
   bool caution_escape_ = false;
   double escape_soft_entry_time_ = 0.0;
-  double escape_virtual_ceiling_z_ = 0.0;
-  double escape_hard_ceiling_z_ = 0.0;
+  double escape_planning_max_z_ = 0.0;
+  double escape_recovery_max_z_ = 0.0;
   Eigen::MatrixX4d escape_raw_polytope_;
   Eigen::MatrixX4d escape_safe_polytope_;
   Eigen::MatrixX4d escape_observed_halfspaces_;

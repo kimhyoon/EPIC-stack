@@ -7,7 +7,10 @@
  * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
  */
 #include <frontier_manager/frontier_manager.h>
+#include <frontier_manager/global_log.h>
 #include <std_msgs/Float32.h>
+
+#include <array>
 
 class UF {
 public:
@@ -116,6 +119,44 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
       cand_ok++;
   vp_stats_.no_candidates = vp_stats_.considered - cand_ok;
 
+  if (logging_detail_ >= 1 &&
+      epicGlobalDebugEnabled("global.viewpoint.sample")) {
+    std::array<int, VP_STATUS_COUNT> sample_status{};
+    for (const auto &cluster : revp_clusters_vec)
+      for (const auto &candidate : cluster->vp_candidates_)
+        if (candidate.status_ < VP_STATUS_COUNT)
+          sample_status[candidate.status_]++;
+    const int sampled_total =
+        std::accumulate(sample_status.begin(), sample_status.end(), 0);
+    EPIC_GLOG_DEBUG(
+        logging_detail_, 1, "global.viewpoint.sample",
+        "clusters=%d sampled=%d grouped=%d rejected[clearance=%d box=%d "
+        "no_region=%d isolated=%d] time=%.2fms",
+        vp_stats_.considered, sampled_total,
+        sample_status[VP_INVALID_UNREACHABLE],
+        sample_status[VP_INVALID_CLEARANCE],
+        sample_status[VP_INVALID_OUT_OF_BOX],
+        sample_status[VP_INVALID_NO_REGION],
+        sample_status[VP_INVALID_ISOLATED], (t2 - t1).toSec() * 1000.0);
+  }
+  if (logging_detail_ >= 2 &&
+      epicGlobalDebugEnabled("global.viewpoint.geometry")) {
+    for (const auto &cluster : revp_clusters_vec) {
+      std::array<int, VP_STATUS_COUNT> counts{};
+      for (const auto &candidate : cluster->vp_candidates_)
+        if (candidate.status_ < VP_STATUS_COUNT)
+          counts[candidate.status_]++;
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 2, "global.viewpoint.geometry",
+          "cluster=%d sampled=%zu grouped=%d rejected[clearance=%d box=%d "
+          "no_region=%d isolated=%d]",
+          cluster->id_, cluster->vp_candidates_.size(),
+          counts[VP_INVALID_UNREACHABLE], counts[VP_INVALID_CLEARANCE],
+          counts[VP_INVALID_OUT_OF_BOX], counts[VP_INVALID_NO_REGION],
+          counts[VP_INVALID_ISOLATED]);
+    }
+  }
+
   PointVector vp_centers;
   for (auto &cls : revp_clusters_vec) {
     for (auto &vpc : cls->vp_clusters_) {
@@ -130,13 +171,30 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
     if (cluster->is_reachable_)
       clusters_can_be_searched_.push_back(cluster);
   }
+  ros::Time t3 = ros::Time::now();
   vp_stats_.topo_unreachable =
       std::max(0, cand_ok - (int)clusters_can_be_searched_.size());
+
+  EPIC_GLOG_DEBUG(
+      logging_detail_, 1, "global.connectivity.search",
+      "viewpoint_clusters=%d reachable=%d failed[noedge=%d nopath=%d "
+      "timeout=%d] cluster_unreachable=%d time=%.2fms",
+      vp_stats_.reach_ok + vp_stats_.reach_noedge + vp_stats_.reach_nopath +
+          vp_stats_.reach_timeout,
+      vp_stats_.reach_ok, vp_stats_.reach_noedge, vp_stats_.reach_nopath,
+      vp_stats_.reach_timeout, vp_stats_.topo_unreachable,
+      (t3 - t2).toSec() * 1000.0);
+  if (vp_stats_.reach_timeout > 0) {
+    EPIC_GLOG_WARN_THROTTLE(
+        2.0, "global.connectivity.search",
+        "reachability timeout=%d budget=%.3fms; these are not proven "
+        "topology disconnections",
+        vp_stats_.reach_timeout, vpp_.reachability_search_timeout_ * 1000.0);
+  }
 
   // ROS_INFO("[DEBUG generateTSPViewpoints] After removeUnreachableViewpoints: %lu -> %lu reachable",
   //          revp_clusters_vec.size(), clusters_can_be_searched_.size());
 
-  ros::Time t3 = ros::Time::now();
   // cout << "remove unreachable cluster cost: " << (t3 - t2).toSec() * 1000 << "ms" << endl;
   // cout << "revp cluster size: " << revp_clusters_vec.size() << endl;
   // cout << "reab cluster size: " << clusters_can_be_searched_.size() << endl;
@@ -188,7 +246,8 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   // 실제로 보지 못한 공간을 관측 완료로 기록하는 동작이라 조용히 지나가면 안 된다.
   // DENSE 는 되돌릴 수 없으므로 몇 번 발동했는지가 곧 비행 품질 지표다.
   if (reached_clusters > 0)
-    ROS_WARN("[vp-reached-clear] %d clusters / %d cells forced DENSE "
+    EPIC_GLOG_WARN("global.frontier.update",
+             "%d clusters / %d cells forced DENSE "
              "(reached the viewpoint but the frontier did not clear)",
              reached_clusters, reached_cells);
 
@@ -233,7 +292,8 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
       return true;
     });
     if (swept_clusters > 0)
-      ROS_WARN("[vp-reached-clear] radius sweep: %d clusters / %d cells within "
+      EPIC_GLOG_WARN("global.frontier.update",
+               "radius sweep: %d clusters / %d cells within "
                "%.2fm of (%.2f, %.2f, %.2f) forced DENSE",
                swept_clusters, swept_cells, vpp_.vp_reached_clear_radius_,
                odom_pos.x(), odom_pos.y(), odom_pos.z());
@@ -244,6 +304,53 @@ void FrontierManager::generateTSPViewpoints(Eigen::Vector3f&center,  vector<Topo
   vp_stats_.ok = (int)tsp_clusters.size();
   vp_stats_.no_visibility =
       std::max(0, (int)clusters_can_be_searched_.size() - vp_stats_.ok);
+
+  if (logging_detail_ >= 1 &&
+      epicGlobalDebugEnabled("global.viewpoint.selection")) {
+    int valid_candidates = 0, no_visibility_candidates = 0,
+        pruned_candidates = 0, unreachable_candidates = 0;
+    for (const auto &cluster : revp_clusters_vec) {
+      for (const auto &candidate : cluster->vp_candidates_) {
+        valid_candidates += candidate.status_ == VP_VALID;
+        no_visibility_candidates += candidate.status_ == VP_INVALID_NO_VIS;
+        pruned_candidates += candidate.status_ == VP_INVALID_PRUNED;
+        unreachable_candidates += candidate.status_ == VP_INVALID_UNREACHABLE;
+      }
+      EPIC_GLOG_DEBUG(
+          logging_detail_, 2, "global.viewpoint.selection",
+          "cluster=%d result=%s candidates=%zu best=(%.2f,%.2f,%.2f) "
+          "yaw=%.1fdeg score=%d graph_distance=%.2f",
+          cluster->id_, clusterReasonStr(cluster->reason_),
+          cluster->vp_candidates_.size(), cluster->best_vp_.x(),
+          cluster->best_vp_.y(), cluster->best_vp_.z(),
+          cluster->best_vp_yaw_ * 180.0 / M_PI, cluster->best_vp_score_,
+          cluster->distance_);
+    }
+    EPIC_GLOG_DEBUG(
+        logging_detail_, 1, "global.viewpoint.selection",
+        "clusters[input=%zu selected=%d no_candidate=%d "
+        "topo_unreachable=%d no_visibility=%d] candidates[valid=%d "
+        "no_visibility=%d pruned=%d unreachable=%d] time=%.2fms",
+        revp_clusters_vec.size(), vp_stats_.ok, vp_stats_.no_candidates,
+        vp_stats_.topo_unreachable, vp_stats_.no_visibility, valid_candidates,
+        no_visibility_candidates, pruned_candidates, unreachable_candidates,
+        (t4 - t3).toSec() * 1000.0);
+  }
+  if (logging_detail_ >= 3 &&
+      epicGlobalDebugEnabled("global.viewpoint.candidate")) {
+    for (const auto &cluster : revp_clusters_vec) {
+      int index = 0;
+      for (const auto &candidate : cluster->vp_candidates_) {
+        EPIC_GLOG_DEBUG(
+            logging_detail_, 3, "global.viewpoint.candidate",
+            "cluster=%d candidate=%d pos=(%.2f,%.2f,%.2f) status=%s "
+            "yaw=%.1fdeg visible_cells=%d",
+            cluster->id_, index++, candidate.pos_.x(), candidate.pos_.y(),
+            candidate.pos_.z(), vpStatusStr(candidate.status_),
+            candidate.yaw_ * 180.0 / M_PI, candidate.score_);
+      }
+    }
+  }
   // 重新topK
   vector<float> distance2odom2;
   vector<int> idx2;

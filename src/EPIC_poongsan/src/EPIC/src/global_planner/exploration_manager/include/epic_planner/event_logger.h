@@ -21,6 +21,7 @@
 
 #include <ros/ros.h>
 #include <std_msgs/String.h>
+#include <frontier_manager/global_log.h>
 
 #include <cstdio>
 #include <map>
@@ -38,6 +39,7 @@ public:
     pub_ = nh.advertise<std_msgs::String>("/epic/events", 200);
     session_pub_ = nh.advertise<std_msgs::String>("/epic/session_info", 1, true /*latched*/);
     t0_ = ros::Time::now().toSec();
+    nh.param("logging/event_info_console", info_console_, false);
     inited_ = true;
   }
 
@@ -169,12 +171,21 @@ private:
     std_msgs::String m;
     m.data = line;
     pub_.publish(m);
+
+    // GLOBAL/LOCAL/STATE have dedicated structured console summaries. Keep
+    // this richer event representation on /epic/events without printing a
+    // duplicate line. Other warnings/errors always remain visible; ordinary
+    // event INFO is opt-in and otherwise available at DEBUG.
+    if (cat == "GLOBAL" || cat == "LOCAL" || cat == "STATE")
+      return;
     if (level >= L_ERROR)
-      ROS_ERROR_STREAM("[EV] " << line);
+      EPIC_LOG_ERROR("execution.event", "%s", line.c_str());
     else if (level == L_WARN)
-      ROS_WARN_STREAM("[EV] " << line);
+      EPIC_LOG_WARN("execution.event", "%s", line.c_str());
+    else if (info_console_)
+      EPIC_LOG_INFO(0, 0, "execution.event", "%s", line.c_str());
     else
-      ROS_INFO_STREAM("[EV] " << line);
+      EPIC_LOG_DEBUG(0, 0, "execution.event", "%s", line.c_str());
   }
 
   ros::Publisher pub_, session_pub_;
@@ -183,6 +194,7 @@ private:
   double t0_ = 0.0;
   double heartbeat_ = 30.0; // 반복 억제 중 생존신고 주기 [s]
   bool inited_ = false;
+  bool info_console_ = false;
   std::mutex mtx_;
 };
 

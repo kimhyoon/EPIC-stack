@@ -7,6 +7,7 @@
  * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
  */
 #include <frontier_manager/frontier_manager.h>
+#include <frontier_manager/global_log.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
 typedef visualization_msgs::Marker Marker;
@@ -485,16 +486,16 @@ void FrontierManager::vizBestViewpoint() {
   // 상한에 걸려 잘라냈으면 조용히 넘어가지 않고 알린다 (그림이 전부인 줄 알면
   // 오판하게 된다).
   if (valid_total > (int)arrows.size())
-    ROS_WARN_THROTTLE(5.0,
-                      "[vp-viz] yaw arrows capped at %d of %d valid viewpoints "
-                      "(raise ViewpointManager/viz_max_yaw_arrows)",
-                      (int)arrows.size(), valid_total);
+    ROS_LOG_ONCE(::ros::console::levels::Warn, "global.viewpoint",
+                 "[global.viewpoint] yaw arrows capped at %d of %d valid viewpoints "
+                 "(raise ViewpointManager/viz_max_yaw_arrows)",
+                 (int)arrows.size(), valid_total);
   for (int s = 0; s < VP_STATUS_COUNT; s++)
     if (stride[s] > 1)
-      ROS_WARN_THROTTLE(10.0,
-                        "[vp-viz] %s subsampled 1/%zu (%zu candidates; raise "
-                        "ViewpointManager/viz_max_points_per_status)",
-                        kStatusNs[s], stride[s], status_total[s]);
+      ROS_LOG_ONCE(::ros::console::levels::Warn, "global.viewpoint",
+                   "[global.viewpoint] %s subsampled 1/%zu (%zu candidates; raise "
+                   "ViewpointManager/viz_max_points_per_status)",
+                   kStatusNs[s], stride[s], status_total[s]);
 
   // [EARLY_FINISH] EFP 마커도 같은 arr 에 담아 발행한다 — 별도 퍼블리셔로 쏘면
   // 이 함수가 매 주기 앞에서 하는 DELETEALL 에 곧바로 지워진다. active 가
