@@ -348,9 +348,9 @@ diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMak
 index e4ddf1e..40e8f33 100644
 --- a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt
 +++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/CMakeLists.txt
-@@ -23,13 +23,15 @@ catkin_package(
+@@ -24,13 +24,15 @@ catkin_package(
      LIBRARIES frontier_manager
-     CATKIN_DEPENDS roscpp std_msgs lidar_map pointcloud_topo
+     CATKIN_DEPENDS roscpp rosconsole std_msgs lidar_map pointcloud_topo
  )
 +include_directories(BEFORE SYSTEM
 +    ${OpenCV_INCLUDE_DIRS}
@@ -369,10 +369,11 @@ diff --git a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/
 index 8803097..16aaf9c 100644
 --- a/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
 +++ b/src/EPIC_poongsan/src/EPIC/src/global_planner/frontier_manager/src/frontier_manager.cpp
-@@ -7,6 +7,7 @@
+@@ -7,7 +7,8 @@
   * @Copyright (c) 2024 by ning-zelin, All Rights Reserved.
   */
  #include <frontier_manager/frontier_manager.h>
+ #include <frontier_manager/global_log.h>
 +#include <opencv2/opencv.hpp>
  #include <pcl/filters/voxel_grid.h>
  #include <std_msgs/Int32.h>
