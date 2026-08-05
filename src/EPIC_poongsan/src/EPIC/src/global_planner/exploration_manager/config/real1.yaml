@@ -365,9 +365,10 @@ ViewpointManager/vp_reached_clear_radius: 0.0  # 일괄 해소 반경[m], 0이�
 
 # [탐사 허용 영역]
 # EPIC은 아래 박스 내부에서만 Frontier, viewpoint 및 경로를 생성한다.
-box_num: 1                              # 탐사 허용 박스 수[개]
-box_0/down: [-2.0, -15, 0.1]            # 박스의 최소 [X, Y, Z] 좌표[m]
-box_0/up:   [22, 15, 2.1]               # 박스의 최대 [X, Y, Z] 좌표[m]
+planning_box_num: 1                     # 기체 중심 planning box 수[개]
+planning_box_0/down: [-2.0, -15, 0.1]
+planning_box_0/up:   [22, 15, 2.1]
+mapping_box/shrink_voxels: 1
 dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 수[개], 0이면 없음
 # ====================================================================
 # local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 시작

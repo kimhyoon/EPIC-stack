@@ -11,6 +11,7 @@
 #define _EXPLORATION_MANAGER_H_
 
 #include <Eigen/Eigen>
+#include <cstdint>
 #include <frontier_manager/frontier_manager.h>
 #include <memory>
 #include <omp.h>
@@ -43,6 +44,7 @@ public:
   ros::Timer frontier_timer_;
   FrontierManager::Ptr frontier_manager_ptr_;
   double goal_yaw;
+  uint64_t global_cycle_id_ = 0;
 
   shared_ptr<FastPlannerManager> planner_manager_;
   // ViewpointForest::Ptr vps_forest_;

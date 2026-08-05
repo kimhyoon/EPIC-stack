@@ -288,9 +288,10 @@ ViewpointManager/local_tsp_size: 10  # 한 주기에 검사할 Frontier 묶음 �
 
 # [탐사 허용 영역]
 # EPIC은 아래 박스 내부에서만 Frontier, viewpoint 및 경로를 생성한다.
-box_num: 1                              # 탐사 허용 박스 수[개]
-box_0/down: [-150.0, -150.0, 0.4]      # 박스의 최소 [X, Y, Z] 좌표[m]
-box_0/up:   [150, 150, 2.0]             # 박스의 최대 [X, Y, Z] 좌표[m]
+planning_box_num: 1                     # 기체 중심 planning box 수[개]
+planning_box_0/down: [-150.0, -150.0, 0.4]
+planning_box_0/up:   [150, 150, 2.0]
+mapping_box/shrink_voxels: 1
 dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 수[개], 0이면 없음
 # ====================================================================
 # local_planning/*, MINCO : 국소 궤적·Corridor·비행 제한 시작

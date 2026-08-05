@@ -73,12 +73,12 @@ class ExplorationEvaluator:
         cache_dir = os.path.expanduser('~/.ros')
         if self.pcd_path and os.path.exists(self.pcd_path):
             self.total_voxels = self._load_or_compute_voxels(self.pcd_path, cache_dir)
-            rospy.loginfo("[Eval] Total voxels from PCD: %d (cell_size=%.2f)", self.total_voxels, self.cell_size)
+            rospy.logdebug("[Eval] Total voxels from PCD: %d (cell_size=%.2f)", self.total_voxels, self.cell_size)
         else:
             rospy.logwarn("[Eval] PCD file not found: %s. Exploration rate will use bounding box.", self.pcd_path)
             cell_counts = np.floor((self.map_max - self.map_min) / self.cell_size).astype(int) + 1
             self.total_voxels = int(np.prod(cell_counts))
-            rospy.loginfo("[Eval] Total voxels from bounding box: %d", self.total_voxels)
+            rospy.logdebug("[Eval] Total voxels from bounding box: %d", self.total_voxels)
 
         # Subscribers
         self.state_sub = rospy.Subscriber('/planning/state', Marker, self.state_callback)
@@ -91,7 +91,7 @@ class ExplorationEvaluator:
             from quadrotor_msgs.msg import PositionCommand
             self.cmd_sub = rospy.Subscriber(
                 self.position_cmd_topic, PositionCommand, self.cmd_callback)
-            rospy.loginfo("[Eval] Subscribed to %s (PositionCommand)", self.position_cmd_topic)
+            rospy.logdebug("[Eval] Subscribed to %s (PositionCommand)", self.position_cmd_topic)
         except ImportError:
             rospy.logwarn("[Eval] quadrotor_msgs not found. Using generic subscriber for position_cmd.")
             self.cmd_sub = rospy.Subscriber(
@@ -115,7 +115,7 @@ class ExplorationEvaluator:
         if os.path.exists(cache_path):
             with open(cache_path, 'r') as f:
                 count = int(f.read().strip())
-            rospy.loginfo("[Eval] Loaded voxel count from cache: %s (%d voxels)", cache_path, count)
+            rospy.logdebug("[Eval] Loaded voxel count from cache: %s (%d voxels)", cache_path, count)
             return count
 
         count = self._voxelize_pcd(pcd_path)
@@ -219,7 +219,10 @@ class ExplorationEvaluator:
         if current_state == self.prev_state:
             return
 
-        rospy.loginfo("[Eval] State: %s -> %s (phase: %s)", self.prev_state, current_state, self.phase)
+        # Normal PLAN<->EXEC transitions occur several times per second. They
+        # remain available at DEBUG; trigger/finish/error messages below stay
+        # at INFO/WARN and are not hidden.
+        rospy.logdebug("[Eval] State: %s -> %s (phase: %s)", self.prev_state, current_state, self.phase)
 
         # Detect trigger: WAIT_TRIGGER -> PLAN_TRAJ_EXP
         if (self.phase == "IDLE" and

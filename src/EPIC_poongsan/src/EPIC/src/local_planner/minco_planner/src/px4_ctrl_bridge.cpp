@@ -18,6 +18,8 @@
 //      (planner died / heartbeat lost), fall back to holding the last position.
 
 #include <ros/ros.h>
+#include <frontier_manager/global_log.h>
+#include <frontier_manager/structured_console.h>
 #include <Eigen/Eigen>
 #include <cmath>
 
@@ -168,15 +170,16 @@ void sanitizeYawSetpoint(mavros_msgs::PositionTarget& sp) {
     last_valid_yaw_ = sp.yaw;
     have_valid_yaw_ = true;
   } else {
-    ROS_ERROR_THROTTLE(
-        1.0,
-        "[px4_bridge] non-finite yaw command; holding the last valid yaw");
+    EPIC_LOG_ERROR_THROTTLE(
+        1.0, "execution.px4",
+        "non-finite yaw command; holding last valid yaw");
     sp.yaw = have_valid_yaw_ ? last_valid_yaw_ : 0.0;
   }
 
   if (!std::isfinite(sp.yaw_rate)) {
-    ROS_ERROR_THROTTLE(
-        1.0, "[px4_bridge] non-finite yaw rate command; replacing it with zero");
+    EPIC_LOG_ERROR_THROTTLE(
+        1.0, "execution.px4",
+        "non-finite yaw-rate command; replacing with zero");
     sp.yaw_rate = 0.0;
   }
 }
@@ -184,6 +187,7 @@ void sanitizeYawSetpoint(mavros_msgs::PositionTarget& sp) {
 int main(int argc, char** argv) {
   ros::init(argc, argv, "px4_ctrl_bridge");
   ros::NodeHandle nh("~");
+  epic_logging::installStructuredConsoleAppender(nh);
 
   // odom 토픽은 real.yaml 의 odometry_topic (exploration_node ns 로 로드) 이
   // 유일한 소스다. 폴백 절대 금지 — 실비행에서 다른 토픽(다른 좌표계)을
@@ -195,7 +199,6 @@ int main(int argc, char** argv) {
               "(real.yaml not loaded?). REFUSING TO START - no fallback.");
     return 1;
   }
-  ROS_INFO("[px4_bridge] odom topic: %s", odom_topic.c_str());
   nh.param("auto_arm",     auto_arm_,    auto_arm_);
   nh.param("cmd_timeout",  cmd_timeout_, cmd_timeout_);
   nh.param("use_accel_ff", use_accel_ff_, use_accel_ff_);
@@ -211,8 +214,8 @@ int main(int argc, char** argv) {
     if (ros::param::get("/exploration_node/local_avoidance/enable", yaml_avoid) &&
         !yaml_avoid) {
       enable_avoidance_ = false;
-      ROS_WARN("[px4_ctrl_bridge] avoidance MUX disabled by real.yaml "
-               "(local_avoidance/enable=false)");
+      EPIC_LOG_WARN("execution.px4",
+                    "avoidance MUX disabled by local_avoidance/enable=false");
     }
   }
 
@@ -232,12 +235,19 @@ int main(int argc, char** argv) {
   // PX4 OFFBOARD requires setpoints already streaming; run the loop at 100 Hz.
   ros::Rate rate(100.0);
 
-  ROS_INFO("[px4_bridge] waiting for FCU connection & odometry ...");
+  EPIC_LOG_INFO(1, 1, "execution.px4",
+                "configured odom=%s rate=100Hz auto_arm=%d accel_ff=%d yaw_rate=%d "
+                "avoidance=%d timeouts[cmd=%.2fs avoid=%.2fs flag=%.2fs]; waiting for FCU+odom",
+                odom_topic.c_str(), static_cast<int>(auto_arm_),
+                static_cast<int>(use_accel_ff_), static_cast<int>(use_yawrate_),
+                static_cast<int>(enable_avoidance_), cmd_timeout_,
+                avoid_cmd_timeout_, flag_timeout_);
   while (ros::ok() && (!px4_state_.connected || !have_odom_)) {
     ros::spinOnce();
     rate.sleep();
   }
-  ROS_INFO("[px4_bridge] FCU connected, odometry up. auto_arm=%d", (int)auto_arm_);
+  EPIC_LOG_INFO(1, 1, "execution.px4", "FCU connected; odometry ready auto_arm=%d",
+                static_cast<int>(auto_arm_));
 
   mavros_msgs::SetMode offb_req;  offb_req.request.custom_mode = "OFFBOARD";
   mavros_msgs::CommandBool arm_req; arm_req.request.value = true;
@@ -251,10 +261,10 @@ int main(int argc, char** argv) {
     if (auto_arm_ && (ros::Time::now() - last_try).toSec() > 1.0) {
       if (px4_state_.mode != "OFFBOARD") {
         if (set_mode_client_.call(offb_req) && offb_req.response.mode_sent)
-          ROS_INFO("[px4_bridge] OFFBOARD requested");
+          EPIC_LOG_INFO(1, 1, "execution.px4", "OFFBOARD requested");
       } else if (!px4_state_.armed) {
         if (arming_client_.call(arm_req) && arm_req.response.success)
-          ROS_INFO("[px4_bridge] vehicle armed");
+          EPIC_LOG_INFO(1, 1, "execution.px4", "vehicle armed");
       }
       last_try = ros::Time::now();
     }
@@ -281,7 +291,8 @@ int main(int argc, char** argv) {
     // pose; this is belt-and-suspenders so the drone never snaps far back.
     if (avoid_active_prev_ && !avoid_active && replan_on_release_) {
       replan_pub_.publish(std_msgs::Empty());
-      ROS_WARN("[px4_bridge] avoidance released -> published /planning/replan");
+      EPIC_LOG_WARN("execution.px4",
+                    "avoidance released; requested trajectory replan");
     }
     avoid_active_prev_ = avoid_active;
 
@@ -293,7 +304,8 @@ int main(int argc, char** argv) {
       //     never starves (the avoidance node only emits at ~40 Hz).
       sp = last_avoid_;
       sp.header.stamp = now;
-      ROS_WARN_THROTTLE(1.0, "[px4_bridge] AVOIDANCE ACTIVE -> forwarding /target_avoidance");
+      EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4",
+                             "avoidance active; forwarding reactive target");
 
     } else if (enable_avoidance_ && flag_fresh && avoid_flag_ == 1 && !avoid_fresh) {
       // [2] SAFETY: flag says "avoid" but the escape target is stale. Do NOT
@@ -305,7 +317,8 @@ int main(int argc, char** argv) {
       quaternionToYaw(odom_.pose.pose.orientation, yaw);
       sp = makeSetpoint(p, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
                         yaw, 0.0, /*full_state=*/false);
-      ROS_WARN_THROTTLE(0.5, "[px4_bridge] flag=1 but /target_avoidance STALE -> hold pose");
+      EPIC_LOG_WARN_THROTTLE(0.5, "execution.px4",
+                             "avoidance requested but target stale; holding pose");
 
     } else if (cmd_fresh) {
       // [3] NORMAL: track EPIC's /position_cmd (unchanged behaviour).
@@ -325,7 +338,8 @@ int main(int argc, char** argv) {
       sp = makeSetpoint(p, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(),
                         yaw, 0.0, /*full_state=*/false);
       if (have_cmd_)
-        ROS_WARN_THROTTLE(1.0, "[px4_bridge] /position_cmd stale -> holding pose");
+        EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4",
+                               "position command stale; holding pose");
     }
 
     // Normalize every path, including avoidance passthrough, immediately before

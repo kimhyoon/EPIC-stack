@@ -14,7 +14,7 @@ void TopoGraph::generateBubble(const Eigen::Vector3f &low_bd,
   ros::Time start = ros::Time::now();
   Eigen::Vector3f center = (low_bd + high_bd) / 2.0;
   Eigen::Vector3f bd_size = high_bd - low_bd;
-  if (!lidar_map_interface_->IsInBox(center))
+  if (!lidar_map_interface_->IsInPlanningBox(center))
     return;
 
   if (low_bd[0] >= high_bd[0] || low_bd[1] >= high_bd[1] ||

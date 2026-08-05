@@ -12,6 +12,7 @@ find_package(OpenCV REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  rosconsole
   std_msgs
   std_srvs
   geometry_msgs
@@ -43,7 +44,7 @@ generate_messages(
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES epic_planner
-  CATKIN_DEPENDS pointcloud_topo path_searching traj_utils lkh_tsp_solver plan_manage frontier_manager lidar_map message_runtime
+  CATKIN_DEPENDS roscpp rosconsole pointcloud_topo path_searching traj_utils lkh_tsp_solver plan_manage frontier_manager lidar_map message_runtime
 )
 
 include_directories(

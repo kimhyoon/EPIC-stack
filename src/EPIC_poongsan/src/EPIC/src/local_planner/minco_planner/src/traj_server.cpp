@@ -3,6 +3,8 @@
 #include <nav_msgs/Odometry.h>
 #include <quadrotor_msgs/PositionCommand.h>
 #include <ros/ros.h>
+#include <frontier_manager/global_log.h>
+#include <frontier_manager/structured_console.h>
 #include <std_msgs/Empty.h>
 #include <std_msgs/Float32.h>
 #include <std_msgs/String.h>
@@ -52,6 +54,7 @@ double px4_position_p_gain_, position_feedforward_time_;
 double offset_decay_rate_, position_step_safety_factor_;
 Eigen::Vector3d last_cmd_pos_ = Eigen::Vector3d::Zero();
 Eigen::Vector3d last_cmd_vel_ = Eigen::Vector3d::Zero();
+Eigen::Vector3d real_vel_ = Eigen::Vector3d::Zero();
 Eigen::Vector3d cmd_offset_ = Eigen::Vector3d::Zero();  // bumpless-transfer residual, see limitPositionSetpoint()
 bool trajectory_generation_changed_ = false;  // set by activatePendingTrajectoryPair(), consumed in limitPositionSetpoint()
 bool position_initialized_ = false;
@@ -75,6 +78,7 @@ ros::Time last_odom_time_;
 bool has_last_odom_pos_ = false;
 double current_odom_yaw_ = 0.0;
 bool odom_state_available_ = false;
+bool path_facing_yaw_mode_ = false;
 int error_sample_count_ = 0;
 
 double wrapToPi(const double angle) {
@@ -107,6 +111,43 @@ Eigen::Vector3d clampVectorNorm(const Eigen::Vector3d &value,
   return value * (max_norm / norm);
 }
 
+bool trajectoryIsFinite(const Trajectory<5> &trajectory) {
+  if (trajectory.getPieceNum() <= 0)
+    return false;
+  for (const auto &piece : trajectory.pieces) {
+    const double duration = piece.getDuration();
+    if (!std::isfinite(duration) || duration <= 0.0 ||
+        !piece.getCoeffMat().allFinite()) {
+      return false;
+    }
+    for (const double fraction : {0.0, 0.5, 1.0}) {
+      const double time = duration * fraction;
+      if (!piece.getPos(time).allFinite() ||
+          !piece.getVel(time).allFinite() ||
+          !piece.getAcc(time).allFinite()) {
+        return false;
+      }
+    }
+  }
+  return std::isfinite(trajectory.getTotalDuration()) &&
+         trajectory.getTotalDuration() > 0.0;
+}
+
+std::shared_ptr<Trajectory<5>> makeYawHoldTrajectory(
+    const double yaw, const double requested_duration) {
+  const double safe_yaw = std::isfinite(yaw) ? yaw : 0.0;
+  const double duration =
+      std::isfinite(requested_duration) && requested_duration > 0.0
+          ? requested_duration
+          : 0.1;
+  Piece<5>::CoefficientMat coefficients =
+      Piece<5>::CoefficientMat::Zero();
+  coefficients(0, 5) = safe_yaw;
+  return std::make_shared<Trajectory<5>>(
+      std::vector<double>{duration},
+      std::vector<Piece<5>::CoefficientMat>{coefficients});
+}
+
 void boundPositionLookahead(Eigen::Vector3d &position) {
   if (!odom_state_available_ || !real_pos_.allFinite() ||
       !position.allFinite())
@@ -133,9 +174,9 @@ void limitPositionSetpoint(Eigen::Vector3d &position,
     dt = 0.0;
 
   if (!position.allFinite()) {
-    ROS_ERROR_THROTTLE(
-        1.0,
-        "[traj_server] non-finite position trajectory sample; holding the "
+    EPIC_LOG_ERROR_THROTTLE(
+        1.0, "execution.trajectory",
+        "non-finite position trajectory sample; holding the "
         "last valid position command");
     position = last_cmd_pos_;
     velocity.setZero();
@@ -167,27 +208,26 @@ void limitPositionSetpoint(Eigen::Vector3d &position,
       // below would be short by offset_decay_rate_ * dt and the swap would
       // not be exactly step-free.
       Eigen::Vector3d transfer_anchor = last_cmd_pos_;
-      if (odom_state_available_ && real_pos_.allFinite()) {
-        const Eigen::Vector3d new_progress = pos_target - real_pos_;
-        const double progress_norm = new_progress.norm();
-        if (progress_norm > 1.0e-6) {
-          const Eigen::Vector3d progress_dir = new_progress / progress_norm;
-          const double old_command_progress =
-              (last_cmd_pos_ - real_pos_).dot(progress_dir);
-          // Rapid replanning used to re-anchor the transfer residual to the
-          // previous command every 0.1--0.2 s. If that command was behind the
-          // measured vehicle along the *new* path, the residual never had time
-          // to decay and /position_cmd_vis remained behind a forward path.
-          // The new trajectory starts at odometry, so odometry is the safe
-          // zero-progress anchor in this one case. The hard step bound below
-          // still limits convergence to it; this does not introduce a jump.
-          if (old_command_progress < -1.0e-3) {
+      if (odom_state_available_ && real_pos_.allFinite() &&
+          real_vel_.allFinite()) {
+        const double real_speed = real_vel_.norm();
+        if (real_speed > 0.10) {
+          const Eigen::Vector3d motion_dir = real_vel_ / real_speed;
+          const double command_motion_progress =
+              (last_cmd_pos_ - real_pos_).dot(motion_dir);
+          // A global-goal turn can put the perfectly valid previous command
+          // on the negative side of the NEW path direction. Treating that as
+          // stale caused every turn to re-anchor toward odometry and created a
+          // 0.1--0.3 m requested step. Only re-anchor when the command is
+          // genuinely behind the moving vehicle in its measured direction.
+          constexpr double kStaleCommandLag = 0.05;
+          if (command_motion_progress < -kStaleCommandLag) {
             transfer_anchor = real_pos_;
-            ROS_DEBUG_THROTTLE(
-                1.0,
-                "[traj_server] stale transfer anchor %.3f m behind new path; "
-                "re-anchoring position command to odometry",
-                old_command_progress);
+            ROS_LOG_THROTTLE(
+                1.0, ::ros::console::levels::Debug, "execution.trajectory",
+                "[execution.trajectory] stale transfer anchor %.3f m behind "
+                "measured motion; re-anchoring position command to odometry",
+                command_motion_progress);
           }
         }
       }
@@ -215,9 +255,9 @@ void limitPositionSetpoint(Eigen::Vector3d &position,
     const Eigen::Vector3d limited_step =
         clampVectorNorm(requested_step, step_bound);
     if ((limited_step - requested_step).norm() > 1.0e-9) {
-      ROS_WARN_THROTTLE(
-          1.0,
-          "[traj_server] position step safety bound engaged: requested "
+      EPIC_LOG_WARN_THROTTLE(
+          5.0, "execution.trajectory",
+          "position step safety bound engaged: requested "
           "%.4f m, bound %.4f m",
           requested_step.norm(), step_bound);
     }
@@ -245,13 +285,20 @@ void limitPositionSetpoint(Eigen::Vector3d &position,
 
 std::pair<double, double> get_yaw(double current_yaw, double t_cur) {
   std::pair<double, double> yaw_yawdot(0, 0);
+  if (!yaw_traj_ || !std::isfinite(t_cur) || !std::isfinite(current_yaw)) {
+    EPIC_LOG_ERROR_THROTTLE(
+        5.0, "execution.trajectory",
+        "invalid yaw trajectory or execution time; holding last valid yaw");
+    return std::make_pair(std::isfinite(current_yaw) ? current_yaw : 0.0,
+                          0.0);
+  }
   if (t_cur > yaw_traj_->getTotalDuration())
     t_cur = yaw_traj_->getTotalDuration();
   Eigen::Vector3d ap = yaw_traj_->getPos(t_cur);
   double next_yaw = ap.x();
   if (!std::isfinite(next_yaw)) {
-    ROS_ERROR_THROTTLE(1.0,
-                       "[traj_server] non-finite yaw trajectory sample; "
+    EPIC_LOG_ERROR_THROTTLE(5.0, "execution.trajectory",
+                       "non-finite yaw trajectory sample; "
                        "holding the last valid yaw");
     return std::make_pair(current_yaw, 0.0);
   }
@@ -267,8 +314,6 @@ void stateCallback(const visualization_msgs::Marker::ConstPtr& msg) {
   // Extract state from marker text
   if (!msg->text.empty()) {
     current_state_ = msg->text;
-    bool was_rth = is_rth_mode_;
-
     // Check if in RTH mode - look for RTH in the state string
     is_rth_mode_ = (current_state_.find("PLAN_TRAJ_RTH") != std::string::npos ||
                     current_state_.find("_RTH") != std::string::npos);
@@ -277,14 +322,15 @@ void stateCallback(const visualization_msgs::Marker::ConstPtr& msg) {
     if (!mission_started_ && current_state_.find("EXEC_TRAJ") != std::string::npos) {
       mission_started_ = true;
       mission_start_time_ = ros::Time::now();
-      ROS_INFO("\033[32m[Metrics] Mission started\033[0m");
+      EPIC_LOG_INFO(1, 1, "execution.metrics", "mission started");
     }
 
     // Save RTH start index when RTH mode begins (only once, only if we have some trajectory)
     if (!rth_index_saved_ && is_rth_mode_ && traj_cmd_.size() > 0) {
       rth_start_index_ = traj_cmd_.size();
       rth_index_saved_ = true;
-      ROS_INFO("\033[33m[Metrics] RTH mode activated at index %zu (current state: %s)\033[0m",
+      EPIC_LOG_INFO(1, 1, "execution.metrics",
+               "RTH activated index=%zu state=%s",
                rth_start_index_, current_state_.c_str());
     }
 
@@ -292,7 +338,8 @@ void stateCallback(const visualization_msgs::Marker::ConstPtr& msg) {
     // 기록하므로 여기는 DEBUG 로 강등 (예전엔 리플랜 플래핑마다 INFO 스팸).
     static std::string last_state;
     if (current_state_ != last_state) {
-      ROS_DEBUG("[traj_server] State changed: %s (is_rth: %d, traj_size: %zu)",
+      EPIC_LOG_DEBUG(1, 1, "execution.trajectory",
+                "state=%s rth=%d trajectory_samples=%zu",
                 current_state_.c_str(), is_rth_mode_, traj_cmd_.size());
       last_state = current_state_;
     }
@@ -309,8 +356,10 @@ void heartbeatCallback(std_msgs::EmptyPtr msg) {
   else
     count++;
   if (fsm_time_cost > 0.1) {
-    std::cout << count - last_count << "\033[31m [FSM_Spin Time Cost] " << fsm_time_cost
-              << "s \033[0m" << std::endl;
+    ROS_LOG_THROTTLE(
+        1.0, ::ros::console::levels::Debug, "execution.trajectory",
+        "[execution.trajectory] FSM heartbeat gap=%.3fs callbacks_since_last=%d",
+        fsm_time_cost, count - last_count);
     last_count = count;
   }
 }
@@ -390,7 +439,7 @@ void suspendActiveTrajectoryForNewGeneration(const int incoming_traj_id) {
 
 void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
   if (msg->order != 5) {
-    ROS_ERROR("[traj_server] Only support trajectory order equals 5 now!");
+    EPIC_LOG_ERROR("execution.trajectory", "unsupported position trajectory order=%d", msg->order);
     return;
   }
   const size_t expected_coeffs =
@@ -398,7 +447,7 @@ void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
   if (expected_coeffs != msg->coef_x.size() ||
       expected_coeffs != msg->coef_y.size() ||
       expected_coeffs != msg->coef_z.size()) {
-    ROS_ERROR("[traj_server] WRONG trajectory parameters, ");
+    EPIC_LOG_ERROR("execution.trajectory", "invalid position trajectory coefficient count");
     return;
   }
 
@@ -431,7 +480,7 @@ void polyTrajCallback(traj_utils::PolyTrajPtr msg) {
 
 void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
   if (msg->order != 5) {
-    ROS_ERROR("[traj_server] Only support trajectory order equals 5 now!");
+    EPIC_LOG_ERROR("execution.trajectory", "unsupported yaw trajectory order=%d", msg->order);
     return;
   }
   const size_t expected_coeffs =
@@ -439,7 +488,7 @@ void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
   if (expected_coeffs != msg->coef_x.size() ||
       expected_coeffs != msg->coef_y.size() ||
       expected_coeffs != msg->coef_z.size()) {
-    ROS_ERROR("[traj_server] WRONG trajectory parameters, ");
+    EPIC_LOG_ERROR("execution.trajectory", "invalid yaw trajectory coefficient count");
     return;
   }
   // std::cout << "receive yaw traj" << yaw_t_stop + start_time_.toSec() - msg->start_time.toSec()
@@ -466,6 +515,19 @@ void polyYawTrajCallback(traj_utils::PolyTrajPtr msg) {
   }
   pending_yaw_traj_.reset(new Trajectory<5>(dura, cMats));
   pending_yaw_traj_duration_ = pending_yaw_traj_->getTotalDuration();
+  if (!trajectoryIsFinite(*pending_yaw_traj_)) {
+    const double hold_duration =
+        pending_traj_ && pending_traj_id_ == msg->traj_id
+            ? pending_traj_duration_
+            : pending_yaw_traj_duration_;
+    pending_yaw_traj_ = makeYawHoldTrajectory(last_yaw_, hold_duration);
+    pending_yaw_traj_duration_ = pending_yaw_traj_->getTotalDuration();
+    EPIC_LOG_ERROR_THROTTLE(
+        5.0, "execution.trajectory",
+        "rejected invalid yaw trajectory generation=%d; using yaw hold so "
+        "position execution can continue",
+        msg->traj_id);
+  }
   pending_yaw_traj_id_ = msg->traj_id;
   activatePendingTrajectoryPair();
 }
@@ -504,15 +566,15 @@ void cmdCallback(const ros::TimerEvent &e) {
   if (!receive_traj_)
     return;
   if (!yaw_initialized_) {
-    ROS_WARN_THROTTLE(
-        1.0,
-        "[traj_server] waiting for a valid odometry yaw before publishing");
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "execution.trajectory",
+        "waiting for valid odometry yaw before publishing");
     return;
   }
   if (!position_initialized_) {
-    ROS_WARN_THROTTLE(
-        1.0,
-        "[traj_server] waiting for a valid odometry position before publishing");
+    EPIC_LOG_WARN_THROTTLE(
+        1.0, "execution.trajectory",
+        "waiting for valid odometry position before publishing");
     return;
   }
 
@@ -520,7 +582,7 @@ void cmdCallback(const ros::TimerEvent &e) {
   static bool printed;
   if ((time_now - heartbeat_time_).toSec() > 0.5) {
     if (!printed) {
-      ROS_ERROR("[traj_server] Lost heartbeat from the planner, is it dead?");
+      EPIC_LOG_ERROR("execution.trajectory", "planner heartbeat lost");
       printed = true;
     }
   } else {
@@ -545,6 +607,9 @@ void cmdCallback(const ros::TimerEvent &e) {
       max_setpoint_velocity_ / px4_position_p_gain_;
   double position_lead = 0.0;
   double phase_scale = 0.0;
+  double yaw_alignment_scale = 1.0;
+  double path_heading = 0.0;
+  bool path_heading_valid = false;
 
   if (odom_state_available_ && next_position.allFinite() &&
       next_velocity.allFinite()) {
@@ -560,16 +625,42 @@ void cmdCallback(const ros::TimerEvent &e) {
     // binary gate while keeping the new trajectory anchored to odometry.
     const double lead_ratio =
         std::min(1.0, std::max(0.0, position_lead / max_position_lead));
-    phase_scale = 1.0 - lead_ratio;
+    if (path_facing_yaw_mode_ && next_position_time < traj_duration_) {
+      const double heading_sample_time =
+          std::min(next_position_time + 0.5, traj_duration_);
+      const Eigen::Vector3d heading_sample =
+          traj_->getPos(heading_sample_time);
+      const Eigen::Vector2d heading_delta =
+          heading_sample.head<2>() - next_position.head<2>();
+      if (heading_delta.norm() > 0.05) {
+        path_heading = std::atan2(heading_delta.y(), heading_delta.x());
+        path_heading_valid = true;
+        const double heading_error =
+            std::abs(wrapToPi(path_heading - current_odom_yaw_));
+        constexpr double kFullSpeedYawError = 15.0 * M_PI / 180.0;
+        constexpr double kHoldYawError = 75.0 * M_PI / 180.0;
+        yaw_alignment_scale = std::max(
+            0.0, std::min(1.0, (kHoldYawError - heading_error) /
+                                   (kHoldYawError - kFullSpeedYawError)));
+        if (yaw_alignment_scale < 0.999) {
+          EPIC_LOG_INFO_THROTTLE(
+              1.0, 1, 1, "execution.trajectory",
+              "path-facing alignment yaw_error=%.1fdeg motion_scale=%.2f",
+              heading_error * 180.0 / M_PI, yaw_alignment_scale);
+        }
+      }
+    }
+    phase_scale = (1.0 - lead_ratio) * yaw_alignment_scale;
     execution_time_ =
         std::min(execution_time_ + dt * phase_scale, execution_duration);
   } else {
-    ROS_WARN_THROTTLE(1.0,
-                      "[traj_server] phase held: odometry or trajectory "
+    EPIC_LOG_WARN_THROTTLE(1.0, "execution.trajectory",
+                      "phase held: odometry or trajectory "
                       "sample is not available");
   }
-  ROS_DEBUG_THROTTLE(0.5,
-                     "[traj_server] phase scale=%.3f, forward lead=%.3f/%.3f "
+  ROS_LOG_THROTTLE(0.5, ::ros::console::levels::Debug,
+                     "execution.trajectory",
+                     "[execution.trajectory] phase scale=%.3f, forward lead=%.3f/%.3f "
                      "m, phase=%.3f s",
                      phase_scale, position_lead, max_position_lead,
                      execution_time_);
@@ -611,6 +702,12 @@ void cmdCallback(const ros::TimerEvent &e) {
     yaw_yawdot = get_yaw(last_yaw_, t_cur);
   } else {
     yaw_yawdot = std::make_pair(last_yaw_, 0.0);
+  }
+  if (path_facing_yaw_mode_ && path_heading_valid &&
+      t_cur < traj_duration_) {
+    yaw_yawdot.first =
+        last_yaw_ + wrapToPi(path_heading - last_yaw_);
+    yaw_yawdot.second = 0.0;
   }
 
   limitPositionSetpoint(pos, vel, acc, jer, time_now);
@@ -687,6 +784,11 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
   }
 
   real_pos_ = current_pos;
+  real_vel_ = Eigen::Vector3d(msg.twist.twist.linear.x,
+                              msg.twist.twist.linear.y,
+                              msg.twist.twist.linear.z);
+  if (!real_vel_.allFinite())
+    real_vel_.setZero();
   double odom_yaw = 0.0;
   if (current_pos.allFinite() &&
       quaternionToYaw(msg.pose.pose.orientation, odom_yaw)) {
@@ -700,8 +802,8 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
     last_position_cmd_time_ = ros::Time::now();
     if (!position_initialized_) {
       position_initialized_ = true;
-      ROS_INFO("[traj_server] initial position from odometry: "
-               "(%.3f, %.3f, %.3f) m",
+      EPIC_LOG_DEBUG(1, 1, "execution.trajectory",
+               "initialized position from odometry=(%.3f,%.3f,%.3f)m",
                current_pos.x(), current_pos.y(), current_pos.z());
     }
   }
@@ -713,13 +815,14 @@ void odomCallbck(const nav_msgs::Odometry &msg) {
       last_yaw_cmd_time_ = ros::Time::now();
       if (!yaw_initialized_) {
         yaw_initialized_ = true;
-        ROS_INFO("[traj_server] initial yaw from odometry: %.3f rad (%.1f deg)",
+        EPIC_LOG_DEBUG(1, 1, "execution.trajectory",
+                 "initialized yaw from odometry=%.3frad (%.1fdeg)",
                  last_yaw_, last_yaw_ * 180.0 / M_PI);
       }
     } else {
-      ROS_WARN_THROTTLE(
-          1.0,
-          "[traj_server] invalid odometry quaternion; yaw not initialized");
+      EPIC_LOG_WARN_THROTTLE(
+          1.0, "execution.trajectory",
+          "invalid odometry quaternion; yaw not initialized");
     }
   }
 
@@ -889,22 +992,22 @@ void logMetrics(double rth_distance_to_goal) {
 
     ofs.close();
 
-    ROS_INFO("\033[32m[Metrics] Mission Complete - Logged to %s\033[0m", log_file.c_str());
-    ROS_INFO("\033[36m  Mission time: %.2f s\033[0m", mission_time);
-    ROS_INFO("\033[36m  RTH distance to goal: %.3f m\033[0m", rth_distance_to_goal);
-    ROS_INFO("\033[36m  Avg speed (odometry): %.3f m/s\033[0m", avg_speed_odom);
-    ROS_INFO("\033[36m  Path length: %.2f m\033[0m", path_length);
-    ROS_INFO("\033[36m  Avg speed (path/time): %.3f m/s\033[0m", avg_speed_path);
-    ROS_INFO("\033[36m  Avg tracking error: %.3f m\033[0m", avg_tracking_error);
+    EPIC_LOG_INFO(1, 1, "execution.metrics",
+                  "mission complete time=%.2fs rth_error=%.3fm odom_speed=%.3fm/s "
+                  "path=%.2fm path_speed=%.3fm/s tracking_error=%.3fm file=%s",
+                  mission_time, rth_distance_to_goal, avg_speed_odom,
+                  path_length, avg_speed_path, avg_tracking_error,
+                  log_file.c_str());
   } else {
-    ROS_ERROR("[Metrics] Failed to open log file: %s", log_file.c_str());
+    EPIC_LOG_ERROR("execution.metrics", "failed to open metrics file=%s", log_file.c_str());
   }
 }
 
 void rthDistanceCallback(const std_msgs::Float32::ConstPtr& msg) {
   // RTH completed, log all metrics
   double rth_distance = msg->data;
-  ROS_INFO("\033[33m[Metrics] RTH distance received: %.3f m, logging metrics...\033[0m", rth_distance);
+  EPIC_LOG_INFO(1, 1, "execution.metrics", "RTH complete distance=%.3fm; writing metrics",
+           rth_distance);
   logMetrics(rth_distance);
 }
 
@@ -918,6 +1021,7 @@ int main(int argc, char **argv) {
   ros::init(argc, argv, "traj_server");
   // ros::NodeHandle node;
   ros::NodeHandle nh("~");
+  epic_logging::installStructuredConsoleAppender(nh);
   // ros::Subscriber emergency_sub =
   //     nh.subscribe("/planning/emergency_stop", 10, emergencyStopCb);
   // odom 토픽은 config yaml 의 odometry_topic (exploration_node ns) 이 유일한
@@ -930,7 +1034,6 @@ int main(int argc, char **argv) {
               "(config yaml not loaded?). REFUSING TO START - no fallback.");
     return 1;
   }
-  ROS_INFO("[Traj server]: odom topic: %s", odom_topic.c_str());
 
   ros::Subscriber poly_traj_sub = nh.subscribe("/planning/trajectory", 10, polyTrajCallback);
   ros::Subscriber poly_yaw_traj_sub =
@@ -943,14 +1046,17 @@ int main(int argc, char **argv) {
   ros::Subscriber rth_dist_sub = nh.subscribe("/planning/rth_distance", 10, rthDistanceCallback);
 
   nh.param("/fsm/replan_time", replan_time_, 0.1);
+  std::string yaw_planner_mode;
+  ros::param::param<std::string>(
+      "/exploration_node/local_planning/yaw/mode", yaw_planner_mode,
+      std::string("lbfgs"));
+  path_facing_yaw_mode_ = yaw_planner_mode == "fixed_waypoint";
   if (!ros::param::get("/exploration_node/yaw_max_vel", yaw_max_vel_) ||
       !std::isfinite(yaw_max_vel_) || yaw_max_vel_ <= 0.0) {
     ROS_FATAL("[Traj server] /exploration_node/yaw_max_vel must be finite "
               "and greater than zero");
     return 1;
   }
-  ROS_INFO("[Traj server]: final yaw setpoint rate limit: %.3f rad/s",
-           yaw_max_vel_);
   if (!ros::param::get(
           "/exploration_node/trajectory_execution/yaw_max_acc",
           yaw_max_acc_) ||
@@ -959,9 +1065,6 @@ int main(int argc, char **argv) {
               "finite and greater than zero");
     return 1;
   }
-  ROS_INFO("[Traj server]: final yaw setpoint acceleration limit: "
-           "%.3f rad/s^2",
-           yaw_max_acc_);
   if (!ros::param::get("/exploration_node/MaxVelMag",
                        max_setpoint_velocity_) ||
       !std::isfinite(max_setpoint_velocity_) ||
@@ -978,9 +1081,6 @@ int main(int argc, char **argv) {
               "and greater than zero");
     return 1;
   }
-  ROS_INFO("[Traj server]: final position setpoint limits: "
-           "%.3f m/s, %.3f m/s^2",
-           max_setpoint_velocity_, max_setpoint_acceleration_);
   if (!ros::param::get(
           "/exploration_node/trajectory_execution/max_lead_time",
           max_lead_time_) ||
@@ -999,12 +1099,6 @@ int main(int argc, char **argv) {
     return 1;
   }
   position_feedforward_time_ = 1.0 / px4_position_p_gain_;
-  ROS_INFO("[Traj server]: continuous tracking phase scale: %.3f s "
-           "(yaw limit basis)", max_lead_time_);
-  ROS_INFO("[Traj server]: PX4-equivalent position-only feed-forward: "
-           "Kp=%.3f 1/s, lookahead=%.3f s, maximum forward lead=%.3f m",
-           px4_position_p_gain_, position_feedforward_time_,
-           max_setpoint_velocity_ / px4_position_p_gain_);
   // Unlike the trajectory_execution/* params above, these two default rather
   // than ROS_FATAL when absent: existing deployment yamls predate the
   // bumpless-transfer offset scheme and should keep starting. The
@@ -1015,9 +1109,15 @@ int main(int argc, char **argv) {
   nh.param(
       "/exploration_node/trajectory_execution/position_step_safety_factor",
       position_step_safety_factor_, 2.0);
-  ROS_INFO("[Traj server]: cmd_offset_ decay rate: %.3f m/s, position step "
-           "safety factor: %.3f",
-           offset_decay_rate_, position_step_safety_factor_);
+  EPIC_LOG_INFO(1, 1, "execution.trajectory",
+                "configured odom=%s limits[v=%.2fm/s a=%.2fm/s2 yaw_rate=%.2frad/s "
+                "yaw_acc=%.2frad/s2] tracking[phase=%.2fs Kp=%.2f/s lookahead=%.2fs "
+                "max_lead=%.2fm offset_decay=%.2fm/s step_factor=%.2f]",
+                odom_topic.c_str(), max_setpoint_velocity_,
+                max_setpoint_acceleration_, yaw_max_vel_, yaw_max_acc_,
+                max_lead_time_, px4_position_p_gain_, position_feedforward_time_,
+                max_setpoint_velocity_ / px4_position_p_gain_,
+                offset_decay_rate_, position_step_safety_factor_);
   ros::Timer vis_timer = nh.createTimer(ros::Duration(0.25), visCallback);
   pos_cmd_pub = nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
   cmd_vis_pub = nh.advertise<visualization_msgs::Marker>("/planning/position_cmd_vis", 10);
@@ -1030,7 +1130,7 @@ int main(int argc, char **argv) {
 
   ros::Duration(1.0).sleep();
 
-  ROS_INFO("[Traj server]: ready.");
+  EPIC_LOG_DEBUG(1, 1, "execution.trajectory", "ready");
 
   ros::spin();
 

@@ -6,7 +6,7 @@
 # rationale. Two map-dependent values are kept different from garage.yaml/
 # real2.yaml on purpose, because they depend on this site's geometry rather
 # than on the vehicle:
-#   box_0/*                        - garage.pcd spans x -5.13..177.33,
+#   planning_box_0/*               - garage.pcd spans x -5.13..177.33,
 #                                    y -4.60..144.27, z -0.03..10.03
 #   bubble_topo/odom_node_distance - kept at the original 5.0 m trail
 #                                    spacing (garage_120fov.yaml); map2's
@@ -89,7 +89,7 @@ cloud_crop/output_fields: full
 cloud_crop/profile_log: true
 # Latched crop FOV marker. Its range cap is sampled as a spherical arc grid.
 cloud_crop/visualization_topic: /debug/cloud_crop/fov
-cloud_crop/visualization_rate_hz: 1.0
+cloud_crop/visualization_rate_hz: 10.0
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
@@ -215,9 +215,10 @@ ViewpointManager/reachability_search_timeout: 0.01
 # area  [map1: garage.pcd — the large ~177x144 m site, NOT poongsan's 39x28 box]
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
-box_num: 1
-box_0/down: [-10.0, -6.0, 0.2]
-box_0/up: [182.0, 150.2, 3.8]
+planning_box_num: 1
+planning_box_0/down: [-10.0, -6.0, 0.2]
+planning_box_0/up: [182.0, 150.2, 3.8]
+mapping_box/shrink_voxels: 1
 dead_area_num: 0
 # trajectory param
 max_traj_len: 5.0
@@ -279,9 +280,15 @@ numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 piv
 
 RelCostTol: 1.1e-6
 #param for yaw opt
+# Simulation trial: bypass LBFGS and solve deterministic path-facing yaw
+# waypoints directly. Change to "lbfgs" to restore the legacy planner.
+local_planning/yaw/mode: fixed_waypoint
 yaw_max_vel: 1.5
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 2.5
+# Temporary simulation diagnosis: include corridor/MINCO stage evidence.
+# Restore to 1 after the fallback-chain cause is confirmed.
+logging/local_detail: 2
 # FSM param
 fsm/goal_tolerance: 0.3
 fsm/max_segment_length: 99.0
@@ -297,7 +304,7 @@ fsm/emergency_replan_control_error: 3.0
 # trigger (2D Nav Goal) -> climb/hover at this height -> start exploration after
 # odom height is reached and settled. Set <= 0 to disable.
 # This lets a z=0 spawn climb above occupied floor points before the first plan.
-fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain below box_0/up z.
+fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain inside planning_box.
 fsm/takeoff_reach_tol: 0.15       # height is reached when |z - target| is below this value.
 fsm/takeoff_settle_vel: 0.4       # considered settled when odom velocity is below this value.
 fsm/takeoff_settle_time: 0.03     # match real2.yaml

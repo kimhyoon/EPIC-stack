@@ -76,7 +76,7 @@ void ParallelBubbleAstar::init(ros::NodeHandle &nh, const LIOInterface::Ptr &lid
               "finite and greater than numerical/vector_norm_eps.");
     throw std::runtime_error("invalid bubble_astar/resolution_astar");
   }
-  origin_ = lidar_map->lp_->global_map_min_boundary_;
+  origin_ = lidar_map->lp_->planning_box_min_boundary_;
   this->inv_resolution_ = 1.0 / resolution_;
   // frontier_manager_ = frontier_manager_;
 }
@@ -84,7 +84,7 @@ void ParallelBubbleAstar::init(ros::NodeHandle &nh, const LIOInterface::Ptr &lid
 bool ParallelBubbleAstar::isNodeSafe(Node::Ptr node, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max,
                                      unordered_set<Eigen::Vector3i, v3i_hash> &safe_set, unordered_set<Eigen::Vector3i, v3i_hash> &danger_set) {
 
-  if (!lidar_map_interface_->IsInMap(node->position))
+  if (!lidar_map_interface_->IsInPlanningBox(node->position))
     return false;
 
   if (node->position.x() < bbox_min.x() || node->position.y() < bbox_min.y() || node->position.z() < bbox_min.z() ||
@@ -121,6 +121,12 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
                                     bool best_result, bool only_raycast, const Eigen::Vector3f &bbox_min, const Eigen::Vector3f &bbox_max) {
   // step 1 one-shot
   vector<Eigen::Vector3f>().swap(path);
+  if (!lidar_map_interface_->IsInPlanningBox(start) ||
+      !lidar_map_interface_->IsInPlanningBox(goal)) {
+    return !lidar_map_interface_->IsInPlanningBox(start)
+               ? ParallelBubbleAstar::START_FAIL
+               : ParallelBubbleAstar::END_FAIL;
+  }
   const double goal_clearance = lidar_map_interface_->getDisToOcc(goal);
   if (goal_clearance <= safe_distance_) {
     return ParallelBubbleAstar::END_FAIL;
@@ -152,6 +158,8 @@ int ParallelBubbleAstar::searchImpl(const Eigen::Vector3f &start, const Eigen::V
       return ParallelBubbleAstar::REACH_END;
     } else {
       curr_pos += step * dir;
+      if (!lidar_map_interface_->IsInPlanningBox(curr_pos))
+        break;
       path_tmp.push_back(curr_pos);
     }
     len -= step;
@@ -347,6 +355,8 @@ bool ParallelBubbleAstar::collisionCheck_shortenPath(vector<Eigen::Vector3f> &pa
   std::vector<Eigen::Vector3f> path_shorten;
   std::vector<double> raduis_lis;
   for (int i = 0; i < path.size(); i++) {
+    if (!lidar_map_interface_->IsInPlanningBox(path[i]))
+      return false;
     double dis = min(2.0, lidar_map_interface_->getDisToOcc(path[i]) - safe_distance_);
     raduis_lis.push_back(dis);
     if (raduis_lis.back() < 1e-3) {

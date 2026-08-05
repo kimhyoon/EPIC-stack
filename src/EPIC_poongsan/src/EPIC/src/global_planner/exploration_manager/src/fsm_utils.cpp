@@ -1,5 +1,6 @@
 #include <epic_planner/expl_data.h>
 #include <epic_planner/fast_exploration_fsm.h>
+#include <frontier_manager/global_log.h>
 #include <cmath>
 
 void FastExplorationFSM::pubState() {
@@ -46,7 +47,7 @@ int FastExplorationFSM::callExplorationPlanner() {
   if (planner_manager_->lidar_map_interface_->getDisToOcc(expl_manager_->ed_->next_goal_node_->center_) <=
       planner_manager_->parallel_path_finder_->safe_distance_) {
     local_reason_ = "next goal too close to occupancy -> re-run global";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     updateTopoAndGlobalPath();
     return FAIL;
   }
@@ -56,33 +57,29 @@ int FastExplorationFSM::callExplorationPlanner() {
                                                      0.2, path_next_goal);
   if (res == ParallelBubbleAstar::NO_PATH) {
     local_reason_ = "fast-searcher: no path odom->goal";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
 
   } else if (res == ParallelBubbleAstar::START_FAIL) {
     local_reason_ = "fast-searcher: start(odom) in occupancy";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return START_FAIL;
   } else if (res == ParallelBubbleAstar::END_FAIL) {
     local_reason_ = "fast-searcher: goal in occupancy";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::TIME_OUT) {
     local_reason_ = "fast-searcher: timeout";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
   }
 
   auto info = &planner_manager_->local_data_;
 
-  if (!fd_->static_state_) {
-    double plan_finish_time_exp = (ros::Time::now() - info->start_time_).toSec() + fp_->replan_time_;
-    if (plan_finish_time_exp > info->duration_) {
-      plan_finish_time_exp = info->duration_;
-    }
-    Eigen::Vector3d start_exp = info->minco_traj_.getPos(plan_finish_time_exp);
-    path_next_goal.insert(path_next_goal.begin(), start_exp.cast<float>());
-  }
+  // planExploreTraj now anchors PVA and P0 to one atomic live-odometry
+  // snapshot. Do not prepend a future sample from the previous command here:
+  // that made the guide path start and optimizer start differ by the vehicle's
+  // tracking lead, producing fake fallback progress and trajectory steps.
   vector<Eigen::Vector3f> path_next_goal_tmp;
   path_next_goal_tmp.push_back(path_next_goal[0]);
 
@@ -228,9 +225,9 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
     if (!planner_manager_->checkCautionEscapeSafety(
             actual_position, escape_violation_time,
             escape_violation_reason)) {
-      ROS_ERROR_THROTTLE(
-          1.0,
-          "[CAUTION] live escape safety violation at t=%.3f: %s; "
+      EPIC_LOG_ERROR_THROTTLE(
+          1.0, "local.collision",
+          "CAUTION live escape safety violation at t=%.3f: %s; "
           "stopping and rebuilding inside CAUTION",
           escape_violation_time, escape_violation_reason.c_str());
       stopTraj();
@@ -256,8 +253,18 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
                                 ? CAUTION
                                 : (has_goal_rth_ ? PLAN_TRAJ_RTH
                                                  : PLAN_TRAJ_EXP);
-    transitState(next_state, "safetyCallback: not safe, time:" + to_string(collision_time), true);
-    if (!rotate_needs_escape && collision_time < fp_->replan_time_ + 0.2)
+    const double trajectory_elapsed = std::max(
+        0.0, (ros::Time::now() - planner_manager_->local_data_.start_time_)
+                 .toSec());
+    const double collision_eta =
+        std::max(0.0, collision_time - trajectory_elapsed);
+    transitState(next_state,
+                 "safetyCallback: not safe, traj_time:" +
+                     to_string(collision_time) +
+                     " eta:" + to_string(collision_eta),
+                 true);
+    if (!rotate_needs_escape &&
+        collision_eta < fp_->replan_time_ + 0.2)
       stopTraj();
   }
   ros::Time t2 = ros::Time::now();
@@ -290,8 +297,8 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
 
   const double odom_yaw = tf::getYaw(odom_->pose.pose.orientation);
   if (!std::isfinite(odom_yaw)) {
-    ROS_WARN_THROTTLE(1.0,
-                      "[NumericalGuard] ignoring non-finite odometry yaw");
+    EPIC_LOG_WARN_THROTTLE(1.0, "sensor.lidar",
+                           "ignoring non-finite odometry yaw");
     return;
   }
   fd_->odom_yaw_ = static_cast<float>(odom_yaw);
@@ -315,6 +322,8 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
 
 void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, bool red) {
   int pre_s = int(state_);
+  const std::string previous = fd_->state_str_[pre_s];
+  const std::string next = fd_->state_str_[int(new_state)];
   if (new_state == CAUTION && state_ != CAUTION) {
     caution_phase_ = CAUTION_IDLE;
     caution_escape_traj_id_ = 0;
@@ -324,9 +333,15 @@ void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, boo
   // 패턴은 로거의 사이클 억제가 걸러 "cycling xN" heartbeat 만 남긴다.
   elog_.setState(fd_->state_str_[int(new_state)]);
   elog_.log("STATE",
-            fd_->state_str_[pre_s] + " -> " + fd_->state_str_[int(new_state)] +
-                " [" + pos_call + "]",
+            previous + " -> " + next + " [" + pos_call + "]",
             "", 0.0, red ? EventLogger::L_WARN : EventLogger::L_INFO);
+  if (red)
+    EPIC_LOG_WARN_THROTTLE(1.0, "execution.fsm",
+                           "state=%s->%s cause=%s", previous.c_str(),
+                           next.c_str(), pos_call.c_str());
+  else
+    EPIC_LOG_DEBUG(1, 1, "execution.fsm", "state=%s->%s cause=%s",
+                   previous.c_str(), next.c_str(), pos_call.c_str());
 }
 
 void FastExplorationFSM::stopTraj() {

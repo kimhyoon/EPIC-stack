@@ -81,6 +81,10 @@ namespace {
 constexpr double kMaxElevDeg = 89.9;
 // Window over which the periodic statistics line is aggregated.
 constexpr double kStatWindowSec = 5.0;
+// Rendering/drivers can legitimately need several seconds before their first
+// cloud.  Do not report that normal startup as a frozen EPIC map; once the
+// first output exists, the configured watchdog period applies unchanged.
+constexpr double kStartupWatchdogGraceSec = 5.0;
 
 struct CropConfig {
   // --- as configured, kept verbatim for the startup banner / logs ---
@@ -340,6 +344,8 @@ private:
     const ros::WallTime since =
         last_pub_wall_.isZero() ? start_wall_ : last_pub_wall_;
     const double stalled = (now - since).toSec();
+    if (last_pub_wall_.isZero() && stalled <= kStartupWatchdogGraceSec)
+      return;
     if (stalled <= thr) return;
 
     // Deliberately NOT ROS_WARN_THROTTLE: that macro throttles on
@@ -698,16 +704,23 @@ bool checkFovAlignment(ros::NodeHandle &nh, const CropConfig &cfg,
   const bool ok_down = std::fabs(want_down - cfg.fov_down_deg) <= tol;
   const bool ok_yaw = std::fabs(ep_yaw - cfg.fov_h_deg) <= tol;
 
-  ROS_WARN("[CloudCrop] FOV consistency: EPIC lidar_perception fov_up=%.3f "
+  const bool aligned = ok_up && ok_down && ok_yaw;
+  if (aligned)
+    ROS_DEBUG("[CloudCrop] FOV consistency: EPIC lidar_perception fov_up=%.3f "
            "fov_down=%.3f lidar_pitch=%.3f yaw_fov=%.3f -> body edges "
            "[%.3f, %.3f] x %.3f deg  ||  cloud_crop [%.3f, %.3f] x %.3f deg  "
            "=> up:%s down:%s yaw:%s",
            ep_up, ep_down, ep_pitch, ep_yaw, want_down, want_up, ep_yaw,
            cfg.fov_down_deg, cfg.fov_up_deg, cfg.fov_h_deg,
            ok_up ? "OK" : "MISMATCH", ok_down ? "OK" : "MISMATCH",
-           ok_yaw ? "OK" : "MISMATCH");
+              ok_yaw ? "OK" : "MISMATCH");
+  else
+    ROS_WARN("[CloudCrop] FOV consistency MISMATCH: EPIC body edges "
+             "[%.3f, %.3f] x %.3f deg, crop [%.3f, %.3f] x %.3f deg",
+             want_down, want_up, ep_yaw, cfg.fov_down_deg, cfg.fov_up_deg,
+             cfg.fov_h_deg);
 
-  if (ok_up && ok_down && ok_yaw) return true;
+  if (aligned) return true;
   if (strict) {
     ROS_FATAL("[CloudCrop] crop cone does not match EPIC's corridor cone and "
               "cloud_crop/strict_fov_alignment=true. Required: "
@@ -874,54 +887,46 @@ int main(int argc, char **argv) {
   cfg.visualization_elevation_samples =
       std::max(2, visualization_elevation_samples);
 
-  // ---- startup banner: every effective parameter, so a yaml that failed to
-  // ---- load is obvious at a glance.
-  ROS_WARN("[CloudCrop] ================ cloud_crop_bridge ON ================");
-  ROS_WARN("[CloudCrop]   cloud_topic          = %s", prm.cloud_topic.c_str());
-  ROS_WARN("[CloudCrop]   odometry_topic       = %s", prm.odom_topic.c_str());
-  ROS_WARN("[CloudCrop]   output_topic         = %s", prm.out_topic.c_str());
-  ROS_WARN("[CloudCrop]   output_fields        = %s (point_step %s)",
+  // One normal startup summary. Full effective configuration remains available
+  // at DEBUG instead of masquerading as twenty independent warnings.
+  ROS_INFO("[CloudCrop] enabled: %s + %s -> %s | FOV %.1fx[%.1f,%.1f]deg "
+           "range %.1f..%s m | sync=%s/%d",
+           prm.cloud_topic.c_str(), prm.odom_topic.c_str(),
+           prm.out_topic.c_str(), fov_h, down_c, up_c, min_range,
+           max_range > 0.0 ? std::to_string(max_range).c_str() : "inf",
+           prm.sync_policy.c_str(), prm.sync_queue);
+  ROS_DEBUG("[CloudCrop] output_fields=%s (point_step %s)",
            output_fields.c_str(), prm.xyz_only ? "12 (x,y,z)" : "= input");
-  ROS_WARN("[CloudCrop]   --- crop cone, BODY frame (+x fwd, +z up) ---");
-  ROS_WARN("[CloudCrop]   fov_horizontal       = %.3f deg (half=%.3f deg)",
+  ROS_DEBUG("[CloudCrop] fov_horizontal=%.3f deg (half=%.3f deg)",
            fov_h, cfg.half_h_rad / D2R);
-  ROS_WARN("[CloudCrop]   fov_up / fov_down    = %.3f / %.3f deg", up_c, down_c);
-  ROS_WARN("[CloudCrop]   yaw_offset_deg       = %.3f deg", yaw_offset);
-  ROS_WARN("[CloudCrop]   min_range/max_range  = %.3f / %s m", min_range,
+  ROS_DEBUG("[CloudCrop] fov_up/down=%.3f/%.3f yaw_offset=%.3f deg", up_c,
+            down_c, yaw_offset);
+  ROS_DEBUG("[CloudCrop] min_range/max_range=%.3f/%s m", min_range,
            max_range > 0.0 ? std::to_string(max_range).c_str() : "inf");
-  ROS_WARN("[CloudCrop]   odom_mount_pitch_deg = %.3f deg  (%s)", mount_pitch,
+  ROS_DEBUG("[CloudCrop] odom_mount_pitch_deg=%.3f (%s)", mount_pitch,
            mount_pitch == 0.0
                ? "odom already reports BODY attitude"
                : "odom reports SENSOR attitude; R_bs=Ry(+pitch) applied");
-  ROS_WARN("[CloudCrop]   --- sync ---");
-  ROS_WARN("[CloudCrop]   sync_policy          = %s", prm.sync_policy.c_str());
-  ROS_WARN("[CloudCrop]   sync_queue           = %d", prm.sync_queue);
-  ROS_WARN("[CloudCrop]   sync_max_interval_s  = %.4f%s",
+  ROS_DEBUG("[CloudCrop] sync_policy=%s queue=%d max_interval=%.4f%s",
+           prm.sync_policy.c_str(), prm.sync_queue,
            prm.sync_max_interval_sec,
            prm.sync_policy == "exact" ? "  (unused: exact)" : "");
-  ROS_WARN("[CloudCrop]   cloud/odom/pub queue = %d / %d / %d", prm.cloud_queue,
+  ROS_DEBUG("[CloudCrop] cloud/odom/pub queue=%d/%d/%d", prm.cloud_queue,
            prm.odom_queue, prm.pub_queue);
-  ROS_WARN("[CloudCrop]   --- diagnostics ---");
-  ROS_WARN("[CloudCrop]   watchdog_period_sec  = %.3f%s",
+  ROS_DEBUG("[CloudCrop] watchdog_period=%.3f%s frame_match=%s strict_fov=%s "
+            "profile=%s",
            prm.watchdog_period_sec,
-           prm.watchdog_period_sec > 0.0 ? "" : "  (disabled)");
-  ROS_WARN("[CloudCrop]   require_frame_match  = %s",
-           prm.require_frame_match ? "true" : "false");
-  ROS_WARN("[CloudCrop]   strict_fov_alignment = %s",
-           strict_fov_alignment ? "true" : "false");
-  ROS_WARN("[CloudCrop]   profile_log          = %s",
+           prm.watchdog_period_sec > 0.0 ? "" : " (disabled)",
+           prm.require_frame_match ? "true" : "false",
+           strict_fov_alignment ? "true" : "false",
            prm.profile_log ? "true" : "false");
-  ROS_WARN("[CloudCrop]   --- visualization ---");
-  ROS_WARN("[CloudCrop]   visualization_topic  = %s", prm.viz_topic.c_str());
-  ROS_WARN("[CloudCrop]   visualization_rate   = %.3f Hz%s",
+  ROS_DEBUG("[CloudCrop] viz topic=%s rate=%.3fHz%s range=%.3fm samples=%d/%d",
+           prm.viz_topic.c_str(),
            cfg.visualization_rate_hz,
-           cfg.visualization_rate_hz > 0.0 ? "" : "  (disabled)");
-  ROS_WARN("[CloudCrop]   visualization_range  = %.3f m",
-           cfg.visualization_range);
-  ROS_WARN("[CloudCrop]   viz az/el samples    = %d / %d",
+           cfg.visualization_rate_hz > 0.0 ? "" : " (disabled)",
+           cfg.visualization_range,
            cfg.visualization_azimuth_samples,
            cfg.visualization_elevation_samples);
-  ROS_WARN("[CloudCrop] =====================================================");
 
   if (!checkFovAlignment(nh, cfg, strict_fov_alignment)) return 1;
 

@@ -53,9 +53,10 @@ ViewpointManager/sample_pillar_radius_layer_num: 8
 ViewpointManager/sample_pillar_circle_sample_num: 4
 ViewpointManager/local_tsp_size: 10
 # area
-box_num: 1
-box_0/down: [-16, -27, 0.8]
-box_0/up: [13, 26, 4.0]
+planning_box_num: 1
+planning_box_0/down: [-16, -27, 0.8]
+planning_box_0/up: [13, 26, 4.0]
+mapping_box/shrink_voxels: 1
 dead_area_num: 0
 max_traj_len: 10.0
 

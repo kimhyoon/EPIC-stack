@@ -49,10 +49,10 @@ public:
   LIOInterface();
   ~LIOInterface();
   void init(ros::NodeHandle &nh);
-  bool IsInBox(const Eigen::Vector3f &pos);
-  bool IsInBox(const PointType &pos);
-  bool IsInMap(const Eigen::Vector3f &pos);
-  bool IsInMap(const PointType &pos);
+  bool IsInMappingBox(const Eigen::Vector3f &pos);
+  bool IsInMappingBox(const PointType &pos);
+  bool IsInPlanningBox(const Eigen::Vector3f &pos);
+  bool IsInPlanningBox(const PointType &pos);
 
   double getDisToOcc(const PointType &pt);
   double getDisToOcc(const Eigen::Vector3f &pt);
@@ -100,12 +100,16 @@ private:
 
 // constant
 struct LIOInterfaceParam {
-  Eigen::Vector3f global_box_min_boundary_, global_box_max_boundary_;
-  Eigen::Vector3f global_map_min_boundary_, global_map_max_boundary_;
-  int box_num_;
+  Eigen::Vector3f mapping_box_min_boundary_, mapping_box_max_boundary_;
+  Eigen::Vector3f planning_box_min_boundary_, planning_box_max_boundary_;
+  int planning_box_num_;
+  int mapping_box_shrink_voxels_;
+  double mapping_box_shrink_distance_;
   int dead_area_num_;
-  vector<Eigen::Vector3f> global_box_min_boundary_vec_;
-  vector<Eigen::Vector3f> global_box_max_boundary_vec_;
+  vector<Eigen::Vector3f> mapping_box_min_boundary_vec_;
+  vector<Eigen::Vector3f> mapping_box_max_boundary_vec_;
+  vector<Eigen::Vector3f> planning_box_min_boundary_vec_;
+  vector<Eigen::Vector3f> planning_box_max_boundary_vec_;
   vector<Eigen::Vector3f> dead_area_min_boundary_vec_;
   vector<Eigen::Vector3f> dead_area_max_boundary_vec_;
   // 센서 장착 회전 [deg] — odometry 프레임 대비. FAST-LIO 처럼 odom 이 곧
@@ -138,7 +142,7 @@ struct LIOInterfaceData {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 };
 
-inline bool LIOInterface::IsInBox(const Eigen::Vector3f &pos) {
+inline bool LIOInterface::IsInMappingBox(const Eigen::Vector3f &pos) {
   auto inbox = [&](const Eigen::Vector3f &pt, const Eigen::Vector3f &min,
                    const Eigen::Vector3f &max) -> bool {
     for (int i = 0; i < 3; i++) {
@@ -155,41 +159,40 @@ inline bool LIOInterface::IsInBox(const Eigen::Vector3f &pos) {
       return false;
   }
 
-  for (int i = 0; i < lp_->box_num_; i++) {
-    Eigen::Vector3f min_ = lp_->global_box_min_boundary_vec_[i];
-    Eigen::Vector3f max_ = lp_->global_box_max_boundary_vec_[i];
+  for (int i = 0; i < lp_->planning_box_num_; i++) {
+    const Eigen::Vector3f &min_ = lp_->mapping_box_min_boundary_vec_[i];
+    const Eigen::Vector3f &max_ = lp_->mapping_box_max_boundary_vec_[i];
     if (inbox(pos, min_, max_))
       return true;
   }
   return false;
 }
-inline bool LIOInterface::IsInMap(const Eigen::Vector3f &pos) {
-  if (pos(0) < lp_->global_map_min_boundary_(0) + 1e-4 ||
-      pos(1) < lp_->global_map_min_boundary_(1) + 1e-4 ||
-      pos(2) < lp_->global_map_min_boundary_(2) + 1e-4)
-    return false;
-  if (pos(0) > lp_->global_map_max_boundary_(0) - 1e-4 ||
-      pos(1) > lp_->global_map_max_boundary_(1) - 1e-4 ||
-      pos(2) > lp_->global_map_max_boundary_(2) - 1e-4)
-    return false;
-  return true;
-}
-
-inline bool LIOInterface::IsInBox(const PointType &pos) {
+inline bool LIOInterface::IsInMappingBox(const PointType &pos) {
   Eigen::Vector3f p(pos.x, pos.y, pos.z);
-  return IsInBox(p);
+  return IsInMappingBox(p);
 }
 
-inline bool LIOInterface::IsInMap(const PointType &pos) {
-  if (pos.x < lp_->global_map_min_boundary_(0) + 1e-4 ||
-      pos.y < lp_->global_map_min_boundary_(1) + 1e-4 ||
-      pos.z < lp_->global_map_min_boundary_(2) + 1e-4)
-    return false;
-  if (pos.x > lp_->global_map_max_boundary_(0) - 1e-4 ||
-      pos.y > lp_->global_map_max_boundary_(1) - 1e-4 ||
-      pos.z > lp_->global_map_max_boundary_(2) - 1e-4)
-    return false;
-  return true;
+inline bool LIOInterface::IsInPlanningBox(const Eigen::Vector3f &pos) {
+  auto inbox = [&](const Eigen::Vector3f &pt, const Eigen::Vector3f &min,
+                   const Eigen::Vector3f &max) -> bool {
+    return (pt.array() >= min.array()).all() &&
+           (pt.array() <= max.array()).all();
+  };
+  for (int i = 0; i < lp_->dead_area_num_; i++) {
+    if (inbox(pos, lp_->dead_area_min_boundary_vec_[i],
+              lp_->dead_area_max_boundary_vec_[i]))
+      return false;
+  }
+  for (int i = 0; i < lp_->planning_box_num_; i++) {
+    if (inbox(pos, lp_->planning_box_min_boundary_vec_[i],
+              lp_->planning_box_max_boundary_vec_[i]))
+      return true;
+  }
+  return false;
+}
+
+inline bool LIOInterface::IsInPlanningBox(const PointType &pos) {
+  return IsInPlanningBox(Eigen::Vector3f(pos.x, pos.y, pos.z));
 }
 
 } // namespace fast_planner

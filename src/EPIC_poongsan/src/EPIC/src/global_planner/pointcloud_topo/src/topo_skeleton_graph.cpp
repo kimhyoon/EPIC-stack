@@ -41,8 +41,8 @@ void debug_exit(const std::string &location) {
 void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, ParallelBubbleAstar::Ptr &parallel_bubble_astar) {
   lidar_map_interface_ = lidar_map;
 
-  min_bd = lidar_map_interface_->lp_->global_box_min_boundary_;
-  max_bd = lidar_map_interface_->lp_->global_box_max_boundary_;
+  min_bd = lidar_map_interface_->lp_->planning_box_min_boundary_;
+  max_bd = lidar_map_interface_->lp_->planning_box_max_boundary_;
 
   parallel_bubble_astar_ = parallel_bubble_astar;
   odom_node_ = make_shared<TopoNode>();
@@ -127,7 +127,7 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
         "/debug/topology_stability_nodes", 1, true);
     topology_failed_edges_pub_ = nh.advertise<visualization_msgs::Marker>(
         "/debug/topology_failed_edges", 1, true);
-    ROS_WARN("[PlannerDebug] topology edge evidence publisher enabled");
+    ROS_DEBUG("[global.connectivity] topology edge evidence publisher enabled");
   }
 }
 
@@ -372,9 +372,9 @@ int TopoGraph::getBoxId(const Eigen::Vector3f &pt) {
     return true;
   };
 
-  for (size_t i = 0; i < lidar_map_interface_->lp_->box_num_; i++) {
-    Eigen::Vector3f min_ = lidar_map_interface_->lp_->global_box_min_boundary_vec_[i];
-    Eigen::Vector3f max_ = lidar_map_interface_->lp_->global_box_max_boundary_vec_[i];
+  for (size_t i = 0; i < lidar_map_interface_->lp_->planning_box_num_; i++) {
+    Eigen::Vector3f min_ = lidar_map_interface_->lp_->planning_box_min_boundary_vec_[i];
+    Eigen::Vector3f max_ = lidar_map_interface_->lp_->planning_box_max_boundary_vec_[i];
     if (inbox(pt, min_, max_))
       return i;
   }
@@ -1023,7 +1023,7 @@ void TopoGraph::getRegionsToUpdate() {
 void TopoGraph::updateSkeleton() {
   parallel_bubble_astar_->reset();
   if (!node_admission_logged_) {
-    ROS_INFO("[TopoGraph] node admission: safe_distance=%.3f, "
+    ROS_DEBUG("[global.connectivity] node admission: safe_distance=%.3f, "
              "insert_margin=%.3f, insert_threshold=%.3f, "
              "clearance_tie_tolerance=%.3f",
              parallel_bubble_astar_->safe_distance_, node_insert_margin_,
@@ -1053,7 +1053,7 @@ void TopoGraph::updateSkeleton() {
     for (int i = 0; i < check_pts_.size(); ++i) {
       Eigen::Vector3f pt = check_pts_[i].getArray3fMap();
       pt += lb;
-      if (!lidar_map_interface_->IsInBox(pt))
+      if (!lidar_map_interface_->IsInPlanningBox(pt))
         check_pt_flag[i] = true;
     }
     generateBubble(lb, hb, tmp_bubbles, check_pt_flag);
@@ -1066,7 +1066,7 @@ void TopoGraph::updateSkeleton() {
     union_set_->unionSetCluster(tmp_bubbles, new_nodes_region, region_center);
     new_nodes_mtx.lock();
     for (auto &node : new_nodes_region) {
-      if (!lidar_map_interface_->IsInBox(node->center_))
+      if (!lidar_map_interface_->IsInPlanningBox(node->center_))
         continue;
       new_nodes.emplace_back(node);
     }
@@ -1529,13 +1529,16 @@ double TopoGraph::getPathLength(const vector<TopoNode::Ptr> &topo_path) {
 }
 
 bool TopoGraph::hasOverlapWithBox(const Eigen::Vector3f &low_bd, const Eigen::Vector3f &high_bd) {
-  const static vector<Eigen::Vector3f> tmp_vec{{0, 0, 0}, {0, 0, 1}, {0, 1, 0}, {1, 0, 0}, {0, 1, 1}, {1, 0, 1}, {1, 1, 0}, {1, 1, 1}};
-  for (auto &tmp : tmp_vec) {
-    Eigen::Vector3f pt;
-    for (int i = 0; i < 3; i++) {
-      pt(i) = tmp(i) * low_bd(i) + (1 - tmp(i)) * high_bd(i);
-    }
-    if (lidar_map_interface_->IsInBox(pt))
+  // Axis-aligned overlap is both cheaper and complete.  Testing only the
+  // region corners misses the case where a planning box is fully enclosed by
+  // a larger region (and used to route through IsInPlanningBox during graph
+  // construction before the graph was otherwise initialized).
+  const auto &params = *lidar_map_interface_->lp_;
+  for (int i = 0; i < params.planning_box_num_; ++i) {
+    const Eigen::Vector3f &box_min = params.planning_box_min_boundary_vec_[i];
+    const Eigen::Vector3f &box_max = params.planning_box_max_boundary_vec_[i];
+    if ((low_bd.array() <= box_max.array()).all() &&
+        (high_bd.array() >= box_min.array()).all())
       return true;
   }
   return false;

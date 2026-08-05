@@ -1,6 +1,6 @@
 # ===========================================================================
 # map2 = poongsan_garage.pcd  x  ML-X sensor config (120deg x 30deg crop).
-# The filename says "garage" for historical reasons, but box_0 below is fitted
+# The filename says "garage" for historical reasons, but planning_box_0 below is fitted
 # to poongsan_garage.pcd (x -0.09..38.91, y -9.62..18.31) — NOT to garage.pcd,
 # which is a different, much larger site. map1 lives in garage_map1.yaml.
 #
@@ -49,7 +49,7 @@ cloud_crop/output_fields: full
 cloud_crop/profile_log: true
 # Latched crop FOV marker. Its range cap is sampled as a spherical arc grid.
 cloud_crop/visualization_topic: /debug/cloud_crop/fov
-cloud_crop/visualization_rate_hz: 1.0
+cloud_crop/visualization_rate_hz: 10.0
 cloud_crop/visualization_range: 30.0
 cloud_crop/visualization_azimuth_samples: 24
 cloud_crop/visualization_elevation_samples: 8
@@ -174,16 +174,16 @@ ViewpointManager/reachability_search_timeout: 0.01
 # area
 # Keep the original-map vertical planning band. The FSM begins planning after
 # it climbs from the floor-relative spawn height.
-box_num: 1
-box_0/down: [-1.0, -9.0, 0.55]
-box_0/up: [38.5, 18.0, 2.5]
+planning_box_num: 1
+planning_box_0/down: [-1.0, -9.0, 0.55]
+planning_box_0/up: [38.5, 18.0, 2.5]
+mapping_box/shrink_voxels: 1
 dead_area_num: 0
 # trajectory param
 max_traj_len: 5.0
 
 # Corridor/FIRI generation parameters. Field-tuning effects are documented in real.yaml.
-# The top layer of this thickness is also an exact virtual ceiling; obstacle dilation is not applied to that ceiling.
-local_planning/corridor/obstacle_voxel_size: 0.28       # Increase: faster/coarser obstacle input and a thicker virtual ceiling layer.
+local_planning/corridor/obstacle_voxel_size: 0.28       # Corridor obstacle-cloud downsampling only; it does not change planning_box.
 local_planning/corridor/search_margin_xy: 3.0           # XY obstacle-search margin around the guide path [m].
 local_planning/corridor/search_margin_z: 1.0            # Z obstacle-search margin around the guide path [m].
 local_planning/corridor/progress_length: 7.0            # Max seed-path length per FIRI piece [m], not total trajectory length.
@@ -239,6 +239,9 @@ numerical/linear_solve_pivot_eps: 1.0e-12  # MINCO LU 분해에서 허용할 piv
 
 RelCostTol: 1.1e-6
 #param for yaw opt
+# Simulation trial: bypass LBFGS and solve deterministic path-facing yaw
+# waypoints directly. Change to "lbfgs" to restore the legacy planner.
+local_planning/yaw/mode: fixed_waypoint
 yaw_max_vel: 1.5
 yaw_rho_vis: 10000.0
 yaw_time_fwd: 2.5
@@ -257,7 +260,7 @@ fsm/emergency_replan_control_error: 3.0
 # trigger (2D Nav Goal) -> climb/hover at this height -> start exploration after
 # odom height is reached and settled. Set <= 0 to disable.
 # This lets a z=0 spawn climb above occupied floor points before the first plan.
-fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain below box_0/up z.
+fsm/takeoff_height: 1.25          # target hover height [m] in odom z; must remain inside planning_box.
 fsm/takeoff_reach_tol: 0.15       # height is reached when |z - target| is below this value.
 fsm/takeoff_settle_vel: 0.4       # considered settled when odom velocity is below this value.
 fsm/takeoff_settle_time: 0.03     # match real2.yaml
@@ -337,3 +340,14 @@ ViewpointManager/vp_reached_yaw_tol_deg: 60.0    # 도달로 인정할 yaw 차[d
 ViewpointManager/vp_reached_clear_enable: true   # 강제 해소 사용
 # [도달 지점 주변 Frontier 일괄 해소][강한 옵션] 0 = 사용 안 함. real2.yaml 정합.
 ViewpointManager/vp_reached_clear_radius: 0.0    # 일괄 해소 반경[m], 0이면 사용 안 함
+
+# Structured console logging. Normal state/event detail remains on ROS topics
+# and only cycle summaries plus WARN/ERROR are printed to the terminal.
+logging/global_detail: 1
+logging/local_detail: 2
+logging/global_level: INFO
+logging/local_level: INFO
+logging/execution_level: INFO
+logging/sensor_level: INFO
+logging/event_info_console: false
+logging/color_console: true

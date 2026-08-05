@@ -10,6 +10,7 @@
 #include <epic_planner/expl_data.h>
 #include <epic_planner/fast_exploration_fsm.h>
 #include <epic_planner/fast_exploration_manager.h>
+#include <frontier_manager/global_log.h>
 #include <plan_manage/planner_manager.h>
 #include <cmath>
 #include <queue>
@@ -55,13 +56,13 @@ static bool lexLess(const Eigen::Vector3f &a, const Eigen::Vector3f &b) {
   return a.z() < b.z();
 }
 
-bool FastExplorationFSM::insideExplorationBox(const Eigen::Vector3f &p) const {
+bool FastExplorationFSM::insidePlanningBox(const Eigen::Vector3f &p) const {
   const auto &lp = planner_manager_->lidar_map_interface_->lp_;
-  if (lp->box_num_ <= 0)
+  if (lp->planning_box_num_ <= 0)
     return true;
-  for (int i = 0; i < lp->box_num_; i++) {
-    const Eigen::Vector3f &lo = lp->global_box_min_boundary_vec_[i];
-    const Eigen::Vector3f &hi = lp->global_box_max_boundary_vec_[i];
+  for (int i = 0; i < lp->planning_box_num_; i++) {
+    const Eigen::Vector3f &lo = lp->planning_box_min_boundary_vec_[i];
+    const Eigen::Vector3f &hi = lp->planning_box_max_boundary_vec_[i];
     if ((p.array() >= lo.array()).all() && (p.array() <= hi.array()).all())
       return true;
   }
@@ -170,7 +171,7 @@ bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
       const TopoNode::Ptr &n = kv.first;
       if (!n || n == odom_node || n == virtual_goal)
         continue;
-      if (!insideExplorationBox(n->center_))
+      if (!insidePlanningBox(n->center_))
         continue;
       if (skip_visited && isNearFlownPath(n->center_))
         continue;
@@ -196,14 +197,14 @@ bool FastExplorationFSM::selectFarthestReachableNode(TopoNode::Ptr &node_out,
   // 강제 요청은 항상 시도한다: 전부 방문한 그래프라면 방문 필터를 풀고 재선정.
   if (!best && !require_gain)
     pick(false);
-  ROS_INFO("[EARLY_FINISH] dijkstra reached %zu nodes, "
-           "origin_dist=%.2fm graph_dist=%.2fm (max_disp=%.2fm)",
+  EPIC_LOG_DEBUG(1, 1, "global.connectivity",
+           "early-finish search reached=%zu origin_dist=%.2fm graph_dist=%.2fm max_disp=%.2fm",
            dist.size(), best_origin_dist, best_graph_dist, max_displacement_);
   if (!best)
     return false;
   if (require_gain &&
       best_origin_dist < max_displacement_ + early_finish_probe_min_gain_) {
-    ROS_INFO("[EARLY_FINISH] best candidate gains nothing "
+    EPIC_LOG_DEBUG(1, 1, "global.evaluation", "early-finish candidate gains nothing "
              "(origin_dist=%.2fm < max_disp=%.2fm + gain=%.2fm) -> no probe",
              best_origin_dist, max_displacement_, early_finish_probe_min_gain_);
     return false;
@@ -319,8 +320,6 @@ void FastExplorationFSM::checkEarlyFinishReached() {
   elog_.log("EARLY_FINISH",
             "probe reached -> normal exploration / RTH unblocked", detail, 0.0,
             EventLogger::L_WARN, true);
-  ROS_WARN("\033[33m[EARLY_FINISH] probe reached (%.2fm < %.2fm)\033[0m", d,
-           early_finish_reach_tol_);
 }
 
 // 매 전역계획 직전에 한 번. 도달 판정 -> 연결성 확인/재바인딩 -> planner 로 push.
@@ -408,7 +407,6 @@ void FastExplorationFSM::updateEarlyFinishProbe() {
   publishEarlyFinishStatus("EFP_REBOUND", detail);
   elog_.log("EARLY_FINISH", "EFP_REBOUND (topology link lost)", detail, 0.0,
             EventLogger::L_WARN, true);
-  ROS_WARN("\033[33m[EARLY_FINISH] EFP rebound: %s\033[0m", detail);
 }
 
 void FastExplorationFSM::clearEarlyFinishPath(const string &status) {
@@ -503,7 +501,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   switch (state_) {
   case INIT: {
     if (!fd_->have_odom_) {
-      ROS_WARN_THROTTLE(1.0, "no odom.");
+      ROS_LOG_THROTTLE(1.0, ::ros::console::levels::Debug, "execution.fsm",
+                       "[execution.fsm] waiting for odometry");
       return;
     }
     transitState(WAIT_TRIGGER, "FSM");
@@ -511,7 +510,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   }
 
   case WAIT_TRIGGER: {
-    ROS_WARN_THROTTLE(5.0, "wait for trigger.");
+    ROS_LOG_THROTTLE(5.0, ::ros::console::levels::Debug, "execution.fsm",
+                     "[execution.fsm] waiting for mission trigger");
     break;
   }
 
@@ -551,13 +551,14 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     if ((now - hover_enter_time_).toSec() > fp_->takeoff_timeout_) {
       const double relaxed_tol = 3.0 * fp_->takeoff_reach_tol_;
       if (z_err < relaxed_tol && speed < 2.0 * fp_->takeoff_settle_vel_) {
-        ROS_WARN("[takeoff] timeout %.1fs, near altitude (z_err=%.2f m, v=%.2f m/s) -> explore",
+        EPIC_LOG_WARN("execution.fsm", "takeoff timeout %.1fs near altitude "
+                 "(z_err=%.2fm speed=%.2fm/s); starting exploration",
                  fp_->takeoff_timeout_, z_err, speed);
         fd_->static_state_ = true;
         leaveTakeoffHover("takeoff: timeout (near altitude)");
       } else {
-        ROS_ERROR_THROTTLE(2.0,
-            "[takeoff] timeout %.1fs and NOT at altitude (z_err=%.2f m, v=%.2f m/s) -> "
+        EPIC_LOG_ERROR_THROTTLE(2.0, "execution.fsm",
+            "takeoff timeout %.1fs and not at altitude (z_err=%.2fm speed=%.2fm/s); "
             "holding hover, NOT exploring (check arming / OFFBOARD / thrust)",
             fp_->takeoff_timeout_, z_err, speed);
         // stay in TAKEOFF_HOVER; pubHoverCmd() keeps streaming the climb setpoint.
@@ -598,7 +599,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       stopTraj();
       if (traj_server_owns_finish_cmd_) {
         hover_cmd_pub_.shutdown();
-        ROS_INFO("[FINISH] /position_cmd ownership transferred to traj_server.");
+        EPIC_LOG_INFO(1, 1, "execution.fsm",
+                      "mission finish: trajectory server owns position hold");
       }
       // 탐사 종료 요약. 클러스터가 남아있는데 끝났다면 "조기 종료 의심"을 명시
       // (INC1: clusters 17 / reach 0 로 FINISH -> 이게 이번 사고의 1번 원인이었음).
@@ -628,21 +630,24 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     // EKF/position-estimate drift (mag/EV), which a fixed setpoint cannot remove.
     if (!do_auto) {
       if (auto_rth_land_ && explore_finished_ && fp_->takeoff_height_ <= 0.0)
-        ROS_WARN_THROTTLE(5.0, "[FINISH] auto_rth_land on but takeoff disabled "
+        EPIC_LOG_WARN_THROTTLE(5.0, "execution.fsm", "auto-RTH-land on but takeoff disabled "
                                "(no home recorded) -> position hold.");
       if (traj_server_owns_finish_cmd_) {
-        ROS_WARN_THROTTLE(2.0, "Finished. traj_server owns /position_cmd hold.");
+        EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.fsm",
+                               "mission finished; trajectory server holding position");
       } else {
         pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
-        ROS_WARN_THROTTLE(2.0, "Finished. holding position.");
+        EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.fsm",
+                               "mission finished; holding position");
       }
       break;
     }
 
     // Auto sequence: hover at the finish point (fixed yaw -> no rotation -> no
     // yaw-divergence risk), then return home and land.
-    ROS_INFO_THROTTLE(2.0, "\033[32m[FINISH] exploration done -> hover %.1fs, then "
-                           "return home & land\033[0m", finish_hover_duration_);
+    EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.fsm",
+                           "exploration complete; hover %.1fs then RTH+land",
+                           finish_hover_duration_);
     if (!traj_server_owns_finish_cmd_)
       pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
 
@@ -702,11 +707,6 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     elog_.log("EARLY_FINISH",
               "probe installed (stays a TSP candidate until reached)", d, 0.0,
               EventLogger::L_WARN, true);
-    ROS_WARN("\033[33m[EARLY_FINISH] probe installed: "
-             "efp=(%.2f, %.2f, %.2f), graph_dist=%.2fm\033[0m",
-             probe->center_.x(), probe->center_.y(), probe->center_.z(),
-             graph_distance);
-
     early_finish_forced_attempt_ = false;
     transitState(PLAN_TRAJ_EXP, "EARLY_FINISH: probe installed");
     break;
@@ -749,6 +749,19 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         sig += " | why: " + local_reason_;
       elog_.log("LOCAL", sig, d, res == SUCCEED ? 5.0 : 2.0,
                 res == SUCCEED ? EventLogger::L_INFO : EventLogger::L_WARN);
+      if (res == SUCCEED) {
+        EPIC_LOG_INFO_THROTTLE(
+            1.0, 0, 0, "local.cycle",
+            "mode=EXPLORE result=%s plan_time=%.1fms goal_dist=%.1fm",
+            rs, t_ms,
+            (expl_manager_->ed_->next_goal_node_->center_ - fd_->odom_pos_)
+                .norm());
+      } else {
+        EPIC_LOG_WARN_THROTTLE(
+            2.0, "local.cycle",
+            "mode=EXPLORE result=%s plan_time=%.1fms reason=%s", rs, t_ms,
+            local_reason_.empty() ? "unspecified" : local_reason_.c_str());
+      }
     }
 
     if (res == SUCCEED) {
@@ -846,10 +859,11 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
       if (returning_home_) {
         transitState(LAND, "RTH: home reached -> AUTO.LAND");
-        ROS_INFO("\033[32m[RTH] Home reached (xy %.3f m) -> landing\033[0m", dist);
+        EPIC_LOG_INFO(1, 1, "execution.fsm",
+                      "RTH home reached xy_error=%.3fm; landing", dist);
       } else {
         transitState(FINISH, "PLAN_TRAJ_RTH: goal reached");
-        ROS_INFO("\033[32m[RTH] Goal reached! \033[0m");
+        EPIC_LOG_INFO(1, 1, "execution.fsm", "RTH goal reached");
       }
       return;
     }
@@ -870,6 +884,15 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         sig += " | why: " + local_reason_;
       elog_.log("LOCAL", sig, d, res == SUCCEED ? 5.0 : 2.0,
                 res == SUCCEED ? EventLogger::L_INFO : EventLogger::L_WARN);
+      if (res == SUCCEED)
+        EPIC_LOG_INFO_THROTTLE(1.0, 0, 0, "local.cycle",
+                               "mode=RTH result=%s plan_time=%.1fms", rs,
+                               t_ms);
+      else
+        EPIC_LOG_WARN_THROTTLE(
+            2.0, "local.cycle",
+            "mode=RTH result=%s plan_time=%.1fms reason=%s", rs, t_ms,
+            local_reason_.empty() ? "unspecified" : local_reason_.c_str());
     }
 
     if (res == SUCCEED) {
@@ -908,10 +931,18 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                                   ? CAUTION
                                   : (has_goal_rth_ ? PLAN_TRAJ_RTH
                                                    : PLAN_TRAJ_EXP);
-      transitState(
-          next_state,
-          "safetyCallback: not safe, time:" + to_string(collision_time), true);
-      if (!rotate_needs_escape && collision_time < fp_->replan_time_ + 0.2)
+      const double trajectory_elapsed = std::max(
+          0.0, (ros::Time::now() - planner_manager_->local_data_.start_time_)
+                   .toSec());
+      const double collision_eta =
+          std::max(0.0, collision_time - trajectory_elapsed);
+      transitState(next_state,
+                   "safetyCallback: not safe, traj_time:" +
+                       to_string(collision_time) +
+                       " eta:" + to_string(collision_eta),
+                   true);
+      if (!rotate_needs_escape &&
+          collision_eta < fp_->replan_time_ + 0.2)
         stopTraj();
     } else if (!planner_manager_->checkTrajVelocity()) {
       EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
@@ -933,8 +964,9 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
           Eigen::Vector3d planned = info->minco_traj_.getPos(t_cur);
           double ctrl_err = (fd_->odom_pos_.cast<double>() - planned).norm();
           if (ctrl_err > fp_->emergency_replan_control_error) {
-            ROS_WARN("\033[31m[EMERGENCY] control error %.2f m > %.2f m -> replan from "
-                     "current pose\033[0m",
+            EPIC_LOG_WARN("execution.trajectory",
+                     "control error %.2fm > %.2fm; replanning from "
+                     "current pose",
                      ctrl_err, fp_->emergency_replan_control_error);
             fd_->static_state_ = true;
             EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
@@ -972,17 +1004,17 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       }
 
       if (!trajectory_valid) {
-        ROS_WARN_THROTTLE(
-            2.0,
-            "[CAUTION] escape ownership lost/invalid; rebuilding from odom");
+        EPIC_LOG_WARN_THROTTLE(
+            2.0, "local.collision",
+            "CAUTION escape ownership lost/invalid; rebuilding from odometry");
       } else {
         const double dis2occ =
             planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_);
-        const bool inside_virtual_ceiling =
-            std::isfinite(escape.escape_virtual_ceiling_z_) &&
-            fd_->odom_pos_.z() <= escape.escape_virtual_ceiling_z_ + 1.0e-5;
+        const bool inside_planning_height =
+            std::isfinite(escape.escape_planning_max_z_) &&
+            fd_->odom_pos_.z() <= escape.escape_planning_max_z_ + 1.0e-5;
         if (dis2occ > planner_manager_->gcopter_config_->dilateRadiusSoft &&
-            inside_virtual_ceiling) {
+            inside_planning_height) {
           EXPL_STATE next_state =
               has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
           transitState(next_state, "CAUTION: escape finished and safe");
@@ -1001,18 +1033,12 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     const double dis2occ =
         planner_manager_->lidar_map_interface_->getDisToOcc(fd_->odom_pos_);
     // Obstacle clearance alone is not enough: tracking overshoot can leave the
-    // vehicle in the one-voxel ceiling buffer.  CAUTION owns the descent back
-    // into the virtual flight volume even when obstacle clearance is already
-    // sufficient.
-    const double virtual_ceiling_z =
-        planner_manager_->lidar_map_interface_->lp_
-            ->global_box_max_boundary_.z() -
-        planner_manager_->gcopter_config_->corridorObstacleVoxelSize;
-    const bool inside_virtual_ceiling =
-        std::isfinite(virtual_ceiling_z) &&
-        fd_->odom_pos_.z() <= virtual_ceiling_z + 1.0e-5;
+    // vehicle outside the configured vehicle-center planning box. CAUTION owns
+    // recovery back into that explicit volume.
+    const bool inside_planning_box =
+        planner_manager_->lidar_map_interface_->IsInPlanningBox(fd_->odom_pos_);
     if (dis2occ > planner_manager_->gcopter_config_->dilateRadiusSoft &&
-        inside_virtual_ceiling) {
+        inside_planning_box) {
       EXPL_STATE next_state = has_goal_rth_ ? PLAN_TRAJ_RTH : PLAN_TRAJ_EXP;
       transitState(next_state, "CAUTION: current odom is already safe");
       exec_timer_.start();
@@ -1079,12 +1105,14 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
         mavros_msgs::SetMode land_mode;
         land_mode.request.custom_mode = "AUTO.LAND";
         if (set_mode_client_.call(land_mode) && land_mode.response.mode_sent)
-          ROS_WARN_THROTTLE(1.0, "\033[33m[LAND] AUTO.LAND requested\033[0m");
+          EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4", "AUTO.LAND requested");
         else
-          ROS_WARN_THROTTLE(1.0, "[LAND] AUTO.LAND request failed, retrying...");
+          EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4",
+                                 "AUTO.LAND request failed; retrying");
       }
     } else {
-      ROS_INFO_THROTTLE(2.0, "\033[32m[LAND] PX4 in AUTO.LAND -> descending & auto-disarm\033[0m");
+      EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.px4",
+                             "PX4 AUTO.LAND active; descending to auto-disarm");
     }
     break;
   }
@@ -1134,7 +1162,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                yaw_rotate_accum_ * 180.0 / M_PI, yaw_rotate_init_rate_);
       m.data = b;
       yaw_rotate_state_pub_.publish(m);
-      ROS_INFO_THROTTLE(2.0, "\033[36m[yaw-rotate] %s\033[0m", b);
+      EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.fsm", "%s", b);
     }
     break;
   }
@@ -1304,7 +1332,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("local_avoidance/enable", avoidance_enabled_, true);
   elog_.init(nh);
   elog_.setState("INIT");
-  ROS_INFO("Local planning max Hz: %.1f (min period: %.4f s)", local_planning_max_hz_, local_planning_min_period_);
+  EPIC_LOG_INFO(1, 1, "execution.fsm",
+                "configured local_plan_rate=%.1fHz min_period=%.4fs",
+                local_planning_max_hz_, local_planning_min_period_);
   /* Initialize main modules */
   // expl_manager_.reset(new FastExplorationManager);
   // expl_manager_->initialize(nh);
@@ -1435,8 +1465,9 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       ros::shutdown();
       exit(1);
     }
-    ROS_WARN("[FSM] cloud crop enabled: subscribing %s (raw: %s)",
-             cropped_topic.c_str(), cloud_topic.c_str());
+    EPIC_LOG_DEBUG(1, 1, "sensor.lidar",
+                   "FSM subscribes cropped cloud=%s raw=%s",
+                   cropped_topic.c_str(), cloud_topic.c_str());
     cloud_topic = cropped_topic;
   }
   cloud_sub_.reset(new message_filters::Subscriber<sensor_msgs::PointCloud2>(
@@ -1465,8 +1496,8 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       return v;
     };
     std::vector<double> bx_dn, bx_up;
-    nh.param("box_0/down", bx_dn, std::vector<double>());
-    nh.param("box_0/up", bx_up, std::vector<double>());
+    nh.param("planning_box_0/down", bx_dn, std::vector<double>());
+    nh.param("planning_box_0/up", bx_up, std::vector<double>());
     std::string odom_t, cloud_t;
     nh.param("odometry_topic", odom_t, std::string("?"));
     nh.param("cloud_topic", cloud_t, std::string("?"));
@@ -1477,7 +1508,7 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
       snprintf(l, sizeof(l), "box | down=[%g, %g, %g] up=[%g, %g, %g]", bx_dn[0],
                bx_dn[1], bx_dn[2], bx_up[0], bx_up[1], bx_up[2]);
     else
-      snprintf(l, sizeof(l), "box | (box_0 params missing)");
+      snprintf(l, sizeof(l), "planning_box | (planning_box_0 params missing)");
     param_lines_.push_back(l);
 
     snprintf(l, sizeof(l),
@@ -1766,7 +1797,8 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   planner_manager_->topo_graph_->log << "<" << cnt << ">" << endl;
   ros::Time t4 = ros::Time::now();
   if (verbose_console_)
-    ROS_INFO("update topo skeleton cost: %fms, update odom vertex cost:%fms ",
+    EPIC_LOG_DEBUG(1, 1, "global.connectivity",
+             "topology update=%.2fms odom_vertex=%.2fms",
              (t3 - t2).toSec() * 1000, (t4 - t3).toSec() * 1000);
   Eigen::Vector3d vel = fd_->odom_vel_.cast<double>();
   Eigen::Vector3d odom = fd_->odom_pos_.cast<double>();
@@ -1832,8 +1864,9 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
       std_msgs::String m;
       m.data = rep;
       astar_profile_pub_.publish(m);
-      ROS_INFO("[astar-profile] %s (caps: conn=%.1fms insert=%.1fms)",
-               rep.c_str(), astar_conn_timeout_ms_, astar_insert_timeout_ms_);
+      EPIC_LOG_DEBUG(1, 1, "global.connectivity.profile",
+                     "%s caps[conn=%.1fms insert=%.1fms]", rep.c_str(),
+                     astar_conn_timeout_ms_, astar_insert_timeout_ms_);
     }
   }
 
@@ -2155,32 +2188,26 @@ int FastExplorationFSM::callGoalPlanner() {
 
   if (res == ParallelBubbleAstar::NO_PATH) {
     local_reason_ = "fast-searcher: no path odom->next RTH node";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::START_FAIL) {
     local_reason_ = "fast-searcher: start(odom) in occupancy";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return START_FAIL;
   } else if (res == ParallelBubbleAstar::END_FAIL) {
     local_reason_ = "fast-searcher: RTH node in occupancy";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
   } else if (res == ParallelBubbleAstar::TIME_OUT) {
     local_reason_ = "fast-searcher: timeout";
-    ROS_WARN_THROTTLE(2.0, "[local-plan] %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle", "%s", local_reason_.c_str());
     return FAIL;
   }
 
-  // Handle replanning from current trajectory
+  // planExploreTraj anchors the complete new plan to one live-odometry
+  // snapshot. A predicted sample from the previous command must not be
+  // prepended, otherwise the RTH guide and optimizer use different starts.
   auto info = &planner_manager_->local_data_;
-  if (!fd_->static_state_) {
-    double plan_finish_time_exp = (ros::Time::now() - info->start_time_).toSec() + fp_->replan_time_;
-    if (plan_finish_time_exp > info->duration_) {
-      plan_finish_time_exp = info->duration_;
-    }
-    Eigen::Vector3d start_exp = info->minco_traj_.getPos(plan_finish_time_exp);
-    path_next_goal.insert(path_next_goal.begin(), start_exp.cast<float>());
-  }
 
   // Resample path to avoid too long segments
   vector<Eigen::Vector3f> path_next_goal_tmp;
@@ -2220,7 +2247,8 @@ int FastExplorationFSM::callGoalPlanner() {
     local_reason_ = planner_manager_->last_plan_fail_reason_.empty()
                         ? "traj optimization failed"
                         : planner_manager_->last_plan_fail_reason_;
-    ROS_WARN_THROTTLE(2.0, "[RTH] local plan failed: %s", local_reason_.c_str());
+    EPIC_LOG_WARN_THROTTLE(2.0, "local.cycle",
+                           "RTH local plan failed: %s", local_reason_.c_str());
     result = FAIL;
   }
 

@@ -111,6 +111,7 @@ struct ExplorationParam {
   // 예산이 모자라면 그래프가 연결돼 있어도 "경로 없음"과 구분되지 않는다.
   double topo_cost_search_timeout_;  // getPathCost: TSP 비용 행렬용
   double goal_search_timeout_;       // planGoalPath: RTH/서비스 목표 경로용
+  int logging_detail_ = 1;           // global logging: 0 cycle .. 3 candidate
 };
 
 } // namespace fast_planner
