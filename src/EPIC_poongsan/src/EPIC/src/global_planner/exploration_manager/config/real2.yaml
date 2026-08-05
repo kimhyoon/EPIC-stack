@@ -170,9 +170,10 @@ lidar_perception/lidar_yaw: 0.0
 # world  = 이미 odom/map 등록된 점군. mount extrinsic 불필요.
 # sensor = 센서 프레임 raw 점군. 이때만 아래 sensor_mount_* 가 적용된다.
 lidar_perception/cloud_frame_mode: sensor
-# 병진 offset 만 별도 값이다 (회전은 위 lidar_pitch/lidar_yaw 가 단일 출처).
+# 병진 offset은 FC/body 좌표계 [x 전방, y 좌측, z 상방] 기준이다.
+# ML-X는 FC 원점보다 약 0.15 m 전방(+x)에 장착되어 있다.
 # cloud_frame_mode=sensor 일 때만 적용된다.
-lidar_perception/sensor_mount_offset: [0.0, 0.0, 0.0]
+lidar_perception/sensor_mount_offset: [0.15, 0.0, 0.0]
 
 # frontier/*, lidar_perception/* : Frontier 후보와 LiDAR 인식 모델 끝
 # ====================================================================
