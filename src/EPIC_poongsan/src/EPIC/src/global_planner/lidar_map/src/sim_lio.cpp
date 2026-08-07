@@ -118,6 +118,8 @@ int LIOInterface::clearFreeSpaceAlongRays(
   ray_ranges.reserve(current_world_cloud.points.size());
 
   float max_observed_range = 0.0f;
+  Eigen::Vector3f query_min = sensor_origin;
+  Eigen::Vector3f query_max = sensor_origin;
   for (const auto &endpoint : current_world_cloud.points) {
     const Eigen::Vector3f ray(endpoint.x - sensor_origin.x(),
                               endpoint.y - sensor_origin.y(),
@@ -132,6 +134,9 @@ int LIOInterface::clearFreeSpaceAlongRays(
                                         direction.z());
     ray_ranges.push_back(range);
     max_observed_range = std::max(max_observed_range, range);
+    const Eigen::Vector3f endpoint_position(endpoint.x, endpoint.y, endpoint.z);
+    query_min = query_min.cwiseMin(endpoint_position);
+    query_max = query_max.cwiseMax(endpoint_position);
   }
   if (ray_directions->points.empty()) {
     return 0;
@@ -144,10 +149,19 @@ int LIOInterface::clearFreeSpaceAlongRays(
   pcl::KdTreeFLANN<pcl::PointXYZ> direction_tree;
   direction_tree.setInputCloud(ray_directions);
 
+  // Every point inside a measured free-space tube lies within the AABB of the
+  // sensor origin and that tube's endpoint, expanded by the tube radius.  Query
+  // the union's enclosing AABB instead of the old origin +/- max-range cube so
+  // points behind or outside the current scan cannot enter the candidate loop.
+  // Box_Search uses a half-open upper bound, so add a small epsilon before the
+  // exact projection/radius checks below reject any extra candidates.
+  const float query_padding =
+      static_cast<float>(lp_->ray_clearing_radius_) +
+      std::max(1e-4f, static_cast<float>(lp_->vector_norm_eps_));
   BoxPointType query_box;
   for (int axis = 0; axis < 3; ++axis) {
-    query_box.vertex_min[axis] = sensor_origin(axis) - max_observed_range;
-    query_box.vertex_max[axis] = sensor_origin(axis) + max_observed_range;
+    query_box.vertex_min[axis] = query_min(axis) - query_padding;
+    query_box.vertex_max[axis] = query_max(axis) + query_padding;
   }
   PointVector candidates;
   ikd_Tree_map.Box_Search(query_box, candidates);
