@@ -1068,7 +1068,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
     const bool caution_attempts_exhausted =
         caution_map_reset_failure_count_ > 0 &&
         caution_escape_fail_count_ >= caution_map_reset_failure_count_;
-    if (caution_timed_out || caution_attempts_exhausted) {
+    if (caution_map_reset_enable_ &&
+        (caution_timed_out || caution_attempts_exhausted)) {
       char reason[192];
       snprintf(reason, sizeof(reason),
                "CAUTION escalation elapsed=%.2fs failed_escapes=%d",
@@ -1289,7 +1290,7 @@ void FastExplorationFSM::clearRthFailures() {
 }
 
 bool FastExplorationFSM::noteRthFailure(const std::string &reason) {
-  if (!has_goal_rth_ || state_ == MAP_REBUILD ||
+  if (!rth_map_reset_enable_ || !has_goal_rth_ || state_ == MAP_REBUILD ||
       rth_map_reset_failure_count_ <= 0)
     return false;
 
@@ -1599,10 +1600,12 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
-  nh.param("fsm/caution_map_reset_timeout", caution_map_reset_timeout_, 3.0);
+  nh.param("fsm/caution_map_reset_enable", caution_map_reset_enable_, true);
+  nh.param("fsm/caution_map_reset_timeout", caution_map_reset_timeout_, 6.0);
   nh.param("fsm/caution_map_reset_failure_count",
-           caution_map_reset_failure_count_, 5);
+           caution_map_reset_failure_count_, 10);
   nh.param("fsm/caution_retry_period", caution_retry_period_, 0.5);
+  nh.param("fsm/rth_map_reset_enable", rth_map_reset_enable_, true);
   nh.param("fsm/rth_map_reset_failure_count", rth_map_reset_failure_count_, 5);
   nh.param("fsm/rth_failure_window", rth_failure_window_, 3.0);
   nh.param("fsm/rth_failure_min_interval", rth_failure_min_interval_, 0.25);
@@ -1897,12 +1900,14 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
     param_lines_.push_back(l);
 
     snprintf(l, sizeof(l),
-             "map_recovery | caution_timeout=%.1fs caution_failures=%d "
-             "caution_retry=%.2fs rth_failures=%d/%.1fs "
+             "map_recovery | caution_enable=%d timeout=%.1fs failures=%d "
+             "retry=%.2fs rth_enable=%d failures=%d/%.1fs "
              "rebuild_min=%.1fs/%dscans",
+             caution_map_reset_enable_ ? 1 : 0,
              caution_map_reset_timeout_, caution_map_reset_failure_count_,
-             caution_retry_period_, rth_map_reset_failure_count_,
-             rth_failure_window_, map_rebuild_min_duration_,
+             caution_retry_period_, rth_map_reset_enable_ ? 1 : 0,
+             rth_map_reset_failure_count_, rth_failure_window_,
+             map_rebuild_min_duration_,
              map_rebuild_min_scans_);
     param_lines_.push_back(l);
 
