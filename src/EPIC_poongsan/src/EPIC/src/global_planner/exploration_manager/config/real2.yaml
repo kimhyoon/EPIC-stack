@@ -594,6 +594,19 @@ fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 �
 fsm/finish_hover_duration: 3.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
 fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
 
+# ── CAUTION/RTH map recovery ─────────────────────────────────────────
+# 기존 certified escape/ray clearing이 작은 불일치를 우선 처리한다. 그래도
+# CAUTION을 못 빠져나오거나 RTH 계획 실패가 짧은 시간에 반복되면 occupancy epoch를
+# 비우고, 새 scan과 live topology가 다시 연결될 때까지 현재 pose/yaw를 hold한다.
+fsm/caution_map_reset_timeout: 3.0       # CAUTION 연속 체류 후 reset [s]
+fsm/caution_map_reset_failure_count: 5  # certified escape 누적 실패 후 reset
+fsm/caution_retry_period: 0.5            # 서로 다른 관측 사이의 escape 재시도 간격 [s]
+fsm/rth_map_reset_failure_count: 5       # 아래 rolling window 안의 RTH 실패 횟수
+fsm/rth_failure_window: 3.0              # RTH 실패 rolling window [s]
+fsm/rth_failure_min_interval: 0.25       # 같은 실패를 과도하게 중복 집계하지 않는 간격 [s]
+fsm/map_rebuild_min_duration: 1.0        # reset 후 planning 재개 전 최소 hold [s]
+fsm/map_rebuild_min_scans: 10            # reset 이후 필요한 synchronized cloud+odom 수
+
 # [조기 종료 결론 유예]
 # NO_FRONTIER 는 '탐사 완료'와 '맵이 아직 안 참'을 구분하지 못한다. 첫
 # NO_FRONTIER 시점부터 이 시간 동안은 그 결론을 믿지 않는다. 그 전에

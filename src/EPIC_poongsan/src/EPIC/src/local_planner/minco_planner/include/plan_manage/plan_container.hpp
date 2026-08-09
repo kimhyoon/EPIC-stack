@@ -41,10 +41,11 @@ struct LocalTrajData {
   Eigen::Vector3d curr_vel_ = Eigen::Vector3d::Zero();
   double curr_yaw_ = 0.0;
   double end_yaw_ = 0.0;
-  // Semantic marker for the zero-translation recovery trajectory synthesized
-  // when the observed corridor admits no forward progress.  Keeping this in
-  // LocalTrajData makes backup/restore preserve the marker together with the
-  // trajectory it describes.
+  // Semantic marker for a certified near-zero-translation yaw trajectory. This
+  // covers both the corridor fallback and a normal plan whose viewpoint is
+  // already at the current position. Keeping this in LocalTrajData makes
+  // backup/restore preserve the marker together with the trajectory it
+  // describes.
   bool rotate_in_place_ = false;
   // Semantic + geometric certificate for a CAUTION-owned escape.  The first
   // trajectory may start inside the configured obstacle margin, but it must

@@ -42,6 +42,11 @@ int FastExplorationFSM::callExplorationPlanner() {
     return START_FAIL;
   if (expl_manager_->ed_->global_tour_.size() < 2)
     return NO_FRONTIER;
+  if (!expl_manager_->ed_->next_goal_node_) {
+    local_reason_ = "global tour has no virtual goal node";
+    EPIC_LOG_ERROR("local.cycle", "%s", local_reason_.c_str());
+    return FAIL;
+  }
 
   // debug
   if (planner_manager_->lidar_map_interface_->getDisToOcc(expl_manager_->ed_->next_goal_node_->center_) <=
@@ -134,6 +139,7 @@ bool FastExplorationFSM::startMission(const std::string &source) {
   if (state_ != WAIT_TRIGGER)
     return false;
   early_finish_count_ = 0;
+  clearRthFailures();
   early_finish_force_requested_ = false;
   clearEarlyFinishPath("IDLE");
   traveled_distance_ = 0.0;
@@ -201,7 +207,7 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   // its exact start can already be inside the soft/hard margin.  Its owning
   // FSM therefore checks the certified raw-to-soft escape below instead of
   // feeding that unavoidable t=0 condition to the ordinary checker.
-  bool safe = rotate_hold || state_ == CAUTION ||
+  bool safe = rotate_hold || state_ == CAUTION || state_ == MAP_REBUILD ||
               planner_manager_->checkTrajCollision(collision_time);
   // CAUTION 은 스스로 풀릴 때까지 건드리지 않는다. CAUTION 은 flyToSafeRegion 으로
   // 탈출 궤적을 만들고, 그게 실제로 기체를 안전거리 밖으로 빼놓았는지를
@@ -233,6 +239,7 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
       stopTraj();
       caution_phase_ = CAUTION_IDLE;
       caution_escape_traj_id_ = 0;
+      ++caution_escape_fail_count_;
     }
   }
   // 맵 갱신/odom 갱신/frontier 갱신 등 이 콜백의 나머지 일은 CAUTION 중에도 그대로 돈다.
@@ -241,7 +248,10 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
   // 마지막 궤적이 그대로 남아 있고, 기체가 지면에 가까워질수록 그 궤적은 당연히
   // 충돌검사를 통과하지 못한다. 그걸 근거로 PLAN_TRAJ_EXP 로 튀면 AUTO.LAND 재요청
   // 루프와 착지(disarm) 감지가 통째로 중단되어 착륙이 취소된다.
-  if (!safe && state_ != CAUTION && state_ != LAND && state_ != LANDED) {
+  // PILOT_OVERRIDE 는 terminal latch 이므로 cloud collision 결과도 상태를 다시
+  // PLAN_TRAJ_* 로 바꾸지 못한다.
+  if (!safe && state_ != CAUTION && state_ != MAP_REBUILD &&
+      state_ != LAND && state_ != LANDED && state_ != PILOT_OVERRIDE) {
     const bool rotate_needs_escape =
         planner_manager_->local_data_.rotate_in_place_ &&
         planner_manager_->lidar_map_interface_->getDisToOcc(
@@ -258,6 +268,9 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
                  .toSec());
     const double collision_eta =
         std::max(0.0, collision_time - trajectory_elapsed);
+    if (has_goal_rth_ && !rotate_needs_escape &&
+        noteRthFailure("cloud trajectory collision"))
+      return;
     transitState(next_state,
                  "safetyCallback: not safe, traj_time:" +
                      to_string(collision_time) +
@@ -321,12 +334,23 @@ void FastExplorationFSM::CloudOdomCallback(const sensor_msgs::PointCloud2ConstPt
 }
 
 void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, bool red) {
+  // Once control has left OFFBOARD the planner must not silently resume from a
+  // timer, cloud callback, or service. A new mission requires a planner restart.
+  if (state_ == PILOT_OVERRIDE && new_state != PILOT_OVERRIDE) {
+    EPIC_LOG_WARN_THROTTLE(2.0, "execution.fsm",
+                           "ignoring state transition out of PILOT_OVERRIDE to %d (%s)",
+                           int(new_state), pos_call.c_str());
+    return;
+  }
   int pre_s = int(state_);
   const std::string previous = fd_->state_str_[pre_s];
   const std::string next = fd_->state_str_[int(new_state)];
   if (new_state == CAUTION && state_ != CAUTION) {
     caution_phase_ = CAUTION_IDLE;
     caution_escape_traj_id_ = 0;
+    caution_enter_time_ = ros::Time::now();
+    caution_last_attempt_time_ = ros::Time(0);
+    caution_escape_fail_count_ = 0;
   }
   state_ = new_state;
   // 이벤트 로거가 상태전이를 기록한다. PLAN<->EXEC 리플랜 플래핑 같은 A<->B 교대

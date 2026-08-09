@@ -225,6 +225,10 @@ public:
   void updateSkeleton();
   void updateHistoricalOdoms();
   void updateOdomNode(Eigen::Vector3f &odom_pos, float &yaw);
+  // Preserve the flown breadcrumb topology for RTH, but detach the live odom
+  // node and clear stale edge-failure latches before validating it against a
+  // freshly rebuilt occupancy map.
+  void prepareForMapRebuild(const Eigen::Vector3f &odom_pos, float yaw);
   Eigen::Vector3f min_bd, max_bd, map_bd_min, map_bd_max;
   double min_x_, min_y_, min_z_; // 最小格子尺寸
   double frt_bubble_radius_;

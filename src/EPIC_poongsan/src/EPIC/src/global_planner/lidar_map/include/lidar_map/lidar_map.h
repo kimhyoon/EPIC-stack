@@ -4,6 +4,7 @@
 #include "lidar_map/ikd_Tree.h"
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
+#include <cstdint>
 #include <geometry_msgs/PoseStamped.h>
 #include <memory>
 #include <message_filters/subscriber.h>
@@ -62,6 +63,11 @@ public:
                  PointVector &pts);
   bool updateCloudMapOdometry(const sensor_msgs::PointCloud2ConstPtr &msg,
                               const nav_msgs::Odometry::ConstPtr &odom_);
+  // Runtime recovery hook: invalidate every occupancy point through ikd-tree's
+  // normal deletion API. The next synchronized clouds repopulate the same tree
+  // incrementally; no sensor/node restart is required.
+  int resetOccupancyMap();
+  int mapPointCount() { return ikd_Tree_map.validnum(); }
   unique_ptr<LIOInterfaceParam> lp_;
   unique_ptr<LIOInterfaceData> ld_;
 
@@ -135,6 +141,8 @@ struct LIOInterfaceParam {
 struct LIOInterfaceData {
   bool map_update;
   bool first_map_flag_;
+  uint64_t map_epoch_ = 0;
+  uint64_t map_update_seq_ = 0;
   Eigen::Vector3f lidar_pose_;
   Eigen::Quaternionf lidar_q_;
   Eigen::Vector3f lidar_vel_;

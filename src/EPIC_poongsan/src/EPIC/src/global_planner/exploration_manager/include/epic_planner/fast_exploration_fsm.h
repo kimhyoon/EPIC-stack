@@ -12,6 +12,8 @@
 #include <Eigen/Eigen>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <deque>
 #include <epic_planner/fast_exploration_manager.h>
 #include <iostream>
 #include <memory>
@@ -101,8 +103,10 @@ private:
 // YAW_ROTATE_INIT: 이륙 호버 지점을 유지한 채 제자리에서 360도 회전해 주변을 한
 //         바퀴 관측한 뒤 탐사를 시작한다. 이륙 직후 맵이 비어 frontier 가 0개로
 //         보이는 상황에 대한 사전 예방이다 (EARLY_FINISH 는 같은 문제의 사후 구제).
+// PILOT_OVERRIDE: 비행 중 PX4 가 OFFBOARD 를 벗어나면 조종자/비행 컨트롤러가
+//         소유권을 가져간 것으로 보고 planner 를 영구 동결하는 terminal 상태.
 //         새 enum 도 END 에 추가해 기존 인덱스를 건드리지 않는다.
-enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH, YAW_ROTATE_INIT };
+enum EXPL_STATE { INIT, WAIT_TRIGGER, PLAN_TRAJ_EXP, PLAN_TRAJ_RTH, CAUTION, EXEC_TRAJ, FINISH, LAND, TAKEOFF_HOVER, LANDED, EARLY_FINISH, YAW_ROTATE_INIT, PILOT_OVERRIDE, MAP_REBUILD };
 
 class FastExplorationFSM {
 private:
@@ -121,6 +125,33 @@ private:
   enum CAUTION_PHASE { CAUTION_IDLE, CAUTION_EXEC_ESCAPE };
   CAUTION_PHASE caution_phase_ = CAUTION_IDLE;
   int caution_escape_traj_id_ = 0;
+  ros::Time caution_enter_time_;
+  ros::Time caution_last_attempt_time_;
+  int caution_escape_fail_count_ = 0;
+  double caution_map_reset_timeout_ = 3.0;
+  int caution_map_reset_failure_count_ = 5;
+  double caution_retry_period_ = 0.5;
+
+  // A map epoch reset is a bounded recovery state, not an instantaneous jump
+  // back into planning. Hold the vehicle until fresh synchronized scans have
+  // repopulated occupancy and reconnected the live odom node to topology.
+  ros::Time map_rebuild_start_time_;
+  uint64_t map_rebuild_start_update_seq_ = 0;
+  Eigen::Vector3d map_rebuild_hold_pos_ = Eigen::Vector3d::Zero();
+  double map_rebuild_hold_yaw_ = 0.0;
+  EXPL_STATE map_rebuild_resume_state_ = PLAN_TRAJ_EXP;
+  double map_rebuild_min_duration_ = 1.0;
+  int map_rebuild_min_scans_ = 10;
+  int map_reset_count_ = 0;
+  ros::Time map_rebuild_last_status_time_;
+
+  // RTH failures are counted in a short rolling window. Sparse failures age
+  // out; a tight replan/collision loop causes exactly one map rebuild.
+  std::deque<ros::Time> rth_failure_times_;
+  ros::Time last_rth_failure_time_;
+  double rth_failure_window_ = 3.0;
+  double rth_failure_min_interval_ = 0.25;
+  int rth_map_reset_failure_count_ = 5;
 
   bool classic_;
 
@@ -131,6 +162,9 @@ private:
   ros::Publisher stop_pub_, new_pub_, replan_pub_, poly_traj_pub_, heartbeat_pub_, time_cost_pub_, poly_yaw_traj_pub_, static_pub_, state_pub_,
   land_pub_, rth_metrics_pub_, hover_cmd_pub_;
   ros::Publisher early_finish_state_pub_;
+  // Latched asynchronous result for /srv_reset_map. Operators and bag tests
+  // can distinguish STARTED/WAITING/COMPLETE without scraping console logs.
+  ros::Publisher map_rebuild_status_pub_;
   // exploration debug HUD: text marker (rviz) + string (logging/bag)
   // + 기계 파싱용 key=value 진단 (record_on_goal 이 epic.log 로 기록)
   ros::Publisher diag_pub_, diag_str_pub_, diag_kv_pub_;
@@ -157,6 +191,17 @@ private:
   ros::ServiceServer srv_early_finish_;
   bool earlyFinishServiceCallback(std_srvs::Trigger::Request &req,
                                   std_srvs::Trigger::Response &res);
+  // Operator/test hook. Automatic CAUTION/RTH escalation calls the same
+  // implementation, so bag validation exercises the production reset path.
+  ros::ServiceServer srv_reset_map_;
+  bool resetMapServiceCallback(std_srvs::Trigger::Request &req,
+                               std_srvs::Trigger::Response &res);
+  bool beginMapRebuild(const std::string &reason,
+                       bool force_return_home = false);
+  void publishMapRebuildStatus(const std::string &phase,
+                               const std::string &detail);
+  bool noteRthFailure(const std::string &reason);
+  void clearRthFailures();
   void logGlobalPlanEvent(int res, double t_ms); // GLOBAL 이벤트 공통 발행
   bool verbose_console_ = false;      // true 면 기존 타이밍 cout/INFO 유지
   /* [feature: astar-profile] A* 탐색 소요시간 분포 발행.

@@ -454,6 +454,9 @@ public:
 
   void init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface,
             TopoGraph::Ptr graph);
+  // Drop every observation-derived frontier cache after an occupancy-map epoch
+  // reset. Sampling parameters and the historical topology graph are retained.
+  void resetForMapRebuild();
   // unordered_map<int, ClusterInfo::Ptr> new_clusters_;
   std::list<ClusterInfo::Ptr> cluster_list_;
   VpPipelineStats vp_stats_; // 마지막 generateTSPViewpoints 단계별 통계
