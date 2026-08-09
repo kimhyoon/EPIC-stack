@@ -598,9 +598,9 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       finish_hover_yaw_ = fd_->odom_yaw_;
       stopTraj();
       if (traj_server_owns_finish_cmd_) {
-        hover_cmd_pub_.shutdown();
         EPIC_LOG_INFO(1, 1, "execution.fsm",
-                      "mission finish: trajectory server owns position hold");
+                      "mission finish: trajectory server owns position hold; "
+                      "FSM hold publisher kept ready for later recovery");
       }
       // 탐사 종료 요약. 클러스터가 남아있는데 끝났다면 "조기 종료 의심"을 명시
       // (INC1: clusters 17 / reach 0 로 FINISH -> 이게 이번 사고의 1번 원인이었음).
@@ -653,7 +653,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
 
     if ((ros::Time::now() - finish_hover_start_).toSec() >= finish_hover_duration_) {
       goal_rth_ << takeoff_anchor_.x(), takeoff_anchor_.y(), takeoff_anchor_.z(),
-          takeoff_yaw_;
+          fd_->odom_yaw_;
       has_goal_rth_ = true;
       returning_home_ = true;       // routes the RTH goal-reached to LAND
       explore_finished_ = false;    // consume the latch (don't retrigger this sequence)
@@ -822,8 +822,10 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   case PLAN_TRAJ_RTH: {
     if (!has_goal_rth_)
       return;
-    if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty())
+    if (planner_manager_->topo_graph_->odom_node_->neighbors_.empty()) {
+      noteRthFailure("odom node has no topology neighbor");
       return;
+    }
 
     // Check if goal reached. Auto return-home uses an xy-only tolerance (we want to
     // be above the takeoff point, then let AUTO.LAND handle the descent); a manual
@@ -904,11 +906,17 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       fd_->half_resolution = false;
 
     } else if (res == FAIL) {
+      if (noteRthFailure(local_reason_.empty() ? "local planner failed"
+                                               : local_reason_))
+        break;
       // Still in PLAN_TRAJ_RTH state, keep replanning
       stopTraj();
       transitState(PLAN_TRAJ_RTH, "PLAN_TRAJ_RTH: plan failed", true);
 
     } else if (res == START_FAIL) {
+      if (noteRthFailure(local_reason_.empty() ? "RTH start failed"
+                                               : local_reason_))
+        break;
       transitState(CAUTION, "PLAN_TRAJ_RTH: start failed", true);
     }
     break;
@@ -936,6 +944,9 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
                    .toSec());
       const double collision_eta =
           std::max(0.0, collision_time - trajectory_elapsed);
+      if (has_goal_rth_ && !rotate_needs_escape &&
+          noteRthFailure("executing RTH trajectory became unsafe"))
+        break;
       transitState(next_state,
                    "safetyCallback: not safe, traj_time:" +
                        to_string(collision_time) +
@@ -1028,6 +1039,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       // observed-space FIRI from the current pose.
       caution_phase_ = CAUTION_IDLE;
       caution_escape_traj_id_ = 0;
+      ++caution_escape_fail_count_;
     }
 
     const double dis2occ =
@@ -1045,9 +1057,45 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       break;
     }
 
+    const ros::Time caution_now = ros::Time::now();
+    const double caution_elapsed =
+        caution_enter_time_.isZero()
+            ? 0.0
+            : (caution_now - caution_enter_time_).toSec();
+    const bool caution_timed_out =
+        caution_map_reset_timeout_ > 0.0 &&
+        caution_elapsed >= caution_map_reset_timeout_;
+    const bool caution_attempts_exhausted =
+        caution_map_reset_failure_count_ > 0 &&
+        caution_escape_fail_count_ >= caution_map_reset_failure_count_;
+    if (caution_timed_out || caution_attempts_exhausted) {
+      char reason[192];
+      snprintf(reason, sizeof(reason),
+               "CAUTION escalation elapsed=%.2fs failed_escapes=%d",
+               caution_elapsed, caution_escape_fail_count_);
+      // Reaching an occupancy epoch reset means the exploration map can no
+      // longer be trusted as mission history.  Rebuild enough live geometry to
+      // move safely, then abort exploration and return home.  A CAUTION escape
+      // that succeeds before this point still resumes its original mission.
+      beginMapRebuild(reason, true);
+      exec_timer_.start();
+      break;
+    }
+
+    // A failed strict-FIRI solve is expensive and cannot improve until more
+    // sensor data arrives. Bound retry rate so the failure counter represents
+    // distinct map observations instead of a 100 Hz busy loop.
+    if (!caution_last_attempt_time_.isZero() &&
+        (caution_now - caution_last_attempt_time_).toSec() <
+            caution_retry_period_) {
+      exec_timer_.start();
+      break;
+    }
+
     stopTraj();
     // Recovery must be anchored at the actual current odometry, never a
     // predicted point on the trajectory that just failed.
+    caution_last_attempt_time_ = caution_now;
     bool success = planner_manager_->flyToSafeRegion(true);
     if (success) {
       traj_utils::PolyTraj poly_traj_msg;
@@ -1076,8 +1124,59 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       poly_traj_pub_.publish(fd_->newest_traj_);
       caution_phase_ = CAUTION_EXEC_ESCAPE;
       caution_escape_traj_id_ = info->traj_id_;
+    } else {
+      ++caution_escape_fail_count_;
     }
     exec_timer_.start();
+    break;
+  }
+  case MAP_REBUILD: {
+    // Keep the arrival heading: map recovery never commands a yaw turn.
+    pubHoldCmd(map_rebuild_hold_pos_, map_rebuild_hold_yaw_);
+    auto lio = planner_manager_->lidar_map_interface_;
+    const uint64_t scans = lio->ld_->map_update_seq_ -
+                           map_rebuild_start_update_seq_;
+    const int points = lio->mapPointCount();
+    const bool topology_ready = planner_manager_->topo_graph_->odom_node_ &&
+        !planner_manager_->topo_graph_->odom_node_->neighbors_.empty();
+    const double elapsed =
+        (ros::Time::now() - map_rebuild_start_time_).toSec();
+    const bool ready = elapsed >= map_rebuild_min_duration_ &&
+                       scans >= static_cast<uint64_t>(map_rebuild_min_scans_) &&
+                       points > 0 && topology_ready;
+    if (ready) {
+      char detail[192];
+      snprintf(detail, sizeof(detail),
+               "epoch=%llu elapsed=%.2fs scans=%llu points=%d topo_neighbors=%zu",
+               static_cast<unsigned long long>(lio->ld_->map_epoch_), elapsed,
+               static_cast<unsigned long long>(scans), points,
+               planner_manager_->topo_graph_->odom_node_->neighbors_.size());
+      elog_.log("MAP_RESET", "rebuild complete; planning resumed", detail,
+                0.0, EventLogger::L_INFO, true);
+      EPIC_LOG_INFO(1, 1, "execution.fsm", "MAP_REBUILD complete %s", detail);
+      publishMapRebuildStatus("COMPLETE", detail);
+      fd_->static_state_ = true;
+      transitState(map_rebuild_resume_state_,
+                   "MAP_REBUILD: fresh map/topology ready");
+    } else {
+      const ros::Time now = ros::Time::now();
+      if (map_rebuild_last_status_time_.isZero() ||
+          (now - map_rebuild_last_status_time_).toSec() >= 1.0) {
+        char status[192];
+        snprintf(status, sizeof(status),
+                 "epoch=%llu elapsed=%.2fs scans=%llu/%d points=%d topo=%d",
+                 static_cast<unsigned long long>(lio->ld_->map_epoch_), elapsed,
+                 static_cast<unsigned long long>(scans), map_rebuild_min_scans_,
+                 points, topology_ready ? 1 : 0);
+        publishMapRebuildStatus("WAITING", status);
+        map_rebuild_last_status_time_ = now;
+      }
+      EPIC_LOG_INFO_THROTTLE(
+          1.0, 1, 1, "execution.fsm",
+          "MAP_REBUILD waiting elapsed=%.2fs scans=%llu/%d points=%d topo=%d",
+          elapsed, static_cast<unsigned long long>(scans),
+          map_rebuild_min_scans_, points, topology_ready ? 1 : 0);
+    }
     break;
   }
   case LAND: {
@@ -1174,11 +1273,175 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
               EventLogger::L_INFO);
     break;
   }
+
+  case PILOT_OVERRIDE: {
+    // Terminal latch. PX4/pilot owns the vehicle now; keep publishing the state
+    // heartbeat, but never plan, replace a trajectory, or leave this state.
+    global_path_update_timer_.stop();
+    break;
   }
+  }
+}
+
+void FastExplorationFSM::clearRthFailures() {
+  rth_failure_times_.clear();
+  last_rth_failure_time_ = ros::Time(0);
+}
+
+bool FastExplorationFSM::noteRthFailure(const std::string &reason) {
+  if (!has_goal_rth_ || state_ == MAP_REBUILD ||
+      rth_map_reset_failure_count_ <= 0)
+    return false;
+
+  const ros::Time now = ros::Time::now();
+  if (!last_rth_failure_time_.isZero() &&
+      (now - last_rth_failure_time_).toSec() < rth_failure_min_interval_)
+    return false;
+  last_rth_failure_time_ = now;
+
+  while (!rth_failure_times_.empty() &&
+         (now - rth_failure_times_.front()).toSec() > rth_failure_window_)
+    rth_failure_times_.pop_front();
+  rth_failure_times_.push_back(now);
+
+  char detail[224];
+  snprintf(detail, sizeof(detail), "count=%zu/%d window=%.1fs reason=%s",
+           rth_failure_times_.size(), rth_map_reset_failure_count_,
+           rth_failure_window_, reason.c_str());
+  elog_.log("RTH", "repeated planning/safety failure", detail, 0.5,
+            EventLogger::L_WARN);
+  if (static_cast<int>(rth_failure_times_.size()) <
+      rth_map_reset_failure_count_)
+    return false;
+
+  return beginMapRebuild(std::string("RTH repeated failures: ") + reason);
+}
+
+bool FastExplorationFSM::beginMapRebuild(const std::string &reason,
+                                         bool force_return_home) {
+  if (!fd_->have_odom_ || state_ == PILOT_OVERRIDE || state_ == LAND ||
+      state_ == LANDED || state_ == MAP_REBUILD)
+    return false;
+
+  auto lio = planner_manager_->lidar_map_interface_;
+  const int points_before = lio->mapPointCount();
+  map_rebuild_hold_pos_ = fd_->odom_pos_.cast<double>();
+  map_rebuild_hold_yaw_ = fd_->odom_yaw_;
+
+  if (force_return_home) {
+    // A CAUTION severe enough to discard the occupancy epoch is a degraded
+    // mission, not a reason to rediscover the cleared frontier history.  Arm
+    // the same return-home-and-land path as /srv_rth, preserving the arrival
+    // yaw policy by seeding the goal with the current heading.
+    Eigen::Vector3d home = takeoff_anchor_;
+    if (fp_->takeoff_height_ <= 0.0) {
+      home = Eigen::Vector3d(
+          0.0, 0.0, std::max(0.5, static_cast<double>(fd_->odom_pos_.z())));
+    }
+    goal_rth_ << home.x(), home.y(), home.z(), fd_->odom_yaw_;
+    has_goal_rth_ = true;
+    returning_home_ = true;
+    explore_finished_ = false;
+    if (early_finish_active_)
+      clearEarlyFinishPath("ABORTED_BY_CAUTION_MAP_RESET");
+
+    char rth_detail[192];
+    snprintf(rth_detail, sizeof(rth_detail),
+             "map reset degraded mission; RTH armed home=(%.2f, %.2f, %.2f)",
+             home.x(), home.y(), home.z());
+    elog_.log("RTH", "CAUTION map reset forced return home", rth_detail,
+              0.0, EventLogger::L_WARN, true);
+    EPIC_LOG_WARN("execution.fsm", "%s", rth_detail);
+  }
+
+  // CAUTION escalation above is latched to RTH. An RTH-triggered reset already
+  // has has_goal_rth_ set and therefore also resumes RTH. Manual resets issued
+  // during takeoff/yaw/finish retain their owning state instead of unexpectedly
+  // starting exploration.
+  if (has_goal_rth_)
+    map_rebuild_resume_state_ = PLAN_TRAJ_RTH;
+  else if (state_ == TAKEOFF_HOVER || state_ == YAW_ROTATE_INIT ||
+           state_ == FINISH || state_ == EARLY_FINISH)
+    map_rebuild_resume_state_ = state_;
+  else
+    map_rebuild_resume_state_ = PLAN_TRAJ_EXP;
+
+  stopTraj();
+  global_path_update_timer_.stop();
+  fd_->static_state_ = true;
+  caution_phase_ = CAUTION_IDLE;
+  caution_escape_traj_id_ = 0;
+
+  // Old global/local plans point into frontier/topology decisions made in the
+  // previous occupancy epoch. Do not let a stale goal run while the map fills.
+  auto ed = expl_manager_->ed_;
+  ed->local_tour_.clear();
+  ed->global_tour_.clear();
+  ed->path_next_goal_.clear();
+  // next_goal_node_ is a persistent virtual-goal adapter allocated once by
+  // FastExplorationManager.  planGlobalPath()/updateGoalNode() repositions and
+  // reconnects this same object for every new tour.  Clearing the pointer here
+  // makes the first post-rebuild PLAN_TRAJ_EXP tick dereference null before a
+  // new local trajectory is published.  Clearing global_tour_ is sufficient to
+  // prevent the old goal from being executed while the new epoch is warming.
+  ed->diag_result_ = "MAP_REBUILD";
+  ed->diag_reason_ = reason;
+
+  expl_manager_->frontier_manager_ptr_->resetForMapRebuild();
+  planner_manager_->topo_graph_->prepareForMapRebuild(
+      fd_->odom_pos_, fd_->odom_yaw_);
+  const int deleted = lio->resetOccupancyMap();
+  const int points_after = lio->mapPointCount();
+  map_rebuild_start_update_seq_ = lio->ld_->map_update_seq_;
+  map_rebuild_start_time_ = ros::Time::now();
+  map_rebuild_last_status_time_ = ros::Time(0);
+  ++map_reset_count_;
+  clearRthFailures();
+
+  char detail[320];
+  snprintf(detail, sizeof(detail),
+           "reason=%s reset_count=%d epoch=%llu points=%d->%d deleted=%d "
+           "hold=(%.2f,%.2f,%.2f) yaw=%.2f resume=%s",
+           reason.c_str(), map_reset_count_,
+           static_cast<unsigned long long>(lio->ld_->map_epoch_),
+           points_before, points_after, deleted, map_rebuild_hold_pos_.x(),
+           map_rebuild_hold_pos_.y(), map_rebuild_hold_pos_.z(),
+           map_rebuild_hold_yaw_,
+           fd_->state_str_[int(map_rebuild_resume_state_)].c_str());
+  elog_.log("MAP_RESET", "occupancy epoch reset; rebuilding", detail, 0.0,
+            EventLogger::L_WARN, true);
+  EPIC_LOG_WARN("execution.fsm", "MAP_RESET %s", detail);
+  publishMapRebuildStatus("STARTED", detail);
+
+  transitState(MAP_REBUILD, reason, true);
+  // Cloud callbacks refill map/frontiers. The global timer only rebuilds
+  // topology while MAP_REBUILD owns the vehicle.
+  global_path_update_timer_.start();
+  return true;
+}
+
+void FastExplorationFSM::publishMapRebuildStatus(
+    const std::string &phase, const std::string &detail) {
+  std_msgs::String msg;
+  msg.data = "phase=" + phase + " " + detail;
+  map_rebuild_status_pub_.publish(msg);
 }
 
 void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw,
                                     double yaw_dot) {
+  // FINISH may hand command ownership to traj_server, but later transitions
+  // (EARLY_FINISH -> exploration -> MAP_REBUILD, for example) can require the
+  // FSM hold stream again. Never let a stale/shutdown publisher turn a recovery
+  // request into a roscpp assertion. Keeping the original publisher alive is
+  // the normal path; this is a defensive repair for any future shutdown.
+  if (!hover_cmd_pub_) {
+    ros::NodeHandle nh;
+    hover_cmd_pub_ =
+        nh.advertise<quadrotor_msgs::PositionCommand>("/position_cmd", 50);
+    EPIC_LOG_WARN("execution.fsm",
+                  "hold publisher was invalid; re-advertised /position_cmd");
+  }
+
   // Hold (p, yaw) as a position setpoint. px4_ctrl_bridge forwards this on
   // /position_cmd (it ignores the velocity field), so the drone holds pose. Yaw is
   // fixed (yaw_dot=0) -> no rotation. Mirrors traj_server's /position_cmd convention.
@@ -1244,6 +1507,7 @@ void FastExplorationFSM::mavrosStateCallback(const mavros_msgs::State::ConstPtr 
   const bool mode_changed = px4_seen_ && (msg->mode != px4_state_.mode);
   const bool armed_changed = px4_seen_ && (msg->armed != px4_state_.armed);
   const std::string prev_mode = px4_state_.mode;
+  const bool prev_armed = px4_state_.armed;
   px4_state_ = *msg;
   if (!px4_seen_) {
     px4_seen_ = true;
@@ -1262,6 +1526,43 @@ void FastExplorationFSM::mavrosStateCallback(const mavros_msgs::State::ConstPtr 
     if (left_offboard)
       sig += " (LEFT OFFBOARD: pilot takeover or failsafe)";
     elog_.log("PX4", sig, "prev=" + prev_mode, 0.0, lvl);
+
+    // OFFBOARD 이탈은 PX4/조종자가 제어권을 가져갔다는 뜻이다. 미션 중에만
+    // terminal PILOT_OVERRIDE 로 latch 한다. LAND 는 의도적으로 AUTO.LAND 로
+    // mode 를 바꾸는 정상 경로이므로 아래 active-state 목록에서 제외한다.
+    const bool lost_offboard_control =
+        prev_mode == "OFFBOARD" &&
+        (msg->mode != "OFFBOARD" || (prev_armed && !msg->armed));
+    const bool planner_owned_flight =
+        state_ == TAKEOFF_HOVER || state_ == YAW_ROTATE_INIT ||
+        state_ == PLAN_TRAJ_EXP || state_ == EXEC_TRAJ || state_ == CAUTION ||
+        state_ == FINISH || state_ == EARLY_FINISH || state_ == PLAN_TRAJ_RTH ||
+        state_ == MAP_REBUILD;
+    if (lost_offboard_control && fd_ && fd_->trigger_ && planner_owned_flight) {
+      // Cut the trajectory server's current command short. PX4 already ignores
+      // it outside OFFBOARD, and after the command becomes stale the bridge's
+      // fallback is current-pose hold if OFFBOARD is ever selected again.
+      stopTraj();
+      global_path_update_timer_.stop();
+      fd_->static_state_ = true;
+      fd_->trigger_ = false;
+      has_goal_rth_ = false;
+      returning_home_ = false;
+      explore_finished_ = false;
+      caution_phase_ = CAUTION_IDLE;
+      caution_escape_traj_id_ = 0;
+      early_finish_force_requested_ = false;
+      if (early_finish_active_)
+        clearEarlyFinishPath("ABORTED_BY_PILOT_OVERRIDE");
+      have_avoid_flag_ = false;
+      avoid_flag_ = 0;
+
+      transitState(PILOT_OVERRIDE,
+                   "PX4 left OFFBOARD: planner frozen by pilot override", true);
+      elog_.log("MISSION", "ABORTED/PILOT_OVERRIDE",
+                "PX4 control left OFFBOARD; restart planner node to run a new mission",
+                0.0, EventLogger::L_WARN, true);
+    }
   }
 }
 
@@ -1298,6 +1599,24 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
+  nh.param("fsm/caution_map_reset_timeout", caution_map_reset_timeout_, 3.0);
+  nh.param("fsm/caution_map_reset_failure_count",
+           caution_map_reset_failure_count_, 5);
+  nh.param("fsm/caution_retry_period", caution_retry_period_, 0.5);
+  nh.param("fsm/rth_map_reset_failure_count", rth_map_reset_failure_count_, 5);
+  nh.param("fsm/rth_failure_window", rth_failure_window_, 3.0);
+  nh.param("fsm/rth_failure_min_interval", rth_failure_min_interval_, 0.25);
+  nh.param("fsm/map_rebuild_min_duration", map_rebuild_min_duration_, 1.0);
+  nh.param("fsm/map_rebuild_min_scans", map_rebuild_min_scans_, 10);
+  caution_map_reset_timeout_ = std::max(0.0, caution_map_reset_timeout_);
+  caution_map_reset_failure_count_ =
+      std::max(0, caution_map_reset_failure_count_);
+  caution_retry_period_ = std::max(0.05, caution_retry_period_);
+  rth_map_reset_failure_count_ = std::max(0, rth_map_reset_failure_count_);
+  rth_failure_window_ = std::max(0.1, rth_failure_window_);
+  rth_failure_min_interval_ = std::max(0.05, rth_failure_min_interval_);
+  map_rebuild_min_duration_ = std::max(0.0, map_rebuild_min_duration_);
+  map_rebuild_min_scans_ = std::max(1, map_rebuild_min_scans_);
   // EARLY_FINISH (조기 종료 구제). 기본값은 기존 동작과 같도록 잡되 enable 은 true —
   // 끄려면 fsm/early_finish_enable: false.
   nh.param("fsm/early_finish_enable", early_finish_enable_, true);
@@ -1347,7 +1666,7 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   fd_->state_str_ = {"INIT",      "WAIT_TRIGGER", "PLAN_TRAJ_EXP", "PLAN_TRAJ_RTH",
                      "CAUTION",   "EXEC_TRAJ",    "FINISH",        "LAND",
                      "TAKEOFF_HOVER", "LANDED",   "EARLY_FINISH",
-                     "YAW_ROTATE_INIT"};
+                     "YAW_ROTATE_INIT", "PILOT_OVERRIDE", "MAP_REBUILD"};
   fd_->static_state_ = true;
   fd_->trigger_ = false;
   fd_->use_bubble_a_star_ = false;
@@ -1380,6 +1699,11 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   // Force the EARLY_FINISH recovery path for field/debug validation.
   srv_early_finish_ = nh.advertiseService(
       "/srv_early_finish", &FastExplorationFSM::earlyFinishServiceCallback, this);
+  srv_reset_map_ = nh.advertiseService(
+      "/srv_reset_map", &FastExplorationFSM::resetMapServiceCallback, this);
+  map_rebuild_status_pub_ = nh.advertise<std_msgs::String>(
+      "/planning/map_rebuild_status", 10, true);
+  publishMapRebuildStatus("IDLE", "reset_count=0");
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
   // AUTO.LAND at the end of the auto return-home sequence (and /mavros/state to
@@ -1572,6 +1896,16 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              traj_server_owns_finish_cmd_ ? 1 : 0);
     param_lines_.push_back(l);
 
+    snprintf(l, sizeof(l),
+             "map_recovery | caution_timeout=%.1fs caution_failures=%d "
+             "caution_retry=%.2fs rth_failures=%d/%.1fs "
+             "rebuild_min=%.1fs/%dscans",
+             caution_map_reset_timeout_, caution_map_reset_failure_count_,
+             caution_retry_period_, rth_map_reset_failure_count_,
+             rth_failure_window_, map_rebuild_min_duration_,
+             map_rebuild_min_scans_);
+    param_lines_.push_back(l);
+
     snprintf(l, sizeof(l), "topics | odom=%s cloud=%s", odom_t.c_str(),
              cloud_t.c_str());
     param_lines_.push_back(l);
@@ -1675,6 +2009,13 @@ bool FastExplorationFSM::retryWithUnreachableAmnesty() {
 }
 
 void FastExplorationFSM::updateTopoAndGlobalPath() {
+  // PILOT_OVERRIDE is terminal: unlike other inactive states, do not restart
+  // this timer after visualization housekeeping.
+  if (state_ == PILOT_OVERRIDE) {
+    global_path_update_timer_.stop();
+    return;
+  }
+
   // WAIT_TRIGGER 제외: 트리거(2D Nav Goal) 전에는 토포/글로벌 경로 갱신을 하지 않는다.
   // TAKEOFF_HOVER 중에는 map/frontier(CloudOdomCallback)와 함께 topology
   // skeleton/odom-node 연결도 미리 유지한다. 단, 아래 topology 갱신
@@ -1683,7 +2024,8 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   // 09-06-08에서 hover 종료 10 ms 후 `odom_node no nbrs` CAUTION이 발생했다.
   // EARLY_FINISH also needs one current topology update before selecting its path.
   if (!(state_ == TAKEOFF_HOVER || state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
-        state_ == EXEC_TRAJ || state_ == FINISH || state_ == EARLY_FINISH)) {
+        state_ == EXEC_TRAJ || state_ == FINISH || state_ == EARLY_FINISH ||
+        state_ == MAP_REBUILD)) {
     global_path_update_timer_.stop();
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
@@ -1707,7 +2049,7 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
 
   // Topology-only warmup: TAKEOFF_HOVER owns /position_cmd and must not be
   // interrupted by exploration planning or a transient orphaned odom node.
-  if (state_ == TAKEOFF_HOVER) {
+  if (state_ == TAKEOFF_HOVER || state_ == MAP_REBUILD) {
     if (expl_manager_->ep_->view_graph_)
       planner_manager_->graph_visualizer_->vizGraph(planner_manager_->topo_graph_);
     global_path_update_timer_.start();
@@ -1774,12 +2116,20 @@ void FastExplorationFSM::updateTopoAndGlobalPath() {
   if (has_goal_rth_) {
     // RTH mode: call planGoalPath and transition to PLAN_TRAJ_RTH
     ros::Time t_rth = ros::Time::now();
-    int res = expl_manager_->planGoalPath(goal_rth_.head<3>(), goal_rth_(3));
+    // Home return has no terminal heading requirement. Preserve the heading at
+    // each replanning instant instead of rotating back to the takeoff yaw.
+    const double goal_yaw = returning_home_ ? fd_->odom_yaw_ : goal_rth_(3);
+    int res = expl_manager_->planGoalPath(goal_rth_.head<3>(), goal_yaw);
     last_plan_ms_ = (ros::Time::now() - t_rth).toSec() * 1000.0;
     logGlobalPlanEvent(res, last_plan_ms_);
     publishExplDiag(); // RTH 중에도 HUD/진단 유지 (예전엔 여기서 끊겨 분석 공백)
     if (res == SUCCEED && state_ != WAIT_TRIGGER) {
       transitState(PLAN_TRAJ_RTH, "planGoalPath: succeed");
+    } else if (res != SUCCEED) {
+      if (noteRthFailure("global RTH path failed")) {
+        global_path_update_timer_.start();
+        return;
+      }
     }
     expl_manager_->frontier_manager_ptr_->viz_pocc();
     expl_manager_->frontier_manager_ptr_->visfrtcluster();
@@ -2076,6 +2426,38 @@ bool FastExplorationFSM::earlyFinishServiceCallback(
   return true;
 }
 
+bool FastExplorationFSM::resetMapServiceCallback(
+    std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res) {
+  (void)req;
+  const bool eligible =
+      state_ == TAKEOFF_HOVER || state_ == YAW_ROTATE_INIT ||
+      state_ == PLAN_TRAJ_EXP || state_ == PLAN_TRAJ_RTH ||
+      state_ == EXEC_TRAJ || state_ == CAUTION || state_ == FINISH ||
+      state_ == EARLY_FINISH;
+  if (!eligible || !fd_->have_odom_) {
+    res.success = false;
+    res.message = "rejected in state " + fd_->state_str_[int(state_)] +
+                  (fd_->have_odom_ ? "" : ": no odometry");
+    return true;
+  }
+
+  if (!beginMapRebuild("manual /srv_reset_map")) {
+    res.success = false;
+    res.message = "map reset could not start";
+    return true;
+  }
+  auto lio = planner_manager_->lidar_map_interface_;
+  char message[192];
+  snprintf(message, sizeof(message),
+           "MAP_REBUILD started: epoch=%llu points_now=%d; waiting for >=%d "
+           "fresh scans and topology reconnection",
+           static_cast<unsigned long long>(lio->ld_->map_epoch_),
+           lio->mapPointCount(), map_rebuild_min_scans_);
+  res.success = true;
+  res.message = message;
+  return true;
+}
+
 // 원터치 홈복귀: `rosservice call /srv_rth` (인자 없음).
 // 비행 중 어느 상태에서든 즉시 이륙 지점(takeoff anchor)으로 복귀하고,
 // 홈 xy 반경(rth_land_xy_tol) 도달 시 자동 AUTO.LAND -> LANDED (자동 RTH와 동일 경로).
@@ -2098,13 +2480,13 @@ bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
 
   // 홈 = 이륙 앵커 (x0, y0, takeoff_height). takeoff 비활성 구성이면 (0,0,현재고도) 폴백.
   Eigen::Vector3d home = takeoff_anchor_;
-  double home_yaw = takeoff_yaw_;
+  double home_yaw = fd_->odom_yaw_;
   if (fp_->takeoff_height_ <= 0.0) {
     home = Eigen::Vector3d(0.0, 0.0, std::max(0.5, (double)fd_->odom_pos_.z()));
-    home_yaw = fd_->odom_yaw_;
   }
   goal_rth_ << home.x(), home.y(), home.z(), home_yaw;
   has_goal_rth_ = true;
+  clearRthFailures();
   returning_home_ = true;     // 홈 xy 도달 -> LAND(AUTO.LAND) -> LANDED
   explore_finished_ = false;
   // 수동 RTH 는 모든 것을 덮어쓰는 중단 명령이다. EFP 를 들고 가면 마커/자주색
@@ -2136,6 +2518,11 @@ bool FastExplorationFSM::goalServiceCallback(epic_planner::GoalService::Request&
                                              epic_planner::GoalService::Response& res) {
   goal_rth_ << req.x, req.y, req.z, req.yaw;
   has_goal_rth_ = true;
+  clearRthFailures();
+  // /srv_goto is a positional goal with an explicit terminal yaw, not the
+  // return-home-and-land flow. Clear any stale RTH latch before planning it.
+  returning_home_ = false;
+  explore_finished_ = false;
 
   char d[128];
   snprintf(d, sizeof(d), "goal=(%.2f, %.2f, %.2f) yaw=%.2f", req.x, req.y, req.z,
@@ -2166,7 +2553,9 @@ int FastExplorationFSM::callGoalPlanner() {
   }
 
   Eigen::Vector3d goal_pos = goal_rth_.head<3>();
-  double goal_yaw = goal_rth_(3);
+  // RTH keeps the current/arrival heading; /srv_goto still honors its explicit
+  // requested yaw because returning_home_ is false for that path.
+  double goal_yaw = returning_home_ ? fd_->odom_yaw_ : goal_rth_(3);
 
   // Call exploration manager's goal planning function to generate global_tour_
   int res = expl_manager_->planGoalPath(goal_pos, goal_yaw);

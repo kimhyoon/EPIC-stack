@@ -718,8 +718,20 @@ bool FastPlannerManager::isRotateInPlaceHoldActive() const {
       !std::isfinite(local_data_.duration_))
     return false;
 
+  // Position and yaw are optimized independently.  In particular, a
+  // zero-translation position trajectory can be only 0.1 s long while its yaw
+  // trajectory still needs several seconds.  Ownership has to cover both or a
+  // global replan replaces the yaw command before it reaches the viewpoint.
+  double hold_duration = local_data_.duration_;
+  if (local_data_.minco_yaw_traj_.getPieceNum() > 0) {
+    const double yaw_duration =
+        local_data_.minco_yaw_traj_.getTotalDuration();
+    if (std::isfinite(yaw_duration))
+      hold_duration = std::max(hold_duration, yaw_duration);
+  }
+
   const double elapsed = (ros::Time::now() - local_data_.start_time_).toSec();
-  return elapsed >= 0.0 && elapsed < local_data_.duration_;
+  return elapsed >= 0.0 && elapsed < hold_duration;
 }
 
 bool FastPlannerManager::checkTrajCollision(double &collision_time) {
@@ -1712,7 +1724,42 @@ bool FastPlannerManager::planExploreTraj(const vector<Eigen::Vector3f> &path,
   local_data_.start_time_ = trajectory_start_time;
   local_data_.start_pos_ = iniState.col(0);
   local_data_.duration_ = local_data_.minco_traj_.getTotalDuration();
-  local_data_.rotate_in_place_ = false;
+
+  // A normal optimization can also produce a yaw-only trajectory when the
+  // selected viewpoint is already at the current position.  Sample the whole
+  // position trajectory rather than checking only its endpoints so a genuine
+  // out-and-back motion is never classified as stationary.
+  constexpr double kYawOnlyMaxTranslation = 0.05;
+  constexpr int kYawOnlyTranslationSamples = 20;
+  double max_translation = std::numeric_limits<double>::infinity();
+  if (std::isfinite(local_data_.duration_) && local_data_.duration_ >= 0.0) {
+    const Eigen::Vector3d initial_position =
+        local_data_.minco_traj_.getPos(0.0);
+    max_translation = 0.0;
+    for (int sample = 1; sample <= kYawOnlyTranslationSamples; ++sample) {
+      const double sample_time =
+          local_data_.duration_ * sample / kYawOnlyTranslationSamples;
+      max_translation = std::max(
+          max_translation,
+          (local_data_.minco_traj_.getPos(sample_time) - initial_position)
+              .norm());
+    }
+  }
+
+  const bool yaw_only =
+      local_data_.minco_yaw_traj_.getPieceNum() > 0 &&
+      std::isfinite(max_translation) &&
+      max_translation <= kYawOnlyMaxTranslation;
+  local_data_.rotate_in_place_ = yaw_only;
+  if (yaw_only) {
+    const double yaw_duration =
+        local_data_.minco_yaw_traj_.getTotalDuration();
+    EPIC_LOG_INFO(
+        logging_detail_, 0, "local.minco",
+        "yaw-only trajectory owns replanning until completion: "
+        "translation=%.3fm position_duration=%.2fs yaw_duration=%.2fs",
+        max_translation, local_data_.duration_, yaw_duration);
+  }
   local_data_.caution_escape_ = false;
   last_plan_fail_reason_.clear();
   last_plan_was_escape_ = false;

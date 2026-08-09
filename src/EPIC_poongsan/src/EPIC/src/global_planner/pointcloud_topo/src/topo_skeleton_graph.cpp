@@ -131,6 +131,60 @@ void TopoGraph::init(ros::NodeHandle &nh, LIOInterface::Ptr &lidar_map, Parallel
   }
 }
 
+void TopoGraph::prepareForMapRebuild(const Eigen::Vector3f &odom_pos,
+                                     float yaw) {
+  std::unordered_set<TopoNode::Ptr> all_nodes;
+  for (const auto &entry : reg_map_idx2ptr_) {
+    if (!entry.second)
+      continue;
+    for (const auto &node : entry.second->topo_nodes_)
+      if (node)
+        all_nodes.insert(node);
+  }
+  for (const auto &node : history_odom_nodes_)
+    if (node)
+      all_nodes.insert(node);
+  if (odom_node_)
+    all_nodes.insert(odom_node_);
+
+  // Failure/unreachable sets encode conclusions drawn from the old occupancy
+  // epoch. Keep known traversable breadcrumb edges, but force all failed-edge
+  // decisions to be reconsidered against the rebuilt map.
+  for (const auto &node : all_nodes) {
+    node->unreachable_nbrs_.clear();
+    node->edge_failures_.clear();
+  }
+
+  if (!odom_node_) {
+    odom_node_ = std::make_shared<TopoNode>();
+    odom_node_->is_viewpoint_ = true;
+    odom_node_->stable_id_ = next_node_id_++;
+  } else {
+    for (const auto &neighbor : odom_node_->neighbors_) {
+      if (!neighbor)
+        continue;
+      neighbor->neighbors_.erase(odom_node_);
+      neighbor->weight_.erase(odom_node_);
+      neighbor->paths_.erase(odom_node_);
+      neighbor->unreachable_nbrs_.erase(odom_node_);
+      neighbor->edge_failures_.erase(odom_node_);
+    }
+    odom_node_->neighbors_.clear();
+    odom_node_->weight_.clear();
+    odom_node_->paths_.clear();
+  }
+  odom_node_->center_ = odom_pos;
+  odom_node_->yaw_ = yaw;
+
+  update_idx_vec_.clear();
+  toponodes_update_region_arr_.clear();
+  viewpoints_update_region_arr_.clear();
+  global_path_.clear();
+  global_view_points_.clear();
+  parallel_bubble_astar_->reset();
+  ++topology_revision_;
+}
+
 BubbleNode::BubbleNode(double radius, Eigen::Vector3f center) {
   radius_ = radius;
   center_ = center;
@@ -1370,6 +1424,14 @@ void TopoGraph::publishStabilityDebug() {
 }
 
 void TopoGraph::updateOdomNode(Eigen::Vector3f &odom_pos, float &yaw) {
+  // Viewpoint completion compares the current yaw against the selected
+  // viewpoint yaw through odom_node_.  A failed topology reconnection must not
+  // leave that yaw stale: connectivity and pose-heading freshness are separate
+  // concerns.  Keep the graph position update transactional below, but always
+  // refresh the heading from odometry.
+  if (odom_node_ && std::isfinite(yaw))
+    odom_node_->yaw_ = yaw;
+
   struct PairPtrHash {
     std::size_t operator()(const std::pair<TopoNode::Ptr, TopoNode::Ptr> &p) const {
       return std::hash<TopoNode::Ptr>()(p.first) ^ std::hash<TopoNode::Ptr>()(p.second);
@@ -1418,7 +1480,6 @@ void TopoGraph::updateOdomNode(Eigen::Vector3f &odom_pos, float &yaw) {
     return;
   // 更新odom节点
   odom_node_->center_ = odom_pos;
-  odom_node_->yaw_ = yaw;
   // if (edge2insert.size() > 0) {
   for (auto &nei : odom_node_->neighbors_) {
     nei->neighbors_.erase(odom_node_);

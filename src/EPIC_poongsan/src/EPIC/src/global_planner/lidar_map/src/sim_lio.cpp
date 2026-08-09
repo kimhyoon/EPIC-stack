@@ -98,6 +98,37 @@ void LIOInterface::boxSearch(const Eigen::Vector3f &min_bd,
   ikd_Tree_map.Box_Search(boxpoint, pts);
 }
 
+int LIOInterface::resetOccupancyMap() {
+  const int before = ikd_Tree_map.validnum();
+  if (before <= 0) {
+    ld_->map_update = false;
+    ld_->lidar_cloud_.clear();
+    ++ld_->map_epoch_;
+    return 0;
+  }
+
+  // Delete through the ikd-tree's synchronized runtime operation instead of
+  // destructing/rebuilding its root while the background rebuild thread may be
+  // active. Delete_by_range uses a half-open upper bound, hence the padding.
+  BoxPointType all = ikd_Tree_map.tree_range();
+  const float padding = std::max(
+      1.0e-3f, static_cast<float>(lp_->vector_norm_eps_));
+  for (int axis = 0; axis < 3; ++axis) {
+    all.vertex_min[axis] -= padding;
+    all.vertex_max[axis] += padding;
+  }
+  std::vector<BoxPointType> boxes(1, all);
+  const int deleted = ikd_Tree_map.Delete_Point_Boxes(boxes);
+
+  // Do not set first_map_flag_: Build() physically replaces the tree and is not
+  // a runtime-safe operation. Add_Points() on subsequent frames is designed to
+  // coexist with the ikd-tree rebuild worker and repopulates deleted space.
+  ld_->map_update = false;
+  ld_->lidar_cloud_.clear();
+  ++ld_->map_epoch_;
+  return deleted;
+}
+
 int LIOInterface::clearFreeSpaceAlongRays(
     const Eigen::Vector3f &sensor_origin,
     const pcl::PointCloud<pcl::PointXYZ> &current_world_cloud) {
@@ -381,6 +412,7 @@ bool LIOInterface::updateCloudMapOdometry(
     clearFreeSpaceAlongRays(sensor_origin, *filtered_points);
     this->ikd_Tree_map.Add_Points(pcl_map, true);
   }
+  ++ld_->map_update_seq_;
   ros::Time ikd_update_end_stamp = ros::Time::now();
   return true;
 }

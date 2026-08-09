@@ -218,6 +218,19 @@ void FrontierManager::init(ros::NodeHandle &nh, LIOInterface::Ptr &lio_interface
   explored_cell_count_pub_ = nh.advertise<std_msgs::Int32>("/frontier_manager/explored_cell_count", 10);
 }
 
+void FrontierManager::resetForMapRebuild() {
+  cluster_list_.clear();
+  frtd_.label_map_.clear();
+  frtd_.frt_map_.clear();
+  frtd_.is_gap_.clear();
+  frtd_.direction_score_.clear();
+  frtd_.is_fov_edge_.clear();
+  frtd_.sphere_distance_.clear();
+  fov_edge_cells_.clear();
+  force_recluster_.clear();
+  vp_stats_ = VpPipelineStats();
+}
+
 // [feature: perception-config-check] lidar_perception/* 정합성 검사.
 //
 // 이 그룹은 파라미터가 12개인데 소비자가 셋(lidar_map / frontier_manager /
