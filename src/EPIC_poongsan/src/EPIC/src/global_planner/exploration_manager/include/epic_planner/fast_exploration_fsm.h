@@ -128,8 +128,9 @@ private:
   ros::Time caution_enter_time_;
   ros::Time caution_last_attempt_time_;
   int caution_escape_fail_count_ = 0;
-  double caution_map_reset_timeout_ = 3.0;
-  int caution_map_reset_failure_count_ = 5;
+  bool caution_map_reset_enable_ = true;
+  double caution_map_reset_timeout_ = 6.0;
+  int caution_map_reset_failure_count_ = 10;
   double caution_retry_period_ = 0.5;
 
   // A map epoch reset is a bounded recovery state, not an instantaneous jump
@@ -149,6 +150,7 @@ private:
   // out; a tight replan/collision loop causes exactly one map rebuild.
   std::deque<ros::Time> rth_failure_times_;
   ros::Time last_rth_failure_time_;
+  bool rth_map_reset_enable_ = true;
   double rth_failure_window_ = 3.0;
   double rth_failure_min_interval_ = 0.25;
   int rth_map_reset_failure_count_ = 5;
