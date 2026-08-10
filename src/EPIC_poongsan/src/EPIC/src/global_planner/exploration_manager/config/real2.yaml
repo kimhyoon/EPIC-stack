@@ -492,7 +492,7 @@ trajectory_execution/max_lead_time: 0.3  # 위치 선행 한계=MaxVelMag×시�
 # 값이 서로 다르면 계획 속도를 만들기 위한 position setpoint 선행거리가 실제 PX4 위치 제어기와 맞지 않는다.
 # Kp=1.0이면 최대 위치 선행거리는 MaxVelMag/Kp=0.75m이며, 미래점은 검증된 궤적 위에서 선택한다.
 trajectory_execution/px4_position_p_gain: 1.0  # PX4 수평 위치 P 게인[1/s]
-trajectory_execution/yaw_max_acc: 3.5  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
+trajectory_execution/yaw_max_acc: 2.0  # 재계획 시 Yaw rate 방향 반전을 완화하는 최대 각가속도[rad/s^2]
 MaxVelMag: 0.75  # 최대 비행 속도[m/s]
 
 # [PVA 가속도 제한]
@@ -556,7 +556,7 @@ RelCostTol: 1.1e-6
 # 드론의 기수가 이동 경로와 viewpoint를 바라보도록 생성하는 Yaw 궤적의 최대 회전속도를 결정한다.
 # 기수 회전이 너무 느리면 높이고, 좌우 급회전·흔들림·Yaw 추종 오차가 발생하면 낮춘다.
 # PX4의 실제 Yaw rate 하드 제한이 아니라 EPIC이 생성하는 Yaw 궤적의 계획값이다.
-yaw_max_vel: 1.5  # 1.0 rad/s = 57.3 deg/s
+yaw_max_vel: 1.0471975512  # 60 deg/s
 
 # [Yaw 목표 방향 추종 가중치]
 # 생성되는 Yaw 궤적이 이동 경로와 viewpoint를 보고 계산한 목표 Yaw 방향을 얼마나 강하게 따라갈지 결정한다.
