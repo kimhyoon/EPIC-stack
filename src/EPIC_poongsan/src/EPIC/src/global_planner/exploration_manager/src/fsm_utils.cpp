@@ -167,6 +167,11 @@ bool FastExplorationFSM::startMission(const std::string &source) {
     takeoff_anchor_ = Eigen::Vector3d(fd_->odom_pos_.x(), fd_->odom_pos_.y(),
                                       fp_->takeoff_height_);
     takeoff_yaw_ = fd_->odom_yaw_;
+    // [offboard landing] 이륙 "지면"의 z 를 따로 남긴다. takeoff_anchor_.z 는 목표
+    // 호버 고도(설정 절대값)라서 지면이 아니다. 착륙 시 AGL = odom_z - land_ground_z_
+    // 로 쓰므로, 이 값이 없으면 지면이 어디인지 알 방법이 없다.
+    land_ground_z_ = fd_->odom_pos_.z();
+    land_ground_z_valid_ = true;
     hover_enter_time_ = ros::Time::now();
     hover_stable_since_ = ros::Time(0);
     transitState(TAKEOFF_HOVER, source + ": takeoff & hover");
@@ -351,6 +356,29 @@ void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, boo
     caution_enter_time_ = ros::Time::now();
     caution_last_attempt_time_ = ros::Time(0);
     caution_escape_fail_count_ = 0;
+  }
+  // [offboard landing] LAND 에 들어오는 순간의 포즈를 하강 앵커로 고정한다.
+  // xy 는 여기서 잡은 값을 착지까지 바꾸지 않는다 (드리프트를 따라가지 않도록).
+  if (new_state == LAND && state_ != LAND) {
+    land_phase_ = LAND_PHASE_DESCEND;
+    land_enter_time_ = ros::Time::now();
+    land_last_tick_ = land_enter_time_;
+    land_touch_since_ = ros::Time(0);
+    land_disarm_since_ = ros::Time(0);
+    land_last_req_ = ros::Time(0);
+    land_bias_logged_ = false;
+    land_touchdown_confirmed_ = false;
+    // xy 는 "LAND 를 시작한 자리"가 아니라 기억해 둔 이륙 좌표를 쓴다. RTH 는
+    // rth_land_xy_tol(0.2m) 안에 들어오면 LAND 로 넘어오므로 둘은 최대 그만큼
+    // 차이나는데, 하강 내내 붙잡을 기준은 원점이어야 한다. (takeoff 가 비활성이면
+    // 이륙 좌표가 없으므로 현재 위치로 폴백.)
+    land_xy_anchor_ = fd_->odom_pos_.cast<double>();
+    if (fp_->takeoff_height_ > 0.0) {
+      land_xy_anchor_.x() = takeoff_anchor_.x();
+      land_xy_anchor_.y() = takeoff_anchor_.y();
+    }
+    land_z_ramp_ = fd_->odom_pos_.z();
+    land_yaw_ = fd_->odom_yaw_;
   }
   state_ = new_state;
   // 이벤트 로거가 상태전이를 기록한다. PLAN<->EXEC 리플랜 플래핑 같은 A<->B 교대

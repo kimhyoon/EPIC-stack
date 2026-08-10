@@ -314,6 +314,16 @@ void stateCallback(const visualization_msgs::Marker::ConstPtr& msg) {
   // Extract state from marker text
   if (!msg->text.empty()) {
     current_state_ = msg->text;
+
+    // [offboard landing] LAND/LANDED 에서는 FSM 이 /position_cmd 로 하강 셋포인트를
+    // 직접 발행한다. 여기서 궤적 끝점 hold 를 계속 쏘면 같은 토픽에서 두 소스가
+    // 싸워 하강이 씹히므로 명령 소유권을 넘긴다 (LAND 는 종점 상태라 복귀 없음).
+    if (receive_traj_ && current_state_.find("LAND") != std::string::npos) {
+      receive_traj_ = false;
+      EPIC_LOG_WARN("execution.trajectory",
+                    "state=%s: releasing /position_cmd to the FSM landing stream",
+                    current_state_.c_str());
+    }
     // Check if in RTH mode - look for RTH in the state string
     is_rth_mode_ = (current_state_.find("PLAN_TRAJ_RTH") != std::string::npos ||
                     current_state_.find("_RTH") != std::string::npos);
