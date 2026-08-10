@@ -587,7 +587,7 @@ fsm/takeoff_timeout: 20.0        # 타임아웃: 고도 근처면 탐색, 아니
 
 # ── 탐사 완료 후 자동 원점복귀 + 착륙 (real flight) ──────────────────
 # 탐사 끝나면: 마지막 cmd 좌표에서 잠깐 호버(OFFBOARD 유지) → 이륙지점으로 RTH
-#  → 홈과의 xy 거리가 rth_land_xy_tol 안에 들면 PX4 AUTO.LAND(쓰로틀 다운/자동 disarm).
+#  → 홈과의 xy 거리가 rth_land_xy_tol 안에 들면 LAND(OFFBOARD 셋포인트 하강)로 넘어간다.
 fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 후 그 자리 hold)
 fsm/finish_hover_duration: 1.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
 fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]

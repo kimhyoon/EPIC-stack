@@ -23,7 +23,8 @@
 #include <pointcloud_topo/graph_visualizer.hpp>
 #include <quadrotor_msgs/TakeoffLand.h>
 #include <quadrotor_msgs/PositionCommand.h>
-#include <mavros_msgs/SetMode.h>
+#include <mavros_msgs/CommandLong.h>
+#include <mavros_msgs/ExtendedState.h>
 #include <mavros_msgs/State.h>
 #include <ros/ros.h>
 #include <sensor_msgs/BatteryState.h>
@@ -95,7 +96,7 @@ private:
 
 // NOTE: TAKEOFF_HOVER/LANDED are appended at the END so existing enum indices
 // (used as indices into fd_->state_str_) stay unchanged.
-// LANDED: LAND(AUTO.LAND) 후 착지+disarm 이 확인된 최종 상태.
+// LANDED: LAND(OFFBOARD 하강) 후 착지+disarm 이 확인된 최종 상태.
 //         record_on_goal 이 이 상태를 보고 녹화를 마감한다.
 // EARLY_FINISH: 탐사가 너무 짧게 끝났을 때(누적 이동거리 < thresh), 현재 odom
 //               node 에서 가장 먼 도달 가능 topology node 까지의 기존 graph path 를
@@ -280,7 +281,8 @@ private:
 
   /* auto return-to-home + land after exploration finishes (real flight).
      FINISH -> hover briefly at the last cmd pose (stays OFFBOARD) -> RTH to the
-     takeoff point -> when within xy tol of home, switch PX4 to AUTO.LAND. */
+     takeoff point -> when within xy tol of home, descend on OFFBOARD setpoints
+     and force-disarm on touchdown (LAND). */
   bool   auto_rth_land_ = true;              // master enable
   bool   traj_server_owns_finish_cmd_ = false;  // release /position_cmd to traj_server in FINISH
   double finish_hover_duration_ = 3.0;       // [s] hover at last cmd pose before returning
@@ -290,9 +292,95 @@ private:
   ros::Time finish_hover_start_;             // when the FINISH hover began (0 = not yet)
   Eigen::Vector3d finish_hover_pos_ = Eigen::Vector3d::Zero();  // snapshot of last cmd pose
   double finish_hover_yaw_ = 0.0;
-  ros::ServiceClient set_mode_client_;       // /mavros/set_mode (for AUTO.LAND)
-  ros::Subscriber    mavros_state_sub_;      // /mavros/state (to confirm AUTO.LAND engaged)
+  ros::Subscriber    mavros_state_sub_;      // /mavros/state (armed/mode 관측)
   mavros_msgs::State px4_state_;
+
+  /* ================= [offboard landing] PX4 AUTO.LAND 대신 직접 하강 =========
+     배경: AUTO.LAND 착륙 시 "옆으로 조금씩 샌다"는 현장 보고. 증상은 실재하나
+     원인은 미확정이다. 후보와 판정 상태는 Update_log-0810.txt [1] 에 정리했다.
+       A) MPC_TILTMAX_LND(12도) 착륙 틸트 제한 — 파라미터는 실재하나, v1.13 소스상
+          적용 조건이 TakeoffState 라 하강 중에는 45도일 가능성. 판정 보류.
+       B) 위치 추정 무효화 -> FlightTaskDescend(xy 제어 없음) — 유력. 이 원인이면
+          이 변경으로 고쳐지지 않는다(localization 과제).
+       C) Navigator 의 global 경유,  D) xy 셋포인트가 진입 시점에 고정.
+
+     원인과 무관하게 이 구현이 얻는 것:
+       1. xy 를 "착륙을 시작한 자리"가 아니라 기억해 둔 이륙 좌표에 계속 묶는다(D 해소).
+       2. 하강 속도를 우리가 쥔다. AUTO.LAND 는 MPC_LAND_SPEED(기본 0.7m/s) 고정.
+       3. 접지 즉시 강제 disarm — 모터가 지면에서 도는 시간을 줄인다.
+       4. Navigator/global 경로를 지나지 않는다(C 해소).
+       5. 판정 시점과 근거가 전부 로그로 남는다.
+
+     명령은 전부 위치 셋포인트다 — xy 는 이륙 좌표 고정, z 는 LAND 진입 시점 z 에서
+     land_ramp_rate_ 기울기로 내려가는 램프. 즉 PX4 입장에서는 평상시 비행과 완전히 같은
+     종류의 명령이고, 새로 쓰는 기능이 없다.
+       · z 를 절대 목표(지면+0.1)로 주지 않고 램프로 주는 이유: 절대 z 를 명령하면
+         추정 바이어스가 그대로 지면 오차가 되고(0803 에서 PX4 EKF 와 dz 최대 1.4m),
+         하강 속도도 MPC_Z_VEL_MAX_DN 에 뺏긴다. 램프는 상대량이라 바이어스가
+         상쇄되고 기울기가 곧 하강 속도다.
+       · 속도 셋포인트를 쓰지 않는 이유: px4_ctrl_bridge 는 모든 경로에서
+         IGNORE_VX|VY|VZ 로 속도 필드를 꺼 두고 있다. 이 기체에서 한 번도 쓰인 적이
+         없는 경로라, 검증 없이 착륙에 쓸 이유가 없다. 램프 기울기로 충분하다.
+
+     접지 판정은 단일 고도 트립으로 하지 않는다. 고도만 보면 위 바이어스에 그대로
+     노출되므로, "지면이 기체를 받치고 있다"는 물리적 증거를 AND 로 묶는다:
+       (1) 추정 AGL < land_touch_alt_       (상대고도, ToF 가 있으면 ToF 우선)
+       (2) 하강을 명령했는데 |vz| 가 죽어 있음  <- 바이어스와 무관한 핵심 증거
+       (3) 위 둘이 land_touch_hold_ 동안 지속
+     또는 PX4 자체 land detector(/mavros/extended_state 의 ON_GROUND)가 뜨면 즉시.
+     AUTO.LAND 로의 전환/폴백 경로는 없다. 착륙 중 문제가 생기면 모드를 바꾸는
+     대신 하강 명령과 강제 disarm 재시도를 유지하며 ERROR 로 조종자 개입을
+     요구한다. 그 아래는 PX4 자체 failsafe 소관이다. */
+  enum LAND_PHASE {
+    LAND_PHASE_IDLE,      // 아직 시작 안 함
+    LAND_PHASE_DESCEND,   // vz 음수로 하강 중
+    LAND_PHASE_DISARM     // 접지 확인, 강제 disarm 요청 중
+  };
+  // 하강 속도는 전 구간 동일하다. 단계를 두면 전환 지점에서 vz 명령이 계단처럼
+  // 튀는데, 착륙을 몇 초 빨리 끝내자고 감수할 이득이 아니다. 느리게 내려간다.
+  // 램프의 기울기. 위치 셋포인트를 이 비율로 낮추므로 곧 하강 속도가 된다.
+  // "속도 셋포인트"가 아니다 — PX4 는 이 값을 보지 못하고 위치만 받는다.
+  double land_ramp_rate_        = 0.2;       // [m/s] 램프 기울기 = 하강 속도
+  // 0.13: 0806 실비행 bag 8개에서 접지 순간 z 드리프트가 최대 +0.087m 였다(전부 양수
+  // = odom 이 실제보다 높게 읽음). 0.10 이면 여유가 13mm 뿐이라 다음 비행에서 조금만
+  // 더 드리프트하면 게이트가 영영 안 걸린다.
+  double land_touch_alt_    = 0.13;      // [m] 접지 판정 AGL 문턱
+  double land_touch_hold_   = 0.30;      // [s] 접지 조건 지속 시간
+  // 아래 둘은 경고 임계값일 뿐 하강을 중단시키지 않는다 (중단할 곳이 없다).
+  // land_xy_err_warn_ 이 재는 것은 "절대 위치가 얼마나 틀렸나"가 아니라 위치제어기의
+  // 추종 오차다 — 셋포인트도 측정도 같은 odom 프레임이므로, 이 값이 크다는 것은
+  // 제어기가 앵커를 못 잡고 있다(틸트 포화/외란)는 뜻이다. 반대로 LIO xy 자체가
+  // 드리프트하면 기체가 실제로 밀려도 이 값은 0 에 가깝다 — 그건 못 잡는다.
+  // (실내에 GPS 가 없고 ToF 는 z 전용이라 xy 절대위치를 검증할 독립 소스가 없다.)
+  double land_xy_err_warn_  = 0.80;      // [m] 추종 오차가 이보다 크면 ERROR 로그
+  double land_timeout_      = 25.0;      // [s] 하강이 이보다 길어지면 ERROR 로그
+
+  /* 램프 anti-windup.
+     위치 램프는 속도 명령과 달리 기체가 뒤처져도 혼자 계속 내려간다. 지면효과로
+     추종이 밀리면 셋포인트가 달아나 과하게 밀어붙이게 되므로, 실제 z 보다 이만큼
+     아래로는 못 가게 묶는다. */
+  double land_ramp_lead_max_ = 0.30;     // [m] 램프가 실제 z 보다 앞설 수 있는 한계
+
+  LAND_PHASE      land_phase_ = LAND_PHASE_IDLE;
+  ros::Time       land_enter_time_;      // LAND 진입 시각
+  ros::Time       land_touch_since_;     // 접지 조건이 연속으로 성립하기 시작한 시각 (0 = 미성립)
+  ros::Time       land_disarm_since_;    // disarm 요청을 시작한 시각
+  ros::Time       land_last_req_;        // disarm/set_mode 재요청 스로틀
+  Eigen::Vector3d land_xy_anchor_ = Eigen::Vector3d::Zero();  // 붙잡을 홈 xy (+ 램프용 z)
+  double          land_yaw_ = 0.0;
+  double          land_z_ramp_ = 0.0;    // 적분한 z 위치 목표 (하강 램프)
+  ros::Time       land_last_tick_;       // z 램프 적분용
+  double          land_ground_z_ = 0.0;  // 이륙 시점 지면의 LIO z (AGL 기준선)
+  bool            land_ground_z_valid_ = false;
+  bool            land_bias_logged_ = false;
+  // 접지가 확인된 뒤인가. 'touchdown detected' 이후를 뜻한다.
+  bool            land_touchdown_confirmed_ = false;
+
+  uint8_t         px4_landed_state_ = 0;    // mavros ExtendedState::LANDED_STATE_*
+  bool            px4_ext_seen_ = false;
+
+  ros::ServiceClient command_client_;    // /mavros/cmd/command  (강제 disarm)
+  ros::Subscriber    mavros_ext_state_sub_;  // /mavros/extended_state (PX4 land detector)
 
   /* [YAW_ROTATE_INIT] 이륙 후 제자리 360도 초기 관측 회전.
      완료 판정은 odom yaw 누적으로만 한다 — 명령만 적분하면 실제로 안 돌았는데
@@ -401,6 +489,18 @@ private:
   void mavrosStateCallback(const mavros_msgs::State::ConstPtr &msg);
   // yaw_dot 을 실어 보내면 px4_ctrl_bridge(use_yawrate=true)가 yawrate 로 회전시킨다.
   void pubHoldCmd(const Eigen::Vector3d &p, double yaw, double yaw_dot = 0.0);
+
+  /* [offboard landing] LAND 상태 본체. 하강 -> 접지 -> 강제 disarm. */
+  void runOffboardLanding();
+  /* 하강 셋포인트 발행. 실기: /land_setpoint (xy 위치 + z 속도 혼합 마스크).
+     시뮬: /position_cmd (mavros 가 없으므로 z 를 램프로 적분해 위치로 준다). */
+  void pubLandSetpoint(double vz);
+  /* AGL = odom z - 이륙 시점 지면 z. 기체 z 는 PX4 가 하방 ToF 와 융합한 값이라
+     이 축은 신뢰할 수 있다. */
+  bool landAgl(double &agl) const;
+  /* MAV_CMD_COMPONENT_ARM_DISARM(400) + param2=21196(force magic). */
+  bool forceDisarm();
+  void mavrosExtendedStateCallback(const mavros_msgs::ExtendedState::ConstPtr &msg);
   int callExplorationPlanner();
   int callGoalPlanner();
   void transitState(EXPL_STATE new_state, string pos_call, bool red = false);

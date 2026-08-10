@@ -1,0 +1,334 @@
+================================================================================
+ Update Log  2026-08-10
+ PX4 AUTO.LAND 대신 OFFBOARD 위치 셋포인트로 직접 착륙
+ (대상 기체 PX4 버전: v1.13)
+================================================================================
+
+[1] 배경 / 왜 바꿨나
+--------------------------------------------------------------------------------
+현장 보고: AUTO.LAND 로 착륙하면 "똑바로 안 내려가고 옆으로 조금씩 샌다".
+증상 자체는 실재하며, 이것이 이 변경의 출발점이다.
+
+원인은 아직 확정되지 않았다. 후보와 각각의 근거를 그대로 남긴다.
+
+  [후보 A] AUTO.LAND 구간의 틸트 제한 (MPC_TILTMAX_LND)      ── 판정 보류
+    지지 근거:
+      · v1.13 에 파라미터가 실재하고 기본값이 12도다 (MPC_TILTMAX_AIR 는 45도).
+      · 파라미터 설명이 "Maximum tilt during landing / Limits maximum tilt angle
+        on landing" 이다. 이름과 설명만 보면 착륙 구간 제한으로 읽힌다.
+      · 12도면 횡방향 보정 가속도가 45도 대비 1/4 수준이라, 밀리기 시작하면
+        되돌릴 권한이 부족하다는 설명이 증상과 잘 맞는다.
+    반대 근거 (v1.13.0 소스):
+      · MulticopterPositionControl.cpp 에서 이 값이 실제로 적용되는 곳은 한 군데뿐
+        이고, 조건이 착륙이 아니라 TakeoffState 다:
+            // limit tilt during takeoff ramupup     <- PX4 원본 주석
+            const float tilt_limit_deg = (_takeoff.getTakeoffState() < TakeoffState::flight)
+                                         ? _param_mpc_tiltmax_lnd.get()
+                                         : _param_mpc_tiltmax_air.get();
+      · TakeoffState 는 disarmed(1) < spoolup(2) < ready_for_takeoff(3)
+        < rampup(4) < flight(5) 이고, flight 에서 내려오는 조건은
+        _vehicle_land_detected.landed == true 뿐이다. 하강 중에는 아직 안 내렸으므로
+        상태가 flight 로 유지되고 45도가 적용된다는 해석이 된다.
+      · 즉 파라미터 설명과 실제 사용처가 어긋나 있을 가능성이 있다.
+    → 확인 예정 ([8]-5)
+
+  [후보 B] 위치 추정 무효화 -> PX4 가 FlightTaskDescend(failsafe)로 하강  ── 유력
+    이 태스크는 xy 위치제어가 없고 속도 감쇠만 하므로 옆으로 흘러내린다.
+    ★ 이 원인이라면 이번 변경으로 고쳐지지 않는다. localization 영역이며 현
+      시점에 이 작업의 범위 밖이다.
+    → 확인 예정 ([8]-5)
+
+  [후보 C] Navigator 의 global(lat/lon) 경유
+    GPS 없는 실내에서 local->global->local 왕복에 오차가 낄 수 있다.
+    OFFBOARD 는 이 경로를 지나지 않는다.
+
+  [후보 D] AUTO.LAND 의 xy 셋포인트는 착륙 진입 시점 위치로 고정
+    진입 후의 드리프트를 새로 잡지 않는다.
+
+그럼에도 변경하는 이유:
+  원인이 A/B/C/D 중 무엇이든 현장 증상은 실재하고, 아래 다섯 가지는 원인 규명과
+  무관하게 성립하는 개선이다.
+    1. xy 를 "착륙을 시작한 자리"가 아니라 기억해 둔 이륙 좌표에 계속 묶는다.
+       (후보 D 를 직접 해소)
+    2. 하강 속도를 우리가 쥔다. AUTO.LAND 는 MPC_LAND_SPEED(v1.13 기본 0.7 m/s)
+       고정이고, 이번 구현은 0.2 m/s 다.
+    3. 접지 즉시 강제 disarm — 모터가 지면에서 도는 시간을 줄여 전복 위험을 낮춘다.
+    4. Navigator/global 경로를 지나지 않는다. (후보 C 를 직접 해소)
+    5. 판정 시점과 근거가 전부 로그로 남아 사후 분석이 된다.
+
+  다만 후보 B 가 원인이면 증상이 그대로 남는다. 첫 offboard 착륙 후에도 같은
+  증상이 보이면 그 경로가 원인으로 굳어지고, 대응은 localization 쪽이 된다.
+
+[2] 설계 — 명령은 전부 위치 셋포인트다
+--------------------------------------------------------------------------------
+  xy : 기억해 둔 이륙 좌표에 고정
+  z  : LAND 진입 시점 z 에서 land_ramp_rate 기울기로 내려가는 위치 램프
+  발행 경로: /position_cmd 하나. 평상시 비행과 완전히 같은 종류의 명령이다.
+             PX4 가 새로 쓰는 기능이 0 이고, px4_ctrl_bridge 는 수정하지 않았다.
+
+  왜 절대 z 목표(지면+0.1)를 주지 않나
+    - 추정 바이어스가 그대로 지면 오차가 된다(0803 실비행에서 PX4 EKF 와 LIO-SAM
+      맵의 dz 가 최대 1.4m).
+    - 하강 속도를 MPC_Z_VEL_MAX_DN(약 1 m/s)에 뺏긴다. 램프는 기울기가 곧 하강
+      속도라 우리가 쥔다.
+    - 램프는 진입 시점 z 기준의 상대량이므로 바이어스가 상쇄된다.
+
+  왜 속도 셋포인트를 쓰지 않나
+    px4_ctrl_bridge 는 모든 경로에서 IGNORE_VX|VY|VZ 로 속도 필드를 꺼 두고 있다
+    ("← 추가: 속도 무시 (위치만 추종)"). 즉 이 기체에서 velocity 필드는 한 번도
+    쓰인 적이 없다. 검증 없이 착륙에 새로 쓸 이유가 없고, 램프 기울기로 충분하다.
+    부수 효과로 MARSIM 검증이 가능해졌다 — cascadePID 는 use_px4_bridge=true 에서
+    position+yaw 만 받으므로(PX4 type_mask=2552 와 동일), 속도 방식이었다면 시뮬이
+    하강 명령을 통째로 무시했을 것이다.
+
+  램프 anti-windup
+    속도 명령은 기체가 뒤처지면 스스로 늦춰지지만 램프는 혼자 달아난다. 지면효과로
+    추종이 밀릴 때 과하게 밀어붙이지 않도록, 램프가 실제 z 보다 land_ramp_lead_max
+    이상 앞서지 못하게 묶는다. (MARSIM 실측에서는 발동하지 않았다 — [7] 참조)
+
+접지 판정 (2조건):
+      (1) AGL < land_touch_alt              AGL = odom z - 이륙 시점 지면 z
+      (2) (1)이 land_touch_hold 동안 지속
+  -> 충족 즉시 강제 disarm.
+  또는 PX4 자체 land detector(/mavros/extended_state 의 ON_GROUND) -> 즉시 인정.
+
+  * 하강속도(|vz| 붕괴) 조건은 쓰지 않는다.
+      현장 경험상 그 조건이 성립하는 구간이 너무 빡빡해 접지 판정을 놓친다.
+      대신 z odom 을 신뢰한다 — [7]에서 실비행 8회 실측으로 확인했다.
+  * ON_GROUND 분기는 반드시 유지할 것.
+      AGL 기준선이 어긋나 (1)이 영영 성립하지 않는 경우의 유일한 안전망이다.
+
+disarm:
+      접지 판정 즉시 CommandLong(400, param1=0, param2=21196) 강제 disarm 을
+      0.25초 주기로 재시도한다. 일반 disarm(/mavros/cmd/arming)은 쓰지 않는다 —
+      PX4 land detector 의 동의(LNDMC_TRIG_TIME, 기본 1.0s)를 기다려야 통과하는데,
+      그만큼 모터가 지면에서 더 도는 것이 전복 위험을 키운다.
+      매직값 21196 은 PX4 사전검사를 전부 우회하므로 거부되지 않는다.
+
+AUTO.LAND 폴백 경로는 존재하지 않는다 (의도적으로 삭제).
+      착륙 중 문제가 생기면 코드가 모드를 바꾸는 대신 하강 명령과 강제 disarm
+      재시도를 유지하면서 ERROR 로 조종자 개입(킬 스위치)을 요구한다.
+      근거:
+        - 강제 disarm 이 실패하는 원인은 mavros<->FCU 링크 문제인데, set_mode 도
+          같은 링크를 타므로 AUTO.LAND 전환 역시 실패한다.
+        - 하강 명령을 놓으면 브리지가 "현재 포즈 hold" 로 떨어져, 지면에 앉은 채
+          위치제어기가 기체를 붙잡으려 들며 모터가 계속 도는 최악의 상태가 된다.
+        - 그 아래에는 PX4 자체 failsafe(offboard 상실, 위치 상실)가 최종 안전망으로
+          그대로 남아 있다. 코드가 대신할 일이 아니다.
+
+
+[3] 상태 흐름
+--------------------------------------------------------------------------------
+  FINISH (또는 /srv_rth, CAUTION force_return_home)
+    -> PLAN_TRAJ_RTH : 홈 xy 로 복귀 (rth_land_xy_tol=0.2m 안에 들면 다음 단계.
+                       z 는 보지 않는다)
+    -> LAND
+         LAND_PHASE_DESCEND
+             xy = 이륙 좌표 고정, z = 램프 (land_ramp_rate, 전 구간 동일)
+             (AGL < land_touch_alt) 이 land_touch_hold 지속  -> DISARM
+             또는 PX4 ON_GROUND                              -> DISARM (즉시)
+             추종오차 초과 / 타임아웃 / odom 상실 -> ERROR 로그, 하강은 계속
+         LAND_PHASE_DISARM
+             하강 명령 유지 + 강제 disarm 0.25s 주기 재시도
+             3초 넘게 안 꺼지면 ERROR 로 수동 개입 요구 (계속 재시도)
+    -> LANDED (px4_state_.armed == false 확인)
+
+  시뮬은 mavros 가 없어 DISARM 진입 시점에 곧바로 LANDED 로 마무리한다.
+
+
+[4] 변경 파일
+--------------------------------------------------------------------------------
+M  .../exploration_manager/include/epic_planner/fast_exploration_fsm.h
+       - mavros_msgs/{CommandLong,ExtendedState}.h 추가 (SetMode 제거)
+       - enum LAND_PHASE {IDLE, DESCEND, DISARM}
+       - 착륙 파라미터/런타임 상태 멤버
+       - 서비스 클라이언트 command_client_ (/mavros/cmd/command)
+       - 구독 mavros_ext_state_sub_ (/mavros/extended_state)
+       - 메서드: runOffboardLanding, pubLandSetpoint, landAgl, forceDisarm,
+                 mavrosExtendedStateCallback
+
+M  .../exploration_manager/src/fsm_utils.cpp
+       - startMission(): land_ground_z_ = 트리거 시점 odom z 를 저장.
+         ★ 기존에 이 값이 어디에도 없었다. takeoff_anchor_.z 는 목표 호버 고도
+           (설정 절대값 1.25)이지 지면이 아니다. 지면 z 가 없으면 AGL 을 계산할
+           방법이 없다. 원점 xy 는 takeoff_anchor_ 에 이미 있었다.
+       - transitState(): LAND 진입 시 착륙 상태 초기화. 하강 앵커 xy 는
+         "LAND 를 시작한 자리"가 아니라 takeoff_anchor_ 의 xy 를 쓴다.
+
+M  .../exploration_manager/src/fast_exploration_fsm.cpp
+       - case LAND 본체를 runOffboardLanding() 호출로 교체
+         (기존 AUTO.LAND 재요청 로직 삭제)
+       - runOffboardLanding() 신규: DESCEND / DISARM 2단
+       - pubLandSetpoint() 신규: xy 고정 + z 램프(+anti-windup)를 /position_cmd 로
+       - landAgl() 신규: odom_z - land_ground_z_
+       - forceDisarm() 신규
+       - 낡은 AUTO.LAND 문구/주석 정리 (로그 문자열 포함)
+
+M  .../minco_planner/src/traj_server.cpp
+       - stateCallback(): /planning/state 가 LAND/LANDED 면 receive_traj_=false.
+         ★ traj_server 는 궤적이 끝나도 끝점을 /position_cmd 로 계속 hold 발행한다.
+           FSM 의 하강 스트림과 같은 토픽에서 싸우면 하강이 씹히므로 명령 소유권을
+           넘긴다. LAND 는 종점 상태라 복귀 경로가 없다.
+
+M  .../exploration_manager/config/{real1,real2,garage,garage_map1}.yaml
+       - 착륙 파라미터 6종 추가. 네 파일 값 완전히 동일.
+
+M  .../exploration_manager/config/{real,mid360,mid360_mlx,nuc_unist}.yaml
+       - 낡은 AUTO.LAND 안내 주석 한 줄만 수정. 파라미터는 넣지 않음.
+
+  px4_ctrl_bridge.cpp 는 수정하지 않았다.
+    (설계 중간에 /land_setpoint 혼합 type_mask 경로를 넣었다가, 위치 램프로
+     전환하면서 전부 되돌렸다. 최종적으로 브리지는 원본 그대로다.)
+
+
+[5] 신규 파라미터 (6종, 4개 config 동일)
+--------------------------------------------------------------------------------
+  키                        값     설명
+  ---------------------------------------------------------------------------
+  fsm/land_ramp_rate        0.2    [m/s] 램프 기울기 = 하강 속도
+                                   위치 셋포인트를 이 비율로 낮춘다. PX4 는 이 값을
+                                   보지 못한다 (속도 셋포인트가 아니다).
+  fsm/land_touch_alt        0.13   ★[m] 접지 판정 AGL (이륙 지면 + 이 값)
+  fsm/land_touch_hold       0.30   ★[s] 이 시간 지속되면 즉시 강제 disarm
+  fsm/land_ramp_lead_max    0.30   [m] 램프가 실제 z 보다 앞설 수 있는 한계
+  fsm/land_xy_err_warn      0.80   [m] 위치 추종 오차 경고 (하강은 계속)
+  fsm/land_timeout          25.0   [s] 시간 초과 경고 (하강은 계속)
+
+  * 하강 속도는 단계를 두지 않는다. 초기에는 0.5(고고도)/0.2(지면 근처) 2단이었으나
+    전환 지점에서 명령이 계단처럼 튀는 것이 이득 대비 손해였다. 1.25m 에서 접지까지
+    0.2 m/s 로 약 5.8초, 2단 대비 약 2.3초 늘어날 뿐이다.
+  * land_touch_alt 0.13 의 근거는 [7] 참조 (실측 최대 드리프트 +0.087m).
+  * land_xy_err_warn 이 재는 것은 위치제어기의 "추종 오차"다. 셋포인트도 측정도 같은
+    odom 프레임이므로, 값이 크다 = 제어기가 앵커를 못 잡고 있다(틸트 포화/외란).
+    반대로 LIO xy 자체가 드리프트하면 기체가 실제로 밀려도 이 값은 0 에 가깝다 —
+    그건 탐지하지 못한다. 실내에 GPS 가 없어 xy 절대위치를 검증할 독립 소스가
+    없다(알려진 한계).
+
+
+[6] 신규 토픽 / 서비스
+--------------------------------------------------------------------------------
+  /mavros/extended_state    (구독) PX4 land detector 의 landed_state
+  /mavros/cmd/command       (서비스) 강제 disarm
+                            command=400(MAV_CMD_COMPONENT_ARM_DISARM)
+                            param1=0.0(disarm), param2=21196.0(force magic)
+  * 새 발행 토픽은 없다. 착륙 명령은 기존 /position_cmd 로만 나간다.
+
+
+[7] 검증 결과
+--------------------------------------------------------------------------------
+(A) 실비행 bag 오프라인 분석 — 0806 비행 9개 (이착륙 쌍이 있는 8개 대상)
+    PX4 land detector 의 ON_GROUND 구간으로 지면 z 를 잡고, 실제 접지 순간의
+    odom z 드리프트를 측정:
+        +0.047  +0.087  -0.000  +0.069  +0.009  +0.066  +0.074  -0.012  [m]
+        중앙값 +0.056, 최대 +0.087, 전부 양수(odom 이 실제보다 높게 읽음)
+    -> 접지 게이트 발동 8/8.
+    -> ToF 융합 덕에 z odom 이 접지 순간에 정확하다는 전제가 실측으로 확인됨.
+    -> 다만 문턱 0.10 이면 여유가 13mm 뿐이라 0.13 으로 상향(여유 43mm).
+
+(B) bag replay — real_flight_boogang2.launch + rosbag play --clock
+        --topics /mavros/odometry/in /ml_/pointcloud
+    RTH home reached xy_error=0.173m -> LAND -> traj_server 소유권 이양 ->
+    AGL 0.87 -> 0.07 -> touchdown detected(agl=0.07, held=0.30) -> LANDED.
+    open-loop 라 "명령이 하강을 일으켰는가"는 검증되지 않는다(재생 odom 은
+    우리 명령에 반응하지 않는다). 판정/전이/종료 로직만 검증됨.
+
+(C) MARSIM 폐루프 — garage_map1_mlx.launch (map1, init_z_=0.3)
+        t=0.0  agl=0.95  xy_err=0.11
+        t=1.0  agl=0.87  xy_err=0.01   (초기 과도구간)
+        t=2.0  agl=0.67  xy_err=0.00
+        t=3.0  agl=0.47  xy_err=0.00
+        t=4.0  agl=0.27  xy_err=0.00
+        t=5.0  agl=0.07  xy_err=0.00
+        touchdown agl=0.03 held=0.30 -> LANDED
+    -> 하강률이 정확히 0.20 m/s (램프 기울기가 그대로 나옴).
+    -> xy 추종 오차 0.11 -> 0.00, 착지까지 유지. 최종 좌표 (5.000000026,
+       -1.47e-08) vs 이륙 (5.0, 0.0).
+    -> land_ramp_lead_max 클램프는 발동하지 않음 (하강률이 명령값 그대로였음).
+
+미검증 (실기 벤치 필요):
+    - 강제 disarm(21196)을 v1.13 이 수락하는지
+    - PX4 land detector ON_GROUND 분기
+    - 지면 접촉 거동 (MARSIM 에 접촉 물리 없음 — 바닥을 그냥 통과한다)
+
+부수 효과: 시뮬에서 LANDED 에 도달할 수 있게 되었다. 기존에는 mavros 가 없어
+           set_mode 가 실패하며 LAND 에 영영 머물렀다.
+
+로그 확인: 이벤트 로거 "LAND" 채널 + execution.px4
+    "offboard landing: agl=... xy_err=... t=..."   1초 주기 진행상황
+    "touchdown detected | agl=... held=..."        판정 근거
+
+
+[8] 실기 투입 전 확인할 것 (PX4 v1.13 기준)
+--------------------------------------------------------------------------------
+  1) 강제 disarm 경로 — 프롭 빼고 지상에서 1회
+       rosservice call /mavros/cmd/command "{command: 400, param1: 0.0, param2: 21196.0}"
+     v1.13 이 매직값을 받는지 확인. 이것이 유일하게 남은 PX4 의존 미검증 항목이다.
+  2) PX4 파라미터
+       MPC_TILTMAX_LND   v1.13 존재(기본 12도)하나 TakeoffState 에만 걸린다.
+                         착륙 거동과 무관하므로 확인 불필요 — [1] 참조.
+       MPC_Z_P           램프 추종 지연 ≈ land_ramp_rate / MPC_Z_P.
+                         이 값이 낮으면 지연이 land_ramp_lead_max(0.30)를 넘어
+                         클램프가 물리고 하강이 느려질 수 있다.
+       LNDMC_TRIG_TIME   기본 1.0s. ON_GROUND 가 뜨기까지의 지연
+       COM_DISARM_LAND   0 이면 자동 disarm 없음
+       COM_OBL_ACT / COM_OBL_RC_ACT   offboard 끊길 때 LAND 로 떨어지는지
+  3) 이벤트 로그의 "trigger received | pos=(x,y,z)" 에서 z 확인
+       land_ground_z_ 는 "트리거 시점에 기체가 땅에 있다"를 전제한다. 공중에서
+       재트리거하거나 비행 중 LIO 를 재시작하면 지면 기준이 어긋난다(가드 없음).
+  4) rostopic hz /mavros/odometry/in    ([10]-b 참조)
+
+  5) ★ [1]의 원인 후보 A/B 판별 — 착륙 구간 ulog 에서 세 가지를 본다
+       takeoff_status.takeoff_state          하강 중 5(flight)로 유지되나
+                                             4 이하로 떨어지면 후보 A 성립
+       vehicle_attitude_setpoint 의 틸트각    12도에 붙나, 45도까지 쓰나
+       vehicle_local_position.xy_valid        false 로 떨어지는 구간이 있나
+                                             있으면 후보 B 성립
+
+
+[9] 롤백
+--------------------------------------------------------------------------------
+  파라미터 토글은 없다. AUTO.LAND 로 되돌리려면 이 커밋을 revert 해야 한다.
+  임시 조치로 fsm/land_touch_alt 를 키워 조기 disarm 을 유도하는 식은 위험하므로
+  쓰지 말 것.
+
+
+[10] 미결 / 논의 필요
+--------------------------------------------------------------------------------
+  a) 접지 판정이 z odom 정확도에 전적으로 의존한다.
+     (A)에서 8회 실측으로 뒷받침되지만, 첫 비행 로그에서 "touchdown detected" 의
+     agl 값과 실제 접지 시점을 다시 대조할 것.
+
+  b) EPIC 이 읽는 odom 이 5.26 Hz 다 (0806 bag 실측).
+     발행자 추적 결과:
+        /lio_sam/mapping/odometry     7.79 Hz  <- /lio_sam_mapOptimization
+        /mavros/vision_pose/pose      7.79 Hz  <- /lio_sam_vision_relay
+        /mavros/odometry/in           5.26 Hz  <- /mavros          ★ EPIC 입력
+     즉 EPIC 은 LIO 출력이 아니라 PX4 EKF 출력을 읽고 있고(그래서 z 가 ToF
+     융합값이다), 5.26 Hz 는 mavlink ODOMETRY 스트림 레이트다. 헤더 stamp 간격도
+     0.190s 로 동일해 녹화 누락이 아니라 실제 발행률이다.
+     착륙만의 문제가 아니라 계획·추종 전반의 지연 요인이므로, 실기에서
+     rostopic hz 로 확인 후 스트림 레이트 상향을 검토할 것.
+     (5 Hz 여도 비행은 된다 — PX4 는 자체 IMU/EKF 로 안정화하므로 companion odom 은
+      자세 루프에 들어가지 않는다. "비행이 됐다"가 5 Hz 를 반증하지 못한다.)
+     land_touch_hold 0.30s 가 5 Hz 에서는 독립 측정 1~2 개에 불과하므로 "최소 샘플
+     3개" 조건을 검토했으나, 실제 발행률 확인 전까지는 보류하기로 했다.
+
+  c) 0803 의 dz 1.4m 가 LIO 드리프트인지 ToF 융합 아티팩트인지 미확인.
+     ToF 는 AGL 을 재므로 차량 지붕/램프/연석 위를 지날 때 계단식으로 점프한다.
+     1.4m 는 승용차 지붕 높이와 거의 겹친다. rosbag 에서 dz 가 벌어진 구간의 xy 를
+     주차 위치와 대조하면 판별 가능.
+
+  d) 하방 ToF 토픽 직접 사용은 회사 SW 빌드 상태상 불가로 확인되어 관련 코드와
+     파라미터를 전부 제거했다. 대신 PX4 가 ToF 를 z 에 융합해 내보내므로 odom z 를
+     신뢰하는 구조로 간다((A)에서 검증됨).
+
+  e) "옆으로 새는" 증상의 근본 원인이 아직 확정되지 않았다.
+     틸트 제한 가설은 v1.13 소스 확인으로 기각됐다([1]). 남은 유력 후보는 위치
+     추정 무효화(FlightTaskDescend failsafe)인데, 그렇다면 이번 변경으로는
+     고쳐지지 않으며 localization 쪽 과제다.
+     판별: 착륙 구간 ulog 에서
+         vehicle_local_position.xy_valid       false 로 떨어지는 구간이 있나
+         vehicle_attitude_setpoint 의 틸트각    포화되나
+     첫 offboard 착륙 후에도 같은 증상이 남으면 이 경로가 원인으로 굳어진다.
+
+================================================================================

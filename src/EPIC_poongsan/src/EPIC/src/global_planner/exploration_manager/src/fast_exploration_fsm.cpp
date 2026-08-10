@@ -827,9 +827,9 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       return;
     }
 
-    // Check if goal reached. Auto return-home uses an xy-only tolerance (we want to
-    // be above the takeoff point, then let AUTO.LAND handle the descent); a manual
-    // /srv_rth uses the original 3D tolerance.
+    // 도달 판정. 홈복귀(returning_home_)는 xy 만 본다 — 이륙 지점 상공에 오기만
+    // 하면 되고 고도는 LAND 의 하강 로직이 처리한다. /srv_goto 같은 위치 이동
+    // 목표는 3D 거리를 쓴다. (/srv_rth 도 returning_home_ 를 세우므로 xy 경로다.)
     Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
     Eigen::Vector3d gp = goal_rth_.head<3>();
     double dist, tol;
@@ -860,7 +860,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       rth_metrics_pub_.publish(dist_msg);
 
       if (returning_home_) {
-        transitState(LAND, "RTH: home reached -> AUTO.LAND");
+        transitState(LAND, "RTH: home reached -> offboard descent");
         EPIC_LOG_INFO(1, 1, "execution.fsm",
                       "RTH home reached xy_error=%.3fm; landing", dist);
       } else {
@@ -1183,7 +1183,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
   case LAND: {
     stopTraj();
     global_path_update_timer_.stop();
-    // NOTE: exec_timer_ 는 멈추지 않는다 — 이 콜백이 계속 돌아야 AUTO.LAND 재요청과
+    // NOTE: exec_timer_ 는 멈추지 않는다 — 이 콜백이 계속 돌아야 하강 셋포인트 발행과
     // 착지(disarm) 감지가 동작한다. (예전 exec_timer_.stop() 은 첫 틱에서 FSM 을
     // 정지시켜 "2Hz 재요청" 주석과 모순되는 잠재 버그였음.)
     //
@@ -1192,28 +1192,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       transitState(LANDED, "LAND: touchdown & disarmed");
       break;
     }
-    // Switch PX4 to AUTO.LAND: PX4 throttles down, descends, ground-detects and
-    // auto-disarms. Non-blocking — request at ~2 Hz until /mavros/state confirms the
-    // mode (the old while(1) froze the FSM thread and published to /px4ctrl/takeoff_land
-    // which the real px4_ctrl_bridge does not subscribe to). The bridge keeps streaming
-    // OFFBOARD setpoints meanwhile; PX4 ignores them while in AUTO.LAND, so no conflict.
-    if (px4_state_.mode != "AUTO.LAND") {
-      static ros::Time last_land_req(0);
-      ros::Time now = ros::Time::now();
-      if ((now - last_land_req).toSec() > 0.5) {
-        last_land_req = now;
-        mavros_msgs::SetMode land_mode;
-        land_mode.request.custom_mode = "AUTO.LAND";
-        if (set_mode_client_.call(land_mode) && land_mode.response.mode_sent)
-          EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4", "AUTO.LAND requested");
-        else
-          EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4",
-                                 "AUTO.LAND request failed; retrying");
-      }
-    } else {
-      EPIC_LOG_INFO_THROTTLE(2.0, 1, 1, "execution.px4",
-                             "PX4 AUTO.LAND active; descending to auto-disarm");
-    }
+    // 하강 본체. OFFBOARD 를 유지한 채 직접 내려간다. AUTO.LAND 전환 경로는 없다.
+    runOffboardLanding();
     break;
   }
 
@@ -1462,6 +1442,201 @@ void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw,
   hover_cmd_pub_.publish(cmd);
 }
 
+/* ===================== [offboard landing] ==================================
+   배경: AUTO.LAND 착륙 시 "옆으로 샌다"는 현장 보고. 증상은 실재하나 원인 미확정.
+   후보 A(MPC_TILTMAX_LND 12도)는 파라미터가 실재하지만 v1.13 소스상 적용 조건이
+   TakeoffState 라 하강 중에는 45도일 가능성이 있어 판정 보류. 후보 B(위치 추정
+   무효화 -> FlightTaskDescend, xy 제어 없음)가 원인이면 이 변경으로는 고쳐지지
+   않는다. 판별 방법과 근거는 Update_log-0810.txt [1], [8]-5 참조.
+
+   원인과 무관하게 얻는 것: xy 를 이륙 좌표에 계속 묶고, 하강 속도를 우리가 쥐고
+   (AUTO.LAND 는 MPC_LAND_SPEED 0.7m/s 고정), 접지 즉시 강제 disarm 한다.
+
+   AUTO.LAND 로의 전환/폴백 경로는 이 파일에 존재하지 않는다 (의도적으로 삭제).
+   착륙 중 무언가 잘못되면 코드가 모드를 바꾸는 대신 하강 명령과 disarm 재시도를
+   유지하면서 ERROR 로 조종자 개입을 요구한다. 그 아래에는 PX4 자체 failsafe
+   (offboard 상실, 위치 상실)가 최종 안전망으로 그대로 남아 있다.
+
+   접지 판정 (2조건):
+     (1) AGL < land_touch_alt_          AGL = odom z - 이륙 시점 지면 z
+     (2) (1)이 land_touch_hold_ 동안 지속
+   또는 PX4 자체 land detector(/mavros/extended_state 의 ON_GROUND) -> 즉시.
+
+   하강속도(|vz|) 조건은 쓰지 않는다. 현장 경험상 그 조건이 성립하는 구간이
+   너무 빡빡해 접지 판정을 놓친다. 대신 z odom 을 신뢰한다 — 기체 z 는 PX4 가
+   하방 ToF 와 융합해 내보내는 값이라 이 축의 절대 정확도가 확보되어 있다.
+   ON_GROUND 분기는 그대로 남겨둔다: AGL 기준선이 어긋나 (1)이 영영 성립하지
+   않는 경우의 유일한 대비책이다.
+   ========================================================================== */
+
+void FastExplorationFSM::mavrosExtendedStateCallback(
+    const mavros_msgs::ExtendedState::ConstPtr &msg) {
+  px4_landed_state_ = msg->landed_state;
+  px4_ext_seen_ = true;
+}
+
+// AGL = 지면으로부터의 높이. 기준선 land_ground_z_ 는 트리거 시점(기체가 땅에
+// 앉아 있을 때)의 odom z 이므로, AGL 0 은 "이륙 직전 자세로 정확히 복귀"를 뜻한다.
+bool FastExplorationFSM::landAgl(double &agl) const {
+  if (!land_ground_z_valid_)
+    return false;
+  agl = static_cast<double>(fd_->odom_pos_.z()) - land_ground_z_;
+  return true;
+}
+
+// 하강 셋포인트. xy 는 이륙 좌표 고정, z 는 land_ramp_rate_ 기울기의 위치 램프.
+// 전부 위치 명령이라 /position_cmd 한 경로로 나간다 — 평상시 비행과 같은 종류다.
+// 램프는 LAND 진입 시점 z 에서 적분한 상대량이므로 절대 z 바이어스에 노출되지 않는다.
+void FastExplorationFSM::pubLandSetpoint(double vz) {
+  const ros::Time now = ros::Time::now();
+  double dt = (now - land_last_tick_).toSec();
+  if (!std::isfinite(dt) || dt < 0.0 || dt > 0.5)
+    dt = 0.0;  // 첫 틱/시간 점프 흡수 (0804 의 odom stamp 점프 같은 경우)
+  land_last_tick_ = now;
+  land_z_ramp_ += vz * dt;  // vz < 0
+
+  // anti-windup: 기체가 뒤처져도 램프가 실제 z 보다 land_ramp_lead_max_ 이상
+  // 앞서지 못하게 묶는다. 속도 명령은 스스로 늦춰지지만 램프는 혼자 달아난다.
+  if (fd_->have_odom_) {
+    const double floor_z = static_cast<double>(fd_->odom_pos_.z()) - land_ramp_lead_max_;
+    if (land_z_ramp_ < floor_z)
+      land_z_ramp_ = floor_z;
+  }
+
+  pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(), land_z_ramp_),
+             land_yaw_);
+}
+
+// MAV_CMD_COMPONENT_ARM_DISARM(400) + param2=21196(force magic).
+// 매직값은 PX4 의 사전검사를 전부 우회한다 — 공중에서 부르면 그대로 낙하하므로
+// 호출부는 반드시 접지 판정을 통과한 뒤에만 부른다.
+bool FastExplorationFSM::forceDisarm() {
+  mavros_msgs::CommandLong c;
+  c.request.broadcast = false;
+  c.request.command = 400;      // MAV_CMD_COMPONENT_ARM_DISARM
+  c.request.confirmation = 0;
+  c.request.param1 = 0.0;       // 0 = disarm
+  c.request.param2 = 21196.0;   // force magic
+  return command_client_.call(c) && c.response.success;
+}
+
+void FastExplorationFSM::runOffboardLanding() {
+  const ros::Time now = ros::Time::now();
+
+  switch (land_phase_) {
+
+  case LAND_PHASE_DESCEND: {
+    if (!fd_->have_odom_) {
+      // 모드를 바꿔 도망갈 곳이 없다. 하강 명령을 유지하며(브리지가 hold 로
+      // 떨어지지 않게) 소리친다. 그 아래는 PX4 위치상실 failsafe 소관이다.
+      pubLandSetpoint(-land_ramp_rate_);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "odometry lost during descent — holding slow descent, take manual control");
+      return;
+    }
+    double agl = 0.0;
+    if (!landAgl(agl)) {
+      pubLandSetpoint(-land_ramp_rate_);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "no AGL reference (takeoff ground z not recorded) — holding slow descent");
+      return;
+    }
+
+    const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    const double xy_err = (cur.head<2>() - land_xy_anchor_.head<2>()).norm();
+    const double elapsed = (now - land_enter_time_).toSec();
+    // 아래 둘은 경고일 뿐 하강을 중단시키지 않는다. 착륙 도중 제어를 놓는 것이
+    // 밀린 채로 내려앉는 것보다 위험하다.
+    if (xy_err > land_xy_err_warn_)
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "landing xy tracking error large: %.2fm (controller not holding the anchor)",
+          xy_err);
+    if (elapsed > land_timeout_)
+      EPIC_LOG_ERROR_THROTTLE(2.0, "execution.px4",
+                              "descent taking too long: %.1fs agl=%.2fm", elapsed, agl);
+
+    const double vz = -land_ramp_rate_;  // 전 구간 동일 속도 (명령 불연속 없음)
+    pubLandSetpoint(vz);
+
+    // 접지 판정: AGL 이 문턱 아래로 land_touch_hold_ 동안 지속.
+    // 또는 PX4 자체 land detector 가 ON_GROUND 를 선언하면 즉시 인정한다
+    // (AGL 기준선이 어긋났을 때의 유일한 대비책).
+    const bool px4_on_ground =
+        px4_ext_seen_ &&
+        px4_landed_state_ == mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND;
+    const bool touching = (agl < land_touch_alt_);
+
+    if (touching || px4_on_ground) {
+      if (land_touch_since_.toSec() < 1e-6)
+        land_touch_since_ = now;
+      const double held = (now - land_touch_since_).toSec();
+      if (px4_on_ground || held >= land_touch_hold_) {
+        land_phase_ = LAND_PHASE_DISARM;
+        land_touchdown_confirmed_ = true;
+        land_disarm_since_ = now;
+        land_last_req_ = ros::Time(0);
+        // vz 는 판정에 쓰지 않지만 사후 분석을 위해 남긴다.
+        const double vz_meas = std::fabs(static_cast<double>(fd_->odom_vel_.z()));
+        char d[176];
+        snprintf(d, sizeof(d),
+                 "agl=%.2fm held=%.2fs px4_on_ground=%d xy_err=%.2fm vz=%.2fm/s(unused)",
+                 agl, held, px4_on_ground ? 1 : 0, xy_err, vz_meas);
+        elog_.log("LAND", "touchdown detected", d, 0.0, EventLogger::L_WARN, true);
+        EPIC_LOG_WARN("execution.px4", "touchdown detected; force disarm (%s)", d);
+      }
+    } else {
+      land_touch_since_ = ros::Time(0);  // 조건이 깨지면 지속시간 재시작
+    }
+
+    EPIC_LOG_INFO_THROTTLE(1.0, 1, 1, "execution.px4",
+                           "offboard landing: agl=%.2fm vz_cmd=%.2f xy_err=%.2f t=%.1fs",
+                           agl, vz, xy_err, elapsed);
+    break;
+  }
+
+  case LAND_PHASE_DISARM: {
+    // 시뮬에는 mavros 가 없어 arming 서비스가 아예 존재하지 않는다. 접지 판정까지
+    // 온 이상 그것이 착륙 완료다.
+    if (!px4_seen_) {
+      transitState(LANDED, "LAND: touchdown (sim: no mavros)");
+      return;
+    }
+
+    // 접지 후에도 하강 명령을 유지한다. 명령을 끊으면 px4_ctrl_bridge 가
+    // land_cmd_timeout 뒤 "현재 포즈 hold" 로 떨어져, 지면에 앉은 채 위치제어기가
+    // 기체를 붙잡으려 들며 모터가 계속 돈다(전복 위험).
+    pubLandSetpoint(-land_ramp_rate_);
+
+    // 접지 판정 즉시 강제 disarm. 일반 disarm 은 PX4 land detector 의 동의
+    // (LNDMC_TRIG_TIME, 기본 1.0s)가 있어야 통과하는데, 그만큼 모터가 지면에서
+    // 더 도는 것이 전복 위험을 키운다.
+    if ((now - land_last_req_).toSec() > 0.25) {
+      land_last_req_ = now;
+      if (forceDisarm())
+        EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4", "force disarm requested");
+      else
+        EPIC_LOG_WARN_THROTTLE(1.0, "execution.px4",
+                               "force disarm not accepted; retrying");
+    }
+
+    // 강제 disarm 은 추정기를 참조하지 않는 경로다. 수 초간 실패한다면 원인은
+    // mavros<->FCU 링크 단절이거나 해당 PX4 버전이 매직값을 안 받는 것뿐이다.
+    // 어느 쪽도 코드가 스스로 풀 수 없으므로 조종자를 부른다.
+    const double since = (now - land_disarm_since_).toSec();
+    if (since > 3.0)
+      EPIC_LOG_ERROR_THROTTLE(2.0, "execution.px4",
+          "ON GROUND BUT STILL ARMED for %.1fs — take manual control (kill switch). "
+          "mode=%s", since, px4_state_.mode.c_str());
+    break;
+  }
+
+  default:
+    // 도달 불가. 방어적으로 하강 단계로 되돌린다.
+    land_phase_ = LAND_PHASE_DESCEND;
+    break;
+  }
+}
+
 // TAKEOFF_HOVER 를 벗어나는 유일한 경로. 초기 회전이 켜져 있으면 YAW_ROTATE_INIT
 // 를 한 번 거친다. 누적 이동거리 리셋은 "탐사가 실제로 시작되는" 시점에서 해야
 // 하므로 여기서 하지 않고 startExplorationFromHover() 로 미룬다 — 회전 중의 odom
@@ -1529,7 +1704,7 @@ void FastExplorationFSM::mavrosStateCallback(const mavros_msgs::State::ConstPtr 
     elog_.log("PX4", sig, "prev=" + prev_mode, 0.0, lvl);
 
     // OFFBOARD 이탈은 PX4/조종자가 제어권을 가져갔다는 뜻이다. 미션 중에만
-    // terminal PILOT_OVERRIDE 로 latch 한다. LAND 는 의도적으로 AUTO.LAND 로
+    // terminal PILOT_OVERRIDE 로 latch 한다. LAND 는 의도적으로 하강 셋포인트로
     // mode 를 바꾸는 정상 경로이므로 아래 active-state 목록에서 제외한다.
     const bool lost_offboard_control =
         prev_mode == "OFFBOARD" &&
@@ -1600,6 +1775,14 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
+
+  /* [offboard landing] PX4 AUTO.LAND 대신 OFFBOARD 로 직접 하강 */
+  nh.param("fsm/land_ramp_rate",        land_ramp_rate_,        0.2);
+  nh.param("fsm/land_touch_alt",    land_touch_alt_,    0.13);
+  nh.param("fsm/land_touch_hold",   land_touch_hold_,   0.30);
+  nh.param("fsm/land_xy_err_warn",  land_xy_err_warn_,  0.80);
+  nh.param("fsm/land_timeout",      land_timeout_,      25.0);
+  nh.param("fsm/land_ramp_lead_max", land_ramp_lead_max_, 0.30);
   nh.param("fsm/caution_map_reset_enable", caution_map_reset_enable_, true);
   nh.param("fsm/caution_map_reset_timeout", caution_map_reset_timeout_, 6.0);
   nh.param("fsm/caution_map_reset_failure_count",
@@ -1709,11 +1892,19 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   publishMapRebuildStatus("IDLE", "reset_count=0");
   replan_pub_ = nh.advertise<std_msgs::Empty>("/planning/replan", 10);
 
-  // AUTO.LAND at the end of the auto return-home sequence (and /mavros/state to
-  // confirm the mode actually engaged). Absolute names = MAVROS defaults.
-  set_mode_client_ = nh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+  // /mavros/state 로 armed/mode 를 관측한다 (착륙 완료 판정: armed == false).
   mavros_state_sub_ = nh.subscribe("/mavros/state", 10,
                                    &FastExplorationFSM::mavrosStateCallback, this);
+
+  /* [offboard landing] 강제 disarm 경로와 PX4 자체 land detector.
+     - /mavros/cmd/command    : MAV_CMD_COMPONENT_ARM_DISARM + 매직값 21196.
+     - /mavros/extended_state : PX4 land detector 의 ON_GROUND.
+     시뮬에는 mavros 가 없어 서비스 호출이 실패하는데, 그 경우는
+     runOffboardLanding() 이 접지 판정만으로 LANDED 로 마무리한다. */
+  command_client_ = nh.serviceClient<mavros_msgs::CommandLong>("/mavros/cmd/command");
+  mavros_ext_state_sub_ =
+      nh.subscribe("/mavros/extended_state", 10,
+                   &FastExplorationFSM::mavrosExtendedStateCallback, this);
 
   heartbeat_pub_ = nh.advertise<std_msgs::Empty>("/planning/heartbeat", 10);
   land_pub_ =
@@ -2465,7 +2656,7 @@ bool FastExplorationFSM::resetMapServiceCallback(
 
 // 원터치 홈복귀: `rosservice call /srv_rth` (인자 없음).
 // 비행 중 어느 상태에서든 즉시 이륙 지점(takeoff anchor)으로 복귀하고,
-// 홈 xy 반경(rth_land_xy_tol) 도달 시 자동 AUTO.LAND -> LANDED (자동 RTH와 동일 경로).
+// 홈 xy 반경(rth_land_xy_tol) 도달 시 LAND(OFFBOARD 하강) -> LANDED (자동 RTH와 동일 경로).
 bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
                                             std_srvs::Trigger::Response &res) {
   (void)req;
@@ -2492,7 +2683,7 @@ bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
   goal_rth_ << home.x(), home.y(), home.z(), home_yaw;
   has_goal_rth_ = true;
   clearRthFailures();
-  returning_home_ = true;     // 홈 xy 도달 -> LAND(AUTO.LAND) -> LANDED
+  returning_home_ = true;     // 홈 xy 도달 -> LAND(OFFBOARD 하강) -> LANDED
   explore_finished_ = false;
   // 수동 RTH 는 모든 것을 덮어쓰는 중단 명령이다. EFP 를 들고 가면 마커/자주색
   // leg 만 유령으로 남으므로 여기서 명시적으로 포기한다.
@@ -2512,7 +2703,7 @@ bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
   transitState(PLAN_TRAJ_RTH, "/srv_rth: return home");
 
   char m[128];
-  snprintf(m, sizeof(m), "returning home to (%.2f, %.2f, %.2f); AUTO.LAND on arrival",
+  snprintf(m, sizeof(m), "returning home to (%.2f, %.2f, %.2f); offboard descent on arrival",
            home.x(), home.y(), home.z());
   res.success = true;
   res.message = m;

@@ -78,9 +78,7 @@ class SimResultManager:
 
         scripts_dir = Path(rospkg.RosPack().get_path("epic_planner")) / "scripts"
         self.evaluate_script = scripts_dir / "evaluate_exploration.py"
-        self.metrics_script = scripts_dir / "measure_planning_metrics.py"
         self.plot_evaluation_script = scripts_dir / "plot_experiment_results.py"
-        self.plot_planning_script = scripts_dir / "plot_planning_time.py"
         self.plot_session_script = scripts_dir / "plot_session.py"
         self.plot_tracking_report_script = (
             Path(rospkg.RosPack().get_path("sim_bringup")) /
@@ -103,10 +101,8 @@ class SimResultManager:
             prefix=self.test_id + "_", dir=str(self.tmp_root)))
         self.eval_dir = self.work_dir / "evaluation"
         self.eval_iter_dir = self.eval_dir / "iter_1"
-        self.planning_dir = self.work_dir / "planning"
         self.session_dir = self.work_dir / "epic_session"
         self.eval_iter_dir.mkdir(parents=True)
-        self.planning_dir.mkdir(parents=True)
         self.session_dir.mkdir(parents=True)
 
         self.config_snapshot = self.work_dir / self.config_path.name
@@ -174,9 +170,7 @@ class SimResultManager:
     def _verify_source_scripts(self):
         scripts = [
             self.evaluate_script,
-            self.metrics_script,
             self.plot_evaluation_script,
-            self.plot_planning_script,
             self.plot_session_script,
             self.plot_tracking_report_script,
         ]
@@ -219,15 +213,7 @@ class SimResultManager:
             self._ros_private("output_dir", self.eval_iter_dir),
             self._ros_private("auto_shutdown", False),
         ]
-        metrics_cmd = [
-            sys.executable,
-            str(self.metrics_script),
-            "__name:=planning_metrics_measurer",
-            self._ros_private("output_dir", self.planning_dir),
-            self._ros_private("experiment_name", self.experiment_name),
-        ]
-
-        for name, command in (("evaluation", eval_cmd), ("planning", metrics_cmd)):
+        for name, command in (("evaluation", eval_cmd),):
             process = subprocess.Popen(command, preexec_fn=os.setsid)
             self.children.append((name, process))
             rospy.loginfo("[SimResult] started original EPIC %s collector (pid=%d)",
@@ -572,9 +558,7 @@ class SimResultManager:
     def _write_source_manifest(self, destination):
         scripts = [
             self.evaluate_script,
-            self.metrics_script,
             self.plot_evaluation_script,
-            self.plot_planning_script,
             self.plot_session_script,
             self.plot_tracking_report_script,
         ]
@@ -746,16 +730,8 @@ class SimResultManager:
                 log_file,
             ) if evaluation_ready else -1
 
-            planning_exit = self._run_plot(
-                [
-                    sys.executable,
-                    str(self.plot_planning_script),
-                    "--data_dir", str(self.planning_dir),
-                    "--experiment", self.experiment_name,
-                    "--no_show",
-                ],
-                log_file,
-            )
+            # planning 메트릭 수집기(planning_metrics_measurer)는 제거되었다.
+            # planning_exit 은 위에서 초기화한 -1(미실행)을 그대로 둔다.
 
             tracking_exit = self._run_plot(
                 [sys.executable, str(self.plot_session_script),

@@ -4,7 +4,9 @@ logs/
 eval/
 record/
 install/
-EPIC-stack_new/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records/
+result/
+EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/experiments
+EPIC-stack/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager/records
 .catkin_tools/
 .vscode/
 *.pcd
@@ -15,11 +17,8 @@ EPIC-stack_new/src/EPIC_poongsan/src/EPIC/src/global_planner/exploration_manager
 *.swp
 *.bag
 *.bag.active
+*.bak
 __pycache__
-# sim_bringup's result_root ($(find sim_bringup)/../../result) — per-run
-# experiment output written by sim_result_manager.py, not source.
-result/
-
 # LKH TSP solver scratch. fast_exploration_manager.cpp:68,817 rewrites
 # single.par/.tsp with ofstream on every solve and reads single.txt back
 # (:849,:852), so these are per-run output, not source. test.par/.tsp/.txt

@@ -14,7 +14,11 @@
          roslaunch sim_bringup garage_map1_mlx.launch init_x_:=10 init_y_:=5 -->
   <arg name="init_x_"   default="5.0" />
   <arg name="init_y_"   default="0.0" />
-  <arg name="init_z_"   default="2.0" />
+  <!-- 0.3: map1 바닥은 (5,0) 부근에서 z=0.00, planning_box_0/down 의 z 하한은 0.2.
+       옛 값 2.0 은 takeoff_height(1.25, 절대 z)보다 높아 트리거 시 기체가 이륙이
+       아니라 0.75m 하강했다. 시뮬은 지면 접촉이 없으므로 스폰 고도가 곧 지면
+       기준(land_ground_z_)이 된다. -->
+  <arg name="init_z_"   default="0.3" />
   <arg name="init_yaw"  default="0.0" />
   <!-- ========================================================= -->
 
