@@ -13,6 +13,7 @@ release_dir="$repo_root/.github/release-main"
 manifest="$release_dir/files.txt"
 release_patch="$release_dir/main.patch"
 release_readme="$release_dir/README.md"
+release_gitignore="$release_dir/gitignore.main"
 
 git cat-file -e "${source_commit}^{commit}"
 
@@ -45,5 +46,6 @@ git archive --format=tar "$source_commit" -- "${release_files[@]}" |
 git apply --check --unsafe-paths --directory="$output_dir" "$release_patch"
 git apply --unsafe-paths --directory="$output_dir" "$release_patch"
 install -m 0644 "$release_readme" "$output_dir/README.md"
+install -m 0644 "$release_gitignore" "$output_dir/.gitignore"
 
 echo "generated lightweight main tree from dev $source_commit"
