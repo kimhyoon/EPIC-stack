@@ -360,13 +360,16 @@ void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, boo
   // [offboard landing] LAND 에 들어오는 순간의 포즈를 하강 앵커로 고정한다.
   // xy 는 여기서 잡은 값을 착지까지 바꾸지 않는다 (드리프트를 따라가지 않도록).
   if (new_state == LAND && state_ != LAND) {
-    land_phase_ = LAND_PHASE_DESCEND;
-    land_enter_time_ = ros::Time::now();
-    land_last_tick_ = land_enter_time_;
-    land_touch_since_ = ros::Time(0);
+    land_phase_ = LAND_PHASE_ALIGN_YAW_AT_APPROACH;
+    land_final_descent_start_ = ros::Time(0);
     land_disarm_since_ = ros::Time(0);
     land_last_req_ = ros::Time(0);
-    land_bias_logged_ = false;
+    land_precision_since_ = ros::Time(0);
+    land_alignment_log_last_ = ros::Time(0);
+    land_alignment_log_phase_.clear();
+    land_alignment_log_seen_ = false;
+    land_alignment_log_yaw_ok_ = false;
+    land_alignment_log_xyz_ok_ = false;
     land_touchdown_confirmed_ = false;
     // xy 는 "LAND 를 시작한 자리"가 아니라 기억해 둔 이륙 좌표를 쓴다. RTH 는
     // rth_land_xy_tol(0.2m) 안에 들어오면 LAND 로 넘어오므로 둘은 최대 그만큼
@@ -377,8 +380,9 @@ void FastExplorationFSM::transitState(EXPL_STATE new_state, string pos_call, boo
       land_xy_anchor_.x() = takeoff_anchor_.x();
       land_xy_anchor_.y() = takeoff_anchor_.y();
     }
-    land_z_ramp_ = fd_->odom_pos_.z();
-    land_yaw_ = fd_->odom_yaw_;
+    // 정상 RTH 구성에서는 미션 트리거 시점의 이륙 방향으로 복원한다.
+    // takeoff 기능이 비활성인 예외 구성은 기록된 yaw가 없으므로 현재 yaw를 유지한다.
+    land_yaw_ = fp_->takeoff_height_ > 0.0 ? takeoff_yaw_ : fd_->odom_yaw_;
   }
   state_ = new_state;
   // 이벤트 로거가 상태전이를 기록한다. PLAN<->EXEC 리플랜 플래핑 같은 A<->B 교대
