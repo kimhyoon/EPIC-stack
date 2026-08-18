@@ -79,6 +79,29 @@ RTH dist_to_goal=3.0m | auto-home(xy) dist=3.04m tolerance=0.20m goal=(-0.01, -0
 ```
 `auto-home(xy)` = 탐사종료 자동귀환(xy거리 판정) / `srv-goal(3D)` = /srv_rth 수동 목표(3D 판정).
 
+### LAND_YAW / LAND_XYZ / LAND_KILL — 단계 착륙 정렬·kill 진단
+```
+LAND_YAW APPROACH_1.0M status=SATISFIED | current=12.10deg target=10.00deg error=2.10deg abs_error=2.10deg tol=3.00deg
+LAND_XYZ PRECISION_0.5M status=UNSATISFIED | current=(...) target=(...) error=(dx=0.030,dy=-0.120,dz=0.020)m agl=0.520m target_agl=0.500m xy_norm=0.124m tol=(xy=0.100m,z=0.050m) hold=0.00/1.50s timer=RESET
+LAND_KILL WAITING | current_z=0.240m kill_z=0.100m agl=0.240m kill_limit=0.100m margin=0.140m px4_on_ground=0 reason=NONE elapsed=1.20s
+```
+
+- `LAND_YAW`: `APPROACH_1.0M`, `DESCEND_TO_0.5M`, `PRECISION_0.5M`에서 현재/목표
+  yaw, 최단각 오차, 허용오차와 `SATISFIED`/`UNSATISFIED`를 기록한다.
+- `LAND_XYZ`: 같은 단계에서 현재/목표 XYZ, 축별 signed 오차, XY norm, XY/Z
+  허용오차를 기록한다. `status`는 `xy_norm <= xy_tol && |dz| <= z_tol`이다.
+- 0.5m 정밀 호버의 `timer=RUNNING/RESET`과 `hold=현재/요구시간`으로 1.5초
+  연속 조건이 유지되는지 확인한다. yaw는 이 타이머의 AND 조건이 아니며 별도로
+  계속 명령·관측한다.
+- `LAND_KILL`: 최종 하강 중 `margin=AGL-kill_limit`을 기록한다. `margin <= 0`
+  또는 `px4_on_ground=1`이면 `READY`가 되고 강제 disarm 단계로 넘어간다.
+- 정렬 로그는 상태/단계 변화 즉시 및 1초 주기로 발행한다. kill 로그도 1초 주기이며
+  `READY` 전환은 즉시 발행한다. 모두 `/epic/events`와 `*.events.log`에 보존된다.
+- rosbag이 `/epic/events`를 녹화했다면 `rostopic echo -b <flight.bag> /epic/events`로
+  재생 없이도 확인할 수 있다. 현재 real1/real2의 `record/bag=false`에서는 내장
+  recorder가 bag을 만들지 않으므로, bag도 필요하면 비행 전에 이를 켜거나 별도의
+  `rosbag record -a`를 실행해야 한다.
+
 ### PX4 — 모드/시동 변화 (변화 시만; 사고분석 1급 정보)
 ```
 PX4 mode=OFFBOARD armed=1 | prev=POSCTL

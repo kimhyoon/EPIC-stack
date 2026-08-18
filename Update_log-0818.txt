@@ -1,0 +1,328 @@
+================================================================================
+ Update Log  2026-08-18
+ RTH 1.0m/0.5m 단계 착륙 + 이륙 yaw 복원 + 착륙 램프 제거
+ (대상: EPIC_poongsan / PX4 OFFBOARD 착륙)
+================================================================================
+
+[1] 변경 목적 / 최종 요구사항
+--------------------------------------------------------------------------------
+기존 2026-08-10 구현은 RTH 후 OFFBOARD 위치 셋포인트로 착륙하되, z 목표를
+0.2m/s 위치 램프로 내리고 AGL 0.13m 미만 상태를 0.30초 유지하면 강제 disarm
+하는 방식이었다.
+
+이번 변경에서 최종 요구사항을 아래와 같이 확정했다.
+
+  1. RTH 목표를 홈 XY + AGL 1.0m 로 한다.
+  2. 홈에 복귀한 뒤 AGL 1.0m 위치를 유지한다.
+  3. 기체 yaw 를 미션 시작 시 기억한 takeoff_yaw_ 로 복원한다.
+  4. 홈 XY, AGL 1.0m, yaw 조건이 만족되면 AGL 0.5m 로 내려간다.
+  5. AGL 0.5m 에서 아래 두 조건을 동시에 1.5초 연속 유지한다.
+       · 실제 AGL = 0.50 +/- 0.05m
+       · 홈 XY 오차 <= 0.10m
+  6. 두 조건을 만족하면 최종 하강한다.
+  7. 0.2m/s 위치 램프는 완전히 제거한다. 1.0m/0.5m 단계는 유지한다.
+  8. 현재 odom z <= 미션 시작 시 기억한 지면 z + 0.10m 이면 즉시 강제 kill 한다.
+  9. 기존 강제 disarm 명령과 재시도 방식은 유지한다.
+
+이 문서는 Update_log-0810.txt 이후 변경된 최종 동작을 기록한다. 두 문서의
+착륙 램프, 접지 고도 및 지속시간 설명이 충돌하면 이 문서의 내용이 최신이다.
+
+
+[2] 이륙 기준값 기록
+--------------------------------------------------------------------------------
+미션 시작(startMission) 시 기체가 지면에 있고 takeoff 기능이 활성화되어 있다는
+전제에서 아래 값을 기록한다.
+
+  takeoff_anchor_.x/y : 미션 시작 시점 odom x/y
+  takeoff_yaw_        : 미션 시작 시점 odom yaw
+  land_ground_z_      : 미션 시작 시점 odom z (착륙 AGL 기준 지면)
+
+takeoff_anchor_.z 는 설정된 takeoff_height 목표값이므로, 착륙 지면 기준으로 쓰지
+않는다. 지면 기준은 반드시 별도로 저장한 land_ground_z_ 를 사용한다.
+
+  AGL = 현재 odom z - land_ground_z_
+
+따라서 각 절대 z 셋포인트와 강제 kill 조건은 다음과 같다.
+
+  RTH 접근 z       = land_ground_z_ + 1.00m
+  정밀 호버 z      = land_ground_z_ + 0.50m
+  최종 하강 목표 z = land_ground_z_
+  강제 kill 조건   = 현재 odom z <= land_ground_z_ + 0.10m
+
+takeoff 기능이 비활성화된 예외 구성에서는 기록된 이륙 XY/yaw 대신 LAND 진입 시점의
+현재 XY/yaw를 사용한다. 지면 AGL 기준이 없으면 안전을 위해 착륙 진행을 차단한다.
+
+
+[3] 최종 상태 흐름
+--------------------------------------------------------------------------------
+  FINISH (또는 /srv_rth, CAUTION force_return_home)
+    -> PLAN_TRAJ_RTH
+         목표 xy  = 기억한 이륙 xy
+         목표 z   = land_ground_z_ + rth_approach_alt(1.0m)
+         진입 조건:
+           · 홈 xy 오차 < rth_land_xy_tol
+           · z 오차 <= land_z_tol(0.05m)
+
+    -> LAND_PHASE_ALIGN_YAW_AT_APPROACH
+         셋포인트 = 홈 xy + AGL 1.0m + takeoff_yaw_
+         다음 단계 조건:
+           · 홈 xy 오차 <= 0.10m
+           · AGL 1.0m 오차 <= land_z_tol(0.05m)
+           · yaw 오차 <= 3도
+
+    -> LAND_PHASE_DESCEND_TO_PRECISION
+         z 셋포인트를 AGL 0.5m 로 직접 전환한다.
+         실제 AGL 이 0.50 +/- 0.05m 에 들어오면 정밀 호버 단계로 전환한다.
+
+    -> LAND_PHASE_HOLD_AT_PRECISION
+         셋포인트 = 홈 xy + AGL 0.5m + takeoff_yaw_
+         아래 조건이 동시에 연속으로 유지된 시간만 인정한다.
+           · |실제 AGL - 0.50m| <= 0.05m
+           · 홈 xy 오차 <= 0.10m
+         어느 하나라도 벗어나면 1.5초 타이머를 0부터 다시 시작한다.
+         두 조건이 1.5초 연속 유지되면 최종 하강으로 전환한다.
+
+    -> LAND_PHASE_FINAL_DESCEND
+         z 셋포인트를 기록한 land_ground_z_ 로 직접 전환한다.
+         xy/yaw는 계속 이륙 좌표와 takeoff_yaw_ 에 고정한다.
+
+         현재 odom z <= land_ground_z_ + 0.10m -> DISARM (즉시)
+         또는 PX4 ON_GROUND                       -> DISARM (즉시)
+
+    -> LAND_PHASE_DISARM
+         지면 z 셋포인트를 계속 발행한다.
+         CommandLong 강제 disarm 을 0.25초 주기로 재시도한다.
+
+    -> LANDED
+         px4_state_.armed == false 확인 후 종료한다.
+
+시뮬레이션에서 mavros 상태를 받지 못한 경우에는 DISARM 단계 진입을 착륙 완료로
+간주하고 LANDED 로 전환한다.
+
+
+[4] 착륙 램프 제거
+--------------------------------------------------------------------------------
+기존 0.2m/s 위치 램프를 전부 제거했다.
+
+제거 항목:
+
+  fsm/land_ramp_rate
+  fsm/land_ramp_lead_max
+  land_ramp_rate_
+  land_ramp_lead_max_
+  land_z_ramp_
+  land_last_tick_
+  램프 적분 코드
+  램프 anti-windup 코드
+
+현재 z 명령은 다음 세 절대 위치 셋포인트를 단계별로 직접 사용한다.
+
+  land_ground_z_ + 1.0m
+  land_ground_z_ + 0.5m
+  land_ground_z_
+
+사용자 지정 하강 속도 및 위치 램프가 없으므로 실제 하강 속도와 가속도는 PX4
+위치제어기의 기존 속도/가속도 제한에 의해 결정된다. /position_cmd 경로와
+px4_ctrl_bridge 의 속도 무시 설정은 변경하지 않았다.
+
+
+[5] 강제 kill 판정
+--------------------------------------------------------------------------------
+기존 판정:
+
+  AGL < 0.13m 상태를 0.30초 연속 유지 -> 강제 disarm
+
+최종 판정:
+
+  AGL <= 0.10m -> 즉시 강제 disarm 단계 진입
+
+코드상 동치 조건:
+
+  현재 odom z <= land_ground_z_ + land_touch_alt_
+  land_touch_alt_ = 0.10m
+
+기존 land_touch_hold(0.30초) 파라미터, 타이머 및 상태 변수는 전부 제거했다.
+비교 연산은 '<'가 아니라 '<='이므로 정확히 +0.10m인 경우도 kill 조건을 만족한다.
+
+PX4 자체 land detector의 /mavros/extended_state ON_GROUND 분기는 보조 안전망으로
+유지한다. AGL 기준선이 어긋나 0.10m 조건이 성립하지 않아도 PX4가 ON_GROUND를
+선언하면 강제 disarm 단계로 넘어간다.
+
+강제 disarm 명령은 기존과 동일하다.
+
+  MAV_CMD_COMPONENT_ARM_DISARM (command=400)
+  param1 = 0.0      (disarm)
+  param2 = 21196.0  (force magic)
+  재시도 주기 = 0.25초
+
+일반 disarm이 아니라 PX4 사전검사를 우회하는 강제 명령이므로, 고도 기준 오류가
+있으면 공중에서 모터가 정지할 수 있다. land_ground_z_가 지상에서 정확히 기록되는지
+실기 투입 전에 반드시 확인해야 한다.
+
+
+[6] 관련 파라미터
+--------------------------------------------------------------------------------
+  키                              값       설명
+  -----------------------------------------------------------------------------
+  fsm/rth_land_xy_tol             0.20m    RTH 종단 홈 XY 허용오차(real 설정)
+  fsm/rth_approach_alt            1.00m    RTH 접근 고도(AGL)
+  fsm/land_z_tol                  0.05m    1.0m/0.5m 공통 고도 허용오차
+  fsm/land_yaw_tol_deg            3.0deg   takeoff_yaw_ 정렬 허용오차
+  fsm/land_precision_alt          0.50m    정밀 호버 고도(AGL)
+  fsm/land_precision_xy_tol       0.10m    정밀 호버 홈 XY 허용오차
+  fsm/land_precision_hold         1.50s    고도+XY 동시 조건 연속 유지시간
+  fsm/land_touch_alt              0.10m    이 값 이하에서 즉시 강제 kill
+  fsm/land_xy_err_warn            0.80m    최종 하강 XY 추종오차 경고
+  fsm/land_timeout               25.00s    최종 하강 시간 초과 경고
+
+real1.yaml과 real2.yaml에는 단계별 파라미터를 명시했다. garage.yaml과
+garage_map1.yaml은 단계별 값에 코드 기본값을 사용하며, 최종 kill 기준
+fsm/land_touch_alt=0.10은 명시했다.
+
+
+[7] 변경 파일
+--------------------------------------------------------------------------------
+M  .../exploration_manager/include/epic_planner/fast_exploration_fsm.h
+       - RTH 접근 및 0.5m 정밀 호버 파라미터 추가
+       - 두 단계가 공유하는 land_z_tol_ 고도 허용오차 추가
+       - LAND_PHASE를 yaw 정렬/0.5m 하강/정밀 호버/최종 하강/disarm 단계로 확장
+       - 착륙 램프 멤버와 land_touch_hold 관련 멤버 제거
+       - 강제 kill 기본 고도를 0.10m로 변경
+
+M  .../exploration_manager/src/fast_exploration_fsm.cpp
+       - RTH 목표 z를 홈 지면 기준 AGL 1.0m로 변경
+       - 1.0m에서 takeoff_yaw_ 정렬 및 3도 허용오차 판정 추가
+       - 0.5m에서 고도/XY 동시 1.5초 유지 판정 추가
+       - 램프 적분 대신 1.0m/0.5m/지면 z 직접 셋포인트 적용
+       - AGL <= 0.10m 즉시 강제 disarm 단계 진입
+       - PX4 ON_GROUND 보조 판정 및 forceDisarm() 유지
+       - LAND_YAW/LAND_XYZ 정렬 상태 및 축별 오차 구조화 로그 추가
+       - 0.5m hold 타이머와 LAND_KILL kill margin 구조화 로그 추가
+
+M  .../exploration_manager/src/fsm_utils.cpp
+       - 미션 시작 시 takeoff_yaw_와 land_ground_z_ 기록
+       - LAND 진입 시 홈 XY와 takeoff_yaw_를 착륙 앵커로 설정
+       - 제거된 램프/접지 지속시간 상태 초기화 코드 정리
+
+M  .../exploration_manager/config/real1.yaml
+M  .../exploration_manager/config/real2.yaml
+M  .../exploration_manager/config/garage.yaml
+M  .../exploration_manager/config/garage_map1.yaml
+       - 단계별 착륙 설명 갱신
+       - 램프 파라미터 제거
+       - land_touch_alt=0.10 적용
+       - land_touch_hold 제거
+
+신규 파일:
+  Update_log-0818.txt
+
+
+[8] 검증 결과
+--------------------------------------------------------------------------------
+(A) 정적 검사
+    git diff --check 통과.
+    land_ramp, land_z_ramp, land_last_tick, land_ramp_lead_max 및 0.2m/s 관련
+    실행 코드/파라미터 참조가 남아 있지 않음을 확인했다.
+    land_touch_hold 및 land_touch_since 관련 참조가 남아 있지 않음을 확인했다.
+
+(B) YAML 파싱
+    아래 4개 설정 파일 모두 파싱 통과.
+
+      config/real1.yaml
+      config/real2.yaml
+      config/garage.yaml
+      config/garage_map1.yaml
+
+(C) 빌드
+    catkin build epic_planner --no-status
+
+    Summary: All 12 packages succeeded.
+    Failed: 0
+
+    기존 signed/unsigned 비교 및 미사용 지역변수 경고는 남아 있으나, 이번 변경으로
+    새 빌드 오류는 발생하지 않았다.
+
+미검증:
+
+    - 변경 후 실제 기체 RTH/착륙
+    - 1.0m -> 0.5m 직접 셋포인트 전환 시 실제 하강 응답
+    - 0.5m 고도/XY 동시 1.5초 유지 판정의 실기 안정성
+    - land_ground_z_ + 0.10m 강제 kill 시점의 실제 기체 높이
+    - PX4 v1.13의 force magic 21196 수락 여부
+
+
+[9] 로그 확인 포인트
+--------------------------------------------------------------------------------
+이벤트 로거 LAND 채널과 execution.px4 로그에서 다음 순서를 확인한다.
+
+  "LAND_YAW <phase> status=SATISFIED/UNSATISFIED"
+      phase = APPROACH_1.0M / DESCEND_TO_0.5M / PRECISION_0.5M
+      current/target yaw, signed error, absolute error, yaw 허용오차 확인
+
+  "LAND_XYZ <phase> status=SATISFIED/UNSATISFIED"
+      current/target XYZ, dx/dy/dz, xy_norm, XY/Z 허용오차 확인
+      PRECISION_0.5M에서는 hold=현재/1.5s와 timer=RUNNING/RESET도 확인
+
+  "LAND_KILL WAITING/READY"
+      current_z, kill_z, AGL, kill_limit, margin, px4_on_ground, reason 확인
+      margin <= 0 또는 px4_on_ground=1이면 READY
+
+  "takeoff yaw aligned at approach altitude"
+      xy_err, z_err, yaw_err 확인
+
+  "precision hover altitude reached"
+      AGL 0.50 +/- 0.05m 진입 확인
+
+  "landing precision hold"
+      altitude_ok && xy_ok 상태와 held=1.5s 확인
+
+  "precision position stable"
+      최종 하강 전환 시점 확인
+
+  "force-disarm height reached"
+      agl <= 0.10m 또는 px4_on_ground=1인지 확인
+
+  "force disarm requested"
+      CommandLong 강제 disarm 요청 확인
+
+첫 실기 로그에서는 반드시 아래 값을 실제 비행 영상/기체 높이와 대조한다.
+
+  trigger received 시점의 odom z
+  1.0m 접근 시 실제 AGL
+  0.5m 정밀 호버 시 실제 AGL과 XY 오차
+  force-disarm height reached 시 agl, kill_limit, px4_on_ground
+
+LAND_YAW/LAND_XYZ는 상태 또는 단계가 바뀌면 즉시, 그 외에는 1초 주기로 발행한다.
+LAND_KILL은 1초 주기이며 READY 전환은 즉시 발행한다. 세 로그 모두
+/epic/events(std_msgs/String)에 실리므로 record/args=-a로 생성한 rosbag에서
+재생할 수 있고, record/events=true이면 같은 세션의 *.events.log에도 저장된다.
+
+주의: 현재 real1.yaml/real2.yaml은 record/bag=false다. 따라서 내장
+record_on_goal.py는 *.events.log는 만들지만 *.bag은 만들지 않는다. rosbag에도
+남기려면 비행 전 record/bag=true로 변경하거나 별도로 rosbag record -a를 실행해야
+한다. 생성된 bag은 아래처럼 바로 확인할 수 있다.
+
+  rostopic echo -b <flight.bag> /epic/events
+
+
+[10] 실기 투입 전 주의 / 롤백
+--------------------------------------------------------------------------------
+  1. 프롭을 제거한 상태에서 CommandLong(400, param2=21196) 수락 여부를 먼저 확인한다.
+
+  2. 미션 트리거는 기체가 지면에 정지한 상태에서만 수행한다.
+     공중 재트리거 또는 비행 중 odom 원점 재설정이 발생하면 land_ground_z_가 실제
+     지면과 달라져 조기 kill 또는 kill 미동작이 발생할 수 있다.
+
+  3. 0.2m/s 램프가 없어졌으므로 실제 하강 속도는 PX4 위치제어기 설정에 따른다.
+     첫 비행은 충분한 안전공간에서 1.0m -> 0.5m 및 0.5m -> 지면 전환 응답을 확인한다.
+
+  4. 강제 kill 조건에는 시간 디바운스가 없다. odom z 한 샘플이라도
+     land_ground_z_ + 0.10m 이하이면 다음 FSM 주기에 강제 disarm을 요청한다.
+
+  5. AUTO.LAND 폴백 경로는 없다. 착륙 중 odom/링크 이상에 대비해 조종자가 즉시
+     수동 개입할 수 있는 상태에서 시험한다.
+
+  6. 이전 0.2m/s 램프로 되돌리는 런타임 토글은 없다. 되돌리려면 이번 소스 변경을
+     코드 수준에서 revert 해야 한다.
+
+================================================================================

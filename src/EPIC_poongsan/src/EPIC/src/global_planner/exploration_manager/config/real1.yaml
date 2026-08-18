@@ -105,7 +105,7 @@ bubble_topo/odom_node_distance: 1.5  # 이동 경로에 추가하는 이력 연�
 # 값 증가 시 안전 여유는 커지지만 좁은 통로의 경로를 찾지 못할 수 있고, 값 감소 시 좁은 통로를 통과할 가능성은 커지지만 충돌 위험이 증가한다.
 # 이전 구현은 별도 bubble_min_radius, 하드코딩 +0.1 m 및 goal 반경의 추가 0.01 m 판정 때문에 노드·엣지 판정이 달라져 연결과 설정 해석을 방해했다.
 # 현재는 이 값 하나로 통일했으며 최종 MINCO 궤적 안전거리는 DilateRadiusHard/Soft 및 실제 기체 크기와 별도로 확인한다.
-bubble_astar/safe_distance: 0.6  # topology 노드와 경로가 장애물에서 확보할 공통 최소 거리[m]
+bubble_astar/safe_distance: 0.65  # topology 노드와 경로가 장애물에서 확보할 공통 최소 거리[m]
 
 # [기존 Topology 노드 위치 매칭 허용거리]
 # 갱신 전후 node 중심이 이 거리 이내이고 기존 node가 safe_distance를 만족하면 같은 연결점으로 유지한다.
@@ -366,7 +366,7 @@ ViewpointManager/vp_reached_clear_radius: 0.0  # 일괄 해소 반경[m], 0이�
 # EPIC은 아래 박스 내부에서만 Frontier, viewpoint 및 경로를 생성한다.
 planning_box_num: 1                     # 기체 중심 planning box 수[개]
 planning_box_0/down: [-2.0, -15, 0.1]
-planning_box_0/up:   [22, 15, 2.1]
+planning_box_0/up:   [32, 15, 2.1]
 mapping_box/shrink_voxels: 1
 dead_area_num: 0                        # 박스 내부의 탐사 금지 영역 수[개], 0이면 없음
 # ====================================================================
@@ -434,8 +434,8 @@ local_planning/corridor/fallback_min_progress: 0.5   # 임시 목표로 인정�
 # 아래 값은 미관측 영역 진입 방지, 장애물 안전거리 및 Corridor 크기에 관여하는 검증값이므로 변경하지 않는다.
 local_planning/clip_corridor_to_observed: true  # 관측 영역 내부로 Corridor 제한
 local_planning/clip_cone_faces: true            # LiDAR FOV 경계면으로 Corridor 제한
-DilateRadiusSoft: 0.6                           # MINCO 최적화의 장애물 안전거리[m]
-DilateRadiusHard: 0.45                          # 최종 충돌 검사의 장애물 안전거리[m]
+DilateRadiusSoft: 0.65                           # MINCO 최적화의 장애물 안전거리[m]
+DilateRadiusHard: 0.55                          # 최종 충돌 검사의 장애물 안전거리[m]
 MaxCorridorSize: 4.0                            # Corridor 한 구간의 최대 크기[m]
 # [MINCO 비행 제한값][PX4 하드 제한 아님]
 # 아래 값은 MINCO가 궤적을 생성할 때 사용하는 소프트 제한이며, PX4 setpoint나 실제 기체의 하드 제한을 직접 설정하지 않는다.
@@ -549,10 +549,12 @@ fsm/takeoff_timeout: 200.0        # 타임아웃: 고도 근처면 탐색, 아�
 
 # ── 탐사 완료 후 자동 원점복귀 + 착륙 (real flight) ──────────────────
 # 탐사 끝나면: 마지막 cmd 좌표에서 잠깐 호버(OFFBOARD 유지) → 이륙지점으로 RTH
-#  → 홈과의 xy 거리가 rth_land_xy_tol 안에 들면 LAND(OFFBOARD 셋포인트 하강)로 넘어간다.
+#  → 홈 xy 허용오차 + 1.0m AGL 도달 후 LAND 단계별 절차로 넘어간다.
 fsm/auto_rth_land: true           # 이 동작 on/off (false면 기존: 완료 후 그 자리 hold)
-fsm/finish_hover_duration: 3.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
-fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 들면 착륙 [m]
+fsm/finish_hover_duration: 2.0    # 복귀 전 마지막 좌표에서 호버 시간 [s]
+fsm/rth_land_xy_tol: 0.1          # [m] RTH 종단 홈 xy 허용오차
+fsm/rth_approach_alt: 1.0         # [m AGL] 홈 RTH 종단/착륙 준비 고도
+fsm/land_z_tol: 0.05              # [m] AGL 1.0m/0.5m 공통 고도 허용오차
 
 # ---- [offboard landing] PX4 AUTO.LAND 대신 OFFBOARD 로 직접 하강 ---------------
 # 배경: AUTO.LAND 착륙 시 "옆으로 샌다"는 현장 보고. 증상은 실재하나 원인 미확정이다.
@@ -561,31 +563,25 @@ fsm/rth_land_xy_tol: 0.2          # ★홈 xy 근접 허용치 — 이 안에 �
 #   B) 위치 추정 무효화 -> FlightTaskDescend(xy 제어 없음): 유력. 이 원인이면 이
 #      변경으로 고쳐지지 않는다(localization 과제).
 #   판별 방법은 Update_log-0810.txt [1], [8]-5 참조.
-# 원인과 무관하게 얻는 것: (1) xy 를 이륙 좌표에 계속 묶고 (2) 하강 속도를 우리가
-#   쥐고(AUTO.LAND 는 MPC_LAND_SPEED 0.7m/s 고정) (3) 접지 즉시 강제 disarm.
+# 원인과 무관하게 얻는 것: (1) xyz/yaw를 이륙 기준에 묶고 (2) 1.0m,
+#   0.5m, 지면 z 위치 셋포인트를 직접 명령하고 (3) 접지 즉시 강제 disarm.
 # 명령은 전부 위치 셋포인트다 (/position_cmd 한 경로. 평상시 비행과 같은 종류):
-#   xy = 이륙 좌표 고정, z = LAND 진입 z 에서 land_ramp_rate 기울기로 내려가는 램프.
-#   절대 z 목표를 주지 않는 이유: 추정 바이어스가 그대로 지면 오차가 되고
-#   (0803 dz 최대 1.4m), 하강 속도도 MPC_Z_VEL_MAX_DN 에 뺏긴다.
-#   속도 셋포인트를 쓰지 않는 이유: 브리지가 모든 경로에서 속도 필드를 꺼 두고
-#   있어 이 기체에서 쓰인 적이 없다 — 램프 기울기로 충분하다.
-# 접지 판정: (AGL < land_touch_alt) 이 land_touch_hold 동안 지속 -> 즉시 강제 disarm.
+#   xy/yaw = 이륙 좌표/방향 고정, z = 기록한 지면 기준 1.0m/0.5m/지면.
+#   사용자 지정 속도나 위치 램프는 없으며, 하강 응답은 PX4 위치제어기 제한을 따른다.
+# 강제 kill 판정: 현재 z <= 기억한 이륙 지면 z + land_touch_alt -> 즉시 강제 disarm.
 #   하강속도 조건은 쓰지 않는다(현장 경험상 성립 구간이 너무 빡빡해 판정을 놓친다).
 #   대신 z odom 을 신뢰한다 — 기체 z 는 PX4 가 하방 ToF 와 융합해 내보내는 값이다.
 #   PX4 land detector 가 ON_GROUND 를 선언하면 즉시 인정한다(AGL 기준선이 어긋난
 #   경우의 유일한 대비책).
 # AUTO.LAND 로의 폴백 경로는 없다. 문제가 생기면 하강 명령과 강제 disarm 재시도를
 #   유지하며 ERROR 로 조종자 개입을 요구한다. 그 아래는 PX4 자체 failsafe 소관.
-fsm/land_ramp_rate: 0.2           # [m/s] 램프 기울기 = 하강 속도 (전 구간 동일).
-                                  #   위치 셋포인트를 이 비율로 낮춘다. PX4 는 이 값을
-                                  #   보지 못하고 위치만 받는다 (속도 셋포인트 아님).
-fsm/land_touch_alt: 0.13          # ★접지 판정값 [m] (원점 지면 + 이 값)
-fsm/land_touch_hold: 0.30         # ★[s] 이 시간 지속되면 즉시 강제 disarm
+fsm/land_yaw_tol_deg: 3.0         # [deg] 1.0m에서 이륙 yaw 복원 허용오차
+fsm/land_precision_alt: 0.5       # [m AGL] 최종 하강 전 정밀 호버 고도
+fsm/land_precision_xy_tol: 0.10   # [m] 홈 XY 정렬 허용오차
+fsm/land_precision_hold: 1.5      # [s] XY 허용오차 내 연속 유지 시간
+fsm/land_touch_alt: 0.10          # [m AGL] 기억한 이륙 지면 z + 0.10m 이하에서 강제 kill
 fsm/land_xy_err_warn: 0.80        # [m] 위치 추종 오차가 이보다 크면 ERROR 로그(진단용. LIO xy에 따라 더 커질 수도 있음.)
 fsm/land_timeout: 25.0            # [s] 이보다 길어지면 ERROR 로그 (진단용. 하강은 계속)
-# 램프 anti-windup: 위치 램프는 기체가 뒤처져도 혼자 계속 내려가므로,
-#   실제 z 보다 이만큼 아래로는 못 가게 묶는다 (과도한 밀어붙임 방지).
-fsm/land_ramp_lead_max: 0.30      # [m] 램프가 실제 z 보다 앞설 수 있는 한계
 
 
 # [조기 종료 결론 유예]

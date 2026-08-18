@@ -652,7 +652,7 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       pubHoldCmd(finish_hover_pos_, finish_hover_yaw_);
 
     if ((ros::Time::now() - finish_hover_start_).toSec() >= finish_hover_duration_) {
-      goal_rth_ << takeoff_anchor_.x(), takeoff_anchor_.y(), takeoff_anchor_.z(),
+      goal_rth_ << takeoff_anchor_.x(), takeoff_anchor_.y(), rthApproachZ(),
           fd_->odom_yaw_;
       has_goal_rth_ = true;
       returning_home_ = true;       // routes the RTH goal-reached to LAND
@@ -827,30 +827,39 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       return;
     }
 
-    // 도달 판정. 홈복귀(returning_home_)는 xy 만 본다 — 이륙 지점 상공에 오기만
-    // 하면 되고 고도는 LAND 의 하강 로직이 처리한다. /srv_goto 같은 위치 이동
-    // 목표는 3D 거리를 쓴다. (/srv_rth 도 returning_home_ 를 세우므로 xy 경로다.)
+    // 도달 판정. 홈복귀는 홈 xy와 RTH 접근 고도(1.0m AGL)를 둘 다
+    // 만족해야 LAND로 넘어간다. /srv_goto 같은 일반 위치 이동은 3D 거리를 쓴다.
     Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
     Eigen::Vector3d gp = goal_rth_.head<3>();
     double dist, tol;
+    double z_error = 0.0;
+    bool goal_reached = false;
     if (returning_home_) {
       dist = (cur.head<2>() - gp.head<2>()).norm();  // xy distance to home
       tol = rth_land_xy_tol_;
+      z_error = std::fabs(cur.z() - gp.z());
+      goal_reached = dist < tol && z_error <= land_z_tol_;
     } else {
       dist = (cur - gp).norm();                      // 3D distance to service goal
       tol = goal_tolerance_;
+      goal_reached = dist < tol;
     }
     // 진행상황: 0.5m 버킷이 바뀔 때만 이벤트 발행 (예전엔 사이클마다 INFO 스팸)
     {
-      char sig[64], d[144];
+      char sig[64], d[192];
       snprintf(sig, sizeof(sig), "dist_to_goal=%.1fm", std::floor(dist * 2.0) / 2.0);
-      snprintf(d, sizeof(d), "%s dist=%.2fm tolerance=%.2fm goal=(%.2f, %.2f, %.2f)",
-               returning_home_ ? "auto-home(xy)" : "srv-goal(3D)", dist, tol,
-               gp.x(), gp.y(), gp.z());
+      if (returning_home_) {
+        snprintf(d, sizeof(d),
+                 "auto-home xy=%.2fm/%.2fm z_error=%.2fm/%.2fm goal=(%.2f, %.2f, %.2f)",
+                 dist, tol, z_error, land_z_tol_, gp.x(), gp.y(), gp.z());
+      } else {
+        snprintf(d, sizeof(d), "srv-goal(3D) dist=%.2fm tolerance=%.2fm "
+                 "goal=(%.2f, %.2f, %.2f)", dist, tol, gp.x(), gp.y(), gp.z());
+      }
       elog_.log("RTH", sig, d, 0.0);
     }
 
-    if (dist < tol) {
+    if (goal_reached) {
       has_goal_rth_ = false;
       global_path_update_timer_.stop();  // Stop replanning timer
 
@@ -862,7 +871,8 @@ void FastExplorationFSM::FSMCallback(const ros::TimerEvent &e) {
       if (returning_home_) {
         transitState(LAND, "RTH: home reached -> offboard descent");
         EPIC_LOG_INFO(1, 1, "execution.fsm",
-                      "RTH home reached xy_error=%.3fm; landing", dist);
+                      "RTH home reached xy_error=%.3fm z_error=%.3fm; "
+                      "aligning takeoff yaw", dist, z_error);
       } else {
         transitState(FINISH, "PLAN_TRAJ_RTH: goal reached");
         EPIC_LOG_INFO(1, 1, "execution.fsm", "RTH goal reached");
@@ -1312,12 +1322,14 @@ bool FastExplorationFSM::beginMapRebuild(const std::string &reason,
   if (force_return_home) {
     // A CAUTION severe enough to discard the occupancy epoch is a degraded
     // mission, not a reason to rediscover the cleared frontier history.  Arm
-    // the same return-home-and-land path as /srv_rth, preserving the arrival
-    // yaw policy by seeding the goal with the current heading.
+    // the same return-home-and-land path as /srv_rth. RTH preserves the current
+    // heading; LAND restores takeoff_yaw_ after the 1.0m approach is complete.
     Eigen::Vector3d home = takeoff_anchor_;
     if (fp_->takeoff_height_ <= 0.0) {
       home = Eigen::Vector3d(
           0.0, 0.0, std::max(0.5, static_cast<double>(fd_->odom_pos_.z())));
+    } else {
+      home.z() = rthApproachZ();
     }
     goal_rth_ << home.x(), home.y(), home.z(), fd_->odom_yaw_;
     has_goal_rth_ = true;
@@ -1425,7 +1437,8 @@ void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw,
 
   // Hold (p, yaw) as a position setpoint. px4_ctrl_bridge forwards this on
   // /position_cmd (it ignores the velocity field), so the drone holds pose. Yaw is
-  // fixed (yaw_dot=0) -> no rotation. Mirrors traj_server's /position_cmd convention.
+  // yaw is an angle setpoint (production bridge uses use_yawrate=false), so a new
+  // angle rotates the vehicle and then holds it. yaw_dot remains zero here.
   quadrotor_msgs::PositionCommand cmd;
   cmd.header.stamp = ros::Time::now();
   cmd.header.frame_id = "odom";
@@ -1449,17 +1462,16 @@ void FastExplorationFSM::pubHoldCmd(const Eigen::Vector3d &p, double yaw,
    무효화 -> FlightTaskDescend, xy 제어 없음)가 원인이면 이 변경으로는 고쳐지지
    않는다. 판별 방법과 근거는 Update_log-0810.txt [1], [8]-5 참조.
 
-   원인과 무관하게 얻는 것: xy 를 이륙 좌표에 계속 묶고, 하강 속도를 우리가 쥐고
-   (AUTO.LAND 는 MPC_LAND_SPEED 0.7m/s 고정), 접지 즉시 강제 disarm 한다.
+   원인과 무관하게 얻는 것: xy/yaw를 이륙 기준에 계속 묶고,
+   1.0m/0.5m/지면 z 위치 셋포인트를 직접 명령한 뒤 접지 즉시 강제 disarm 한다.
 
    AUTO.LAND 로의 전환/폴백 경로는 이 파일에 존재하지 않는다 (의도적으로 삭제).
    착륙 중 무언가 잘못되면 코드가 모드를 바꾸는 대신 하강 명령과 disarm 재시도를
    유지하면서 ERROR 로 조종자 개입을 요구한다. 그 아래에는 PX4 자체 failsafe
    (offboard 상실, 위치 상실)가 최종 안전망으로 그대로 남아 있다.
 
-   접지 판정 (2조건):
-     (1) AGL < land_touch_alt_          AGL = odom z - 이륙 시점 지면 z
-     (2) (1)이 land_touch_hold_ 동안 지속
+   강제 disarm 판정:
+     AGL <= land_touch_alt_             AGL = odom z - 이륙 시점 지면 z
    또는 PX4 자체 land detector(/mavros/extended_state 의 ON_GROUND) -> 즉시.
 
    하강속도(|vz|) 조건은 쓰지 않는다. 현장 경험상 그 조건이 성립하는 구간이
@@ -1475,6 +1487,12 @@ void FastExplorationFSM::mavrosExtendedStateCallback(
   px4_ext_seen_ = true;
 }
 
+double FastExplorationFSM::rthApproachZ() const {
+  if (land_ground_z_valid_)
+    return land_ground_z_ + rth_approach_alt_;
+  return takeoff_anchor_.z();
+}
+
 // AGL = 지면으로부터의 높이. 기준선 land_ground_z_ 는 트리거 시점(기체가 땅에
 // 앉아 있을 때)의 odom z 이므로, AGL 0 은 "이륙 직전 자세로 정확히 복귀"를 뜻한다.
 bool FastExplorationFSM::landAgl(double &agl) const {
@@ -1484,26 +1502,10 @@ bool FastExplorationFSM::landAgl(double &agl) const {
   return true;
 }
 
-// 하강 셋포인트. xy 는 이륙 좌표 고정, z 는 land_ramp_rate_ 기울기의 위치 램프.
-// 전부 위치 명령이라 /position_cmd 한 경로로 나간다 — 평상시 비행과 같은 종류다.
-// 램프는 LAND 진입 시점 z 에서 적분한 상대량이므로 절대 z 바이어스에 노출되지 않는다.
-void FastExplorationFSM::pubLandSetpoint(double vz) {
-  const ros::Time now = ros::Time::now();
-  double dt = (now - land_last_tick_).toSec();
-  if (!std::isfinite(dt) || dt < 0.0 || dt > 0.5)
-    dt = 0.0;  // 첫 틱/시간 점프 흡수 (0804 의 odom stamp 점프 같은 경우)
-  land_last_tick_ = now;
-  land_z_ramp_ += vz * dt;  // vz < 0
-
-  // anti-windup: 기체가 뒤처져도 램프가 실제 z 보다 land_ramp_lead_max_ 이상
-  // 앞서지 못하게 묶는다. 속도 명령은 스스로 늦춰지지만 램프는 혼자 달아난다.
-  if (fd_->have_odom_) {
-    const double floor_z = static_cast<double>(fd_->odom_pos_.z()) - land_ramp_lead_max_;
-    if (land_z_ramp_ < floor_z)
-      land_z_ramp_ = floor_z;
-  }
-
-  pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(), land_z_ramp_),
+// 착륙 위치 셋포인트. xy/yaw는 이륙 좌표/방향에 고정하고,
+// z는 1.0m AGL, 0.5m AGL, 이륙 지면 z를 단계별로 직접 명령한다.
+void FastExplorationFSM::pubLandSetpoint(double target_z) {
+  pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(), target_z),
              land_yaw_);
 }
 
@@ -1520,31 +1522,238 @@ bool FastExplorationFSM::forceDisarm() {
   return command_client_.call(c) && c.response.success;
 }
 
+void FastExplorationFSM::logLandingAlignment(
+    const std::string &phase, const Eigen::Vector3d &current, double agl,
+    double target_agl, double held, const std::string &timer_state,
+    bool force_now) {
+  const ros::Time now = ros::Time::now();
+  const double dx = current.x() - land_xy_anchor_.x();
+  const double dy = current.y() - land_xy_anchor_.y();
+  const double target_z = land_ground_z_ + target_agl;
+  const double dz = current.z() - target_z;
+  const double xy_err = std::hypot(dx, dy);
+
+  const double yaw_delta = static_cast<double>(fd_->odom_yaw_) - land_yaw_;
+  const double yaw_err = std::atan2(std::sin(yaw_delta), std::cos(yaw_delta));
+  const bool yaw_ok = std::fabs(yaw_err) <= land_yaw_tol_;
+  const bool xyz_ok = xy_err <= land_precision_xy_tol_ &&
+                      std::fabs(dz) <= land_z_tol_;
+
+  const bool status_changed =
+      !land_alignment_log_seen_ || phase != land_alignment_log_phase_ ||
+      yaw_ok != land_alignment_log_yaw_ok_ ||
+      xyz_ok != land_alignment_log_xyz_ok_;
+  const bool periodic = land_alignment_log_last_.isZero() ||
+                        (now - land_alignment_log_last_).toSec() >= 1.0;
+  if (!force_now && !status_changed && !periodic)
+    return;
+
+  const char *yaw_status = yaw_ok ? "SATISFIED" : "UNSATISFIED";
+  const char *xyz_status = xyz_ok ? "SATISFIED" : "UNSATISFIED";
+  char yaw_detail[256];
+  snprintf(yaw_detail, sizeof(yaw_detail),
+           "current=%.2fdeg target=%.2fdeg error=%.2fdeg abs_error=%.2fdeg "
+           "tol=%.2fdeg",
+           static_cast<double>(fd_->odom_yaw_) * 180.0 / M_PI,
+           land_yaw_ * 180.0 / M_PI, yaw_err * 180.0 / M_PI,
+           std::fabs(yaw_err) * 180.0 / M_PI,
+           land_yaw_tol_ * 180.0 / M_PI);
+  elog_.log("LAND_YAW", phase + " status=" + yaw_status, yaw_detail, 0.0,
+            EventLogger::L_INFO, true);
+
+  char xyz_detail[512];
+  if (held >= 0.0) {
+    snprintf(xyz_detail, sizeof(xyz_detail),
+             "current=(%.3f,%.3f,%.3f)m target=(%.3f,%.3f,%.3f)m "
+             "error=(dx=%.3f,dy=%.3f,dz=%.3f)m agl=%.3fm target_agl=%.3fm "
+             "xy_norm=%.3fm tol=(xy=%.3fm,z=%.3fm) hold=%.2f/%.2fs timer=%s",
+             current.x(), current.y(), current.z(), land_xy_anchor_.x(),
+             land_xy_anchor_.y(), target_z, dx, dy, dz, agl, target_agl,
+             xy_err, land_precision_xy_tol_, land_z_tol_, held,
+             land_precision_hold_, timer_state.c_str());
+  } else {
+    snprintf(xyz_detail, sizeof(xyz_detail),
+             "current=(%.3f,%.3f,%.3f)m target=(%.3f,%.3f,%.3f)m "
+             "error=(dx=%.3f,dy=%.3f,dz=%.3f)m agl=%.3fm target_agl=%.3fm "
+             "xy_norm=%.3fm tol=(xy=%.3fm,z=%.3fm) hold=INACTIVE timer=%s",
+             current.x(), current.y(), current.z(), land_xy_anchor_.x(),
+             land_xy_anchor_.y(), target_z, dx, dy, dz, agl, target_agl,
+             xy_err, land_precision_xy_tol_, land_z_tol_, timer_state.c_str());
+  }
+  elog_.log("LAND_XYZ", phase + " status=" + xyz_status, xyz_detail, 0.0,
+            EventLogger::L_INFO, true);
+
+  land_alignment_log_last_ = now;
+  land_alignment_log_phase_ = phase;
+  land_alignment_log_seen_ = true;
+  land_alignment_log_yaw_ok_ = yaw_ok;
+  land_alignment_log_xyz_ok_ = xyz_ok;
+}
+
 void FastExplorationFSM::runOffboardLanding() {
   const ros::Time now = ros::Time::now();
+  const double precision_z = land_ground_z_ + land_precision_alt_;
+  const double touchdown_z = land_ground_z_;
 
   switch (land_phase_) {
 
-  case LAND_PHASE_DESCEND: {
+  case LAND_PHASE_ALIGN_YAW_AT_APPROACH: {
+    const double approach_z = rthApproachZ();
+    pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(), approach_z),
+               land_yaw_);
+
     if (!fd_->have_odom_) {
-      // 모드를 바꿔 도망갈 곳이 없다. 하강 명령을 유지하며(브리지가 hold 로
-      // 떨어지지 않게) 소리친다. 그 아래는 PX4 위치상실 failsafe 소관이다.
-      pubLandSetpoint(-land_ramp_rate_);
       EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
-          "odometry lost during descent — holding slow descent, take manual control");
+          "odometry lost while aligning landing yaw — holding approach setpoint");
       return;
     }
+
     double agl = 0.0;
     if (!landAgl(agl)) {
-      pubLandSetpoint(-land_ramp_rate_);
       EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
-          "no AGL reference (takeoff ground z not recorded) — holding slow descent");
+          "no AGL reference — holding approach setpoint, landing blocked");
       return;
     }
 
     const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
     const double xy_err = (cur.head<2>() - land_xy_anchor_.head<2>()).norm();
-    const double elapsed = (now - land_enter_time_).toSec();
+    const double z_err = std::fabs(agl - rth_approach_alt_);
+    const double yaw_delta = static_cast<double>(fd_->odom_yaw_) - land_yaw_;
+    const double yaw_err = std::fabs(std::atan2(std::sin(yaw_delta),
+                                                std::cos(yaw_delta)));
+    const bool aligned = xy_err <= land_precision_xy_tol_ &&
+                         z_err <= land_z_tol_ &&
+                         yaw_err <= land_yaw_tol_;
+    logLandingAlignment("APPROACH_1.0M", cur, agl, rth_approach_alt_, -1.0,
+                        "INACTIVE");
+
+    if (aligned) {
+      land_phase_ = LAND_PHASE_DESCEND_TO_PRECISION;
+      char detail[176];
+      snprintf(detail, sizeof(detail),
+               "xy_err=%.3fm z_err=%.3fm yaw_err=%.2fdeg; descend to %.2fm AGL",
+               xy_err, z_err, yaw_err * 180.0 / M_PI, land_precision_alt_);
+      elog_.log("LAND", "takeoff yaw aligned at approach altitude", detail,
+                0.0, EventLogger::L_INFO, true);
+    }
+
+    EPIC_LOG_INFO_THROTTLE(
+        1.0, 1, 1, "execution.px4",
+        "landing align: agl=%.2fm xy_err=%.3fm yaw_err=%.2fdeg "
+        "limits=(%.2fm, %.2fdeg)",
+        agl, xy_err, yaw_err * 180.0 / M_PI, land_precision_xy_tol_,
+        land_yaw_tol_ * 180.0 / M_PI);
+    break;
+  }
+
+  case LAND_PHASE_DESCEND_TO_PRECISION: {
+    if (!fd_->have_odom_ || !land_ground_z_valid_) {
+      pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(),
+                                 rthApproachZ()), land_yaw_);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "odometry/AGL reference lost before precision hover — descent paused");
+      return;
+    }
+
+    double agl = 0.0;
+    landAgl(agl);
+    const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    const double xy_err = (cur.head<2>() - land_xy_anchor_.head<2>()).norm();
+    pubLandSetpoint(precision_z);
+    logLandingAlignment("DESCEND_TO_0.5M", cur, agl, land_precision_alt_,
+                        -1.0, "INACTIVE");
+
+    if (std::fabs(agl - land_precision_alt_) <= land_z_tol_) {
+      land_phase_ = LAND_PHASE_HOLD_AT_PRECISION;
+      land_precision_since_ = ros::Time(0);
+      char detail[144];
+      snprintf(detail, sizeof(detail), "agl=%.3fm xy_err=%.3fm target=%.2fm",
+               agl, xy_err, land_precision_alt_);
+      elog_.log("LAND", "precision hover altitude reached", detail, 0.0,
+                EventLogger::L_INFO, true);
+    }
+
+    EPIC_LOG_INFO_THROTTLE(1.0, 1, 1, "execution.px4",
+                           "landing descend-to-precision: agl=%.2fm "
+                           "target=%.2fm xy_err=%.3f",
+                           agl, land_precision_alt_, xy_err);
+    break;
+  }
+
+  case LAND_PHASE_HOLD_AT_PRECISION: {
+    pubHoldCmd(Eigen::Vector3d(land_xy_anchor_.x(), land_xy_anchor_.y(), precision_z),
+               land_yaw_);
+    if (!fd_->have_odom_ || !land_ground_z_valid_) {
+      land_precision_since_ = ros::Time(0);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "odometry/AGL reference lost during precision hover — landing blocked");
+      return;
+    }
+
+    double agl = 0.0;
+    landAgl(agl);
+    const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    const double xy_err = (cur.head<2>() - land_xy_anchor_.head<2>()).norm();
+    const bool altitude_ok =
+        std::fabs(agl - land_precision_alt_) <= land_z_tol_;
+    const bool xy_ok = xy_err <= land_precision_xy_tol_;
+    double held = 0.0;
+
+    // xy 허용오차와 0.5m 호버 조건이 동시에 연속으로 유지된
+    // 시간만 인정한다. 한 틱이라도 벗어나면 1.5초 타이머를 다시 시작한다.
+    if (altitude_ok && xy_ok) {
+      if (land_precision_since_.toSec() < 1e-6)
+        land_precision_since_ = now;
+      held = (now - land_precision_since_).toSec();
+    } else {
+      land_precision_since_ = ros::Time(0);
+    }
+
+    logLandingAlignment("PRECISION_0.5M", cur, agl, land_precision_alt_, held,
+                        (altitude_ok && xy_ok) ? "RUNNING" : "RESET",
+                        held >= land_precision_hold_);
+
+    if (held >= land_precision_hold_) {
+      land_phase_ = LAND_PHASE_FINAL_DESCEND;
+      land_final_descent_start_ = now;
+      char detail[160];
+      snprintf(detail, sizeof(detail),
+               "xy_err=%.3fm <= %.3fm held=%.2fs; final descent",
+               xy_err, land_precision_xy_tol_, held);
+      elog_.log("LAND", "precision position stable", detail, 0.0,
+                EventLogger::L_INFO, true);
+    }
+
+    EPIC_LOG_INFO_THROTTLE(1.0, 1, 1, "execution.px4",
+                           "landing precision hold: agl=%.2fm xy_err=%.3fm "
+                           "within=%d held=%.2f/%.2fs",
+                           agl, xy_err, (altitude_ok && xy_ok) ? 1 : 0, held,
+                           land_precision_hold_);
+    break;
+  }
+
+  case LAND_PHASE_FINAL_DESCEND: {
+    if (!fd_->have_odom_) {
+      pubLandSetpoint(touchdown_z);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "odometry lost during final descent — holding touchdown setpoint, "
+          "take manual control");
+      return;
+    }
+    double agl = 0.0;
+    if (!landAgl(agl)) {
+      pubLandSetpoint(precision_z);
+      EPIC_LOG_ERROR_THROTTLE(1.0, "execution.px4",
+          "no AGL reference during final descent — landing blocked at precision altitude");
+      return;
+    }
+
+    const Eigen::Vector3d cur = fd_->odom_pos_.cast<double>();
+    const double xy_err = (cur.head<2>() - land_xy_anchor_.head<2>()).norm();
+    const double elapsed =
+        land_final_descent_start_.isZero()
+            ? 0.0
+            : (now - land_final_descent_start_).toSec();
     // 아래 둘은 경고일 뿐 하강을 중단시키지 않는다. 착륙 도중 제어를 놓는 것이
     // 밀린 채로 내려앉는 것보다 위험하다.
     if (xy_err > land_xy_err_warn_)
@@ -1555,42 +1764,50 @@ void FastExplorationFSM::runOffboardLanding() {
       EPIC_LOG_ERROR_THROTTLE(2.0, "execution.px4",
                               "descent taking too long: %.1fs agl=%.2fm", elapsed, agl);
 
-    const double vz = -land_ramp_rate_;  // 전 구간 동일 속도 (명령 불연속 없음)
-    pubLandSetpoint(vz);
+    pubLandSetpoint(touchdown_z);
 
-    // 접지 판정: AGL 이 문턱 아래로 land_touch_hold_ 동안 지속.
+    // 강제 kill 판정: 현재 z <= 이륙 시점 지면 z + land_touch_alt_ 이면 즉시.
     // 또는 PX4 자체 land detector 가 ON_GROUND 를 선언하면 즉시 인정한다
     // (AGL 기준선이 어긋났을 때의 유일한 대비책).
     const bool px4_on_ground =
         px4_ext_seen_ &&
         px4_landed_state_ == mavros_msgs::ExtendedState::LANDED_STATE_ON_GROUND;
-    const bool touching = (agl < land_touch_alt_);
+    const bool below_kill_height = (agl <= land_touch_alt_);
+    const double kill_margin = agl - land_touch_alt_;
+    const bool kill_ready = below_kill_height || px4_on_ground;
+    const char *kill_reason = below_kill_height
+                                  ? "HEIGHT"
+                                  : (px4_on_ground ? "PX4_ON_GROUND" : "NONE");
+    char kill_detail[256];
+    snprintf(kill_detail, sizeof(kill_detail),
+             "current_z=%.3fm kill_z=%.3fm agl=%.3fm kill_limit=%.3fm "
+             "margin=%.3fm px4_on_ground=%d reason=%s elapsed=%.2fs",
+             cur.z(), land_ground_z_ + land_touch_alt_, agl,
+             land_touch_alt_, kill_margin, px4_on_ground ? 1 : 0,
+             kill_reason, elapsed);
+    elog_.log("LAND_KILL", kill_ready ? "READY" : "WAITING", kill_detail,
+              1.0, kill_ready ? EventLogger::L_WARN : EventLogger::L_INFO);
 
-    if (touching || px4_on_ground) {
-      if (land_touch_since_.toSec() < 1e-6)
-        land_touch_since_ = now;
-      const double held = (now - land_touch_since_).toSec();
-      if (px4_on_ground || held >= land_touch_hold_) {
-        land_phase_ = LAND_PHASE_DISARM;
-        land_touchdown_confirmed_ = true;
-        land_disarm_since_ = now;
-        land_last_req_ = ros::Time(0);
-        // vz 는 판정에 쓰지 않지만 사후 분석을 위해 남긴다.
-        const double vz_meas = std::fabs(static_cast<double>(fd_->odom_vel_.z()));
-        char d[176];
-        snprintf(d, sizeof(d),
-                 "agl=%.2fm held=%.2fs px4_on_ground=%d xy_err=%.2fm vz=%.2fm/s(unused)",
-                 agl, held, px4_on_ground ? 1 : 0, xy_err, vz_meas);
-        elog_.log("LAND", "touchdown detected", d, 0.0, EventLogger::L_WARN, true);
-        EPIC_LOG_WARN("execution.px4", "touchdown detected; force disarm (%s)", d);
-      }
-    } else {
-      land_touch_since_ = ros::Time(0);  // 조건이 깨지면 지속시간 재시작
+    if (kill_ready) {
+      land_phase_ = LAND_PHASE_DISARM;
+      land_touchdown_confirmed_ = true;
+      land_disarm_since_ = now;
+      land_last_req_ = ros::Time(0);
+      // vz 는 판정에 쓰지 않지만 사후 분석을 위해 남긴다.
+      const double vz_meas = std::fabs(static_cast<double>(fd_->odom_vel_.z()));
+      char d[192];
+      snprintf(d, sizeof(d),
+               "agl=%.3fm kill_limit=%.3fm vz=%.3fm/s px4_on_ground=%d xy_err=%.3fm",
+               agl, land_touch_alt_, vz_meas, px4_on_ground ? 1 : 0, xy_err);
+      elog_.log("LAND", "force-disarm height reached", d, 0.0,
+                EventLogger::L_WARN, true);
+      EPIC_LOG_WARN("execution.px4", "force-disarm condition met (%s)", d);
     }
 
     EPIC_LOG_INFO_THROTTLE(1.0, 1, 1, "execution.px4",
-                           "offboard landing: agl=%.2fm vz_cmd=%.2f xy_err=%.2f t=%.1fs",
-                           agl, vz, xy_err, elapsed);
+                           "offboard landing: agl=%.2fm z_target=%.2fm "
+                           "xy_err=%.2f t=%.1fs",
+                           agl, touchdown_z, xy_err, elapsed);
     break;
   }
 
@@ -1605,7 +1822,7 @@ void FastExplorationFSM::runOffboardLanding() {
     // 접지 후에도 하강 명령을 유지한다. 명령을 끊으면 px4_ctrl_bridge 가
     // land_cmd_timeout 뒤 "현재 포즈 hold" 로 떨어져, 지면에 앉은 채 위치제어기가
     // 기체를 붙잡으려 들며 모터가 계속 돈다(전복 위험).
-    pubLandSetpoint(-land_ramp_rate_);
+    pubLandSetpoint(touchdown_z);
 
     // 접지 판정 즉시 강제 disarm. 일반 disarm 은 PX4 land detector 의 동의
     // (LNDMC_TRIG_TIME, 기본 1.0s)가 있어야 통과하는데, 그만큼 모터가 지면에서
@@ -1631,8 +1848,8 @@ void FastExplorationFSM::runOffboardLanding() {
   }
 
   default:
-    // 도달 불가. 방어적으로 하강 단계로 되돌린다.
-    land_phase_ = LAND_PHASE_DESCEND;
+    // 도달 불가. 방어적으로 1.0m yaw 정렬부터 다시 확인한다.
+    land_phase_ = LAND_PHASE_ALIGN_YAW_AT_APPROACH;
     break;
   }
 }
@@ -1775,14 +1992,19 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   nh.param("fsm/traj_server_owns_finish_cmd", traj_server_owns_finish_cmd_, false);
   nh.param("fsm/finish_hover_duration", finish_hover_duration_, 3.0);
   nh.param("fsm/rth_land_xy_tol", rth_land_xy_tol_, 0.3);
+  nh.param("fsm/rth_approach_alt", rth_approach_alt_, 1.0);
+  nh.param("fsm/land_z_tol", land_z_tol_, 0.05);
 
   /* [offboard landing] PX4 AUTO.LAND 대신 OFFBOARD 로 직접 하강 */
-  nh.param("fsm/land_ramp_rate",        land_ramp_rate_,        0.2);
-  nh.param("fsm/land_touch_alt",    land_touch_alt_,    0.13);
-  nh.param("fsm/land_touch_hold",   land_touch_hold_,   0.30);
+  double land_yaw_tol_deg = 3.0;
+  nh.param("fsm/land_yaw_tol_deg",      land_yaw_tol_deg,       3.0);
+  land_yaw_tol_ = land_yaw_tol_deg * M_PI / 180.0;
+  nh.param("fsm/land_precision_alt",    land_precision_alt_,    0.5);
+  nh.param("fsm/land_precision_xy_tol", land_precision_xy_tol_, 0.10);
+  nh.param("fsm/land_precision_hold",   land_precision_hold_,   1.5);
+  nh.param("fsm/land_touch_alt",    land_touch_alt_,    0.10);
   nh.param("fsm/land_xy_err_warn",  land_xy_err_warn_,  0.80);
   nh.param("fsm/land_timeout",      land_timeout_,      25.0);
-  nh.param("fsm/land_ramp_lead_max", land_ramp_lead_max_, 0.30);
   nh.param("fsm/caution_map_reset_enable", caution_map_reset_enable_, true);
   nh.param("fsm/caution_map_reset_timeout", caution_map_reset_timeout_, 6.0);
   nh.param("fsm/caution_map_reset_failure_count",
@@ -1803,6 +2025,13 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
   rth_failure_min_interval_ = std::max(0.05, rth_failure_min_interval_);
   map_rebuild_min_duration_ = std::max(0.0, map_rebuild_min_duration_);
   map_rebuild_min_scans_ = std::max(1, map_rebuild_min_scans_);
+  land_touch_alt_ = std::max(0.0, land_touch_alt_);
+  land_precision_alt_ = std::max(land_touch_alt_ + 0.05, land_precision_alt_);
+  rth_approach_alt_ = std::max(land_precision_alt_ + 0.05, rth_approach_alt_);
+  land_z_tol_ = std::max(0.01, land_z_tol_);
+  land_yaw_tol_ = std::min(M_PI, std::max(0.0, land_yaw_tol_));
+  land_precision_xy_tol_ = std::max(0.01, land_precision_xy_tol_);
+  land_precision_hold_ = std::max(0.0, land_precision_hold_);
   // EARLY_FINISH (조기 종료 구제). 기본값은 기존 동작과 같도록 잡되 enable 은 true —
   // 끄려면 fsm/early_finish_enable: false.
   nh.param("fsm/early_finish_enable", early_finish_enable_, true);
@@ -2088,6 +2317,14 @@ void FastExplorationFSM::init(ros::NodeHandle &nh,
              avoid_flag_timeout_, auto_rth_land_ ? 1 : 0, rth_land_xy_tol_,
              avoidance_enabled_ ? 1 : 0,
              traj_server_owns_finish_cmd_ ? 1 : 0);
+    param_lines_.push_back(l);
+
+    snprintf(l, sizeof(l),
+             "landing_stages | approach=%.2fm z_tol=%.2fm yaw_tol=%.1fdeg "
+             "precision=%.2fm xy_tol=%.2fm hold=%.2fs",
+             rth_approach_alt_, land_z_tol_,
+             land_yaw_tol_ * 180.0 / M_PI, land_precision_alt_,
+             land_precision_xy_tol_, land_precision_hold_);
     param_lines_.push_back(l);
 
     snprintf(l, sizeof(l),
@@ -2674,11 +2911,14 @@ bool FastExplorationFSM::rthServiceCallback(std_srvs::Trigger::Request &req,
     return true;
   }
 
-  // 홈 = 이륙 앵커 (x0, y0, takeoff_height). takeoff 비활성 구성이면 (0,0,현재고도) 폴백.
+  // 홈 = 이륙 앵커 (x0, y0, 지면+RTH 접근고도). takeoff 비활성
+  // 구성이면 지면 기준을 기록하지 못했으므로 (0,0,현재고도) 폴백.
   Eigen::Vector3d home = takeoff_anchor_;
   double home_yaw = fd_->odom_yaw_;
   if (fp_->takeoff_height_ <= 0.0) {
     home = Eigen::Vector3d(0.0, 0.0, std::max(0.5, (double)fd_->odom_pos_.z()));
+  } else {
+    home.z() = rthApproachZ();
   }
   goal_rth_ << home.x(), home.y(), home.z(), home_yaw;
   has_goal_rth_ = true;
